@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from threading import Lock
+from typing import TYPE_CHECKING
 
 from visionai.capabilities.registry import CapabilityRegistry
 from visionai.core.errors import DispatchError
 from visionai.core.events import ActionRequest, ActionResult, AuditEvent
 from visionai.observability.audit import InMemoryAuditSink
-from visionai.policy.engine import PolicyContext, PolicyEngine
+
+if TYPE_CHECKING:
+    from visionai.policy.engine import PolicyContext, PolicyEngine
 
 CapabilityHandler = Callable[[ActionRequest], ActionResult]
 

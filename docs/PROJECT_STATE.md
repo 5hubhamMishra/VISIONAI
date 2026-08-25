@@ -42,10 +42,13 @@ Current `main` HEAD. The local verification suite passed before the initial foun
 - CI workflow and local verification scripts for formatting, typing, tests, security scan, and dependency audit
 - Migration quarantine documentation for the previous prototype
 - Environment repair documentation for Python 3.12 and virtual environment recreation
+- Phase 4 read-only system info capabilities (`system.time`, `system.date`) with manifests and handlers
+- Runtime assembly (`visionai.runtime.build_runtime`) wiring the registry, policy engine, rate limiter, audit sink, and dispatcher together
+- Console entry point (`visionai.app.main`) that dispatches a read-only capability through the full policy + dispatcher path
 
 ## Implemented but Not Fully Verified
 
-- Hosted CI has not run because no remote repository is configured in this workspace.
+- Hosted CI has not run because the GitHub remote was only just configured.
 
 ## In Progress
 
@@ -53,10 +56,10 @@ Current `main` HEAD. The local verification suite passed before the initial foun
 
 ## Approved Next Tasks
 
-1. Make the first repository commit.
+1. Add remaining Phase 4 read-only capabilities (battery, basic system health) per the master prompt's initial safe capability list.
 2. Disable or quarantine unsafe direct execution paths in the old prototype before any migration into `visionai`.
 3. Decide which safe prototype feature to migrate first behind the Phase 1 gates.
-4. Add hosted CI remote configuration when a GitHub repository exists.
+4. Confirm hosted CI runs green on GitHub now that `origin` is configured.
 
 ## Known Defects
 
@@ -94,8 +97,8 @@ cd visionai
 
 - Python: 3.12.10
 - Ruff: passed
-- mypy: passed for 25 source files
-- pytest: 53 passed, 86% coverage
+- mypy: passed for 27 source files
+- pytest: 61 passed, 88% coverage
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 
