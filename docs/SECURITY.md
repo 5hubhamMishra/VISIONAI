@@ -1,0 +1,27 @@
+# Security
+
+## Threat Model
+
+VisionAI processes local voice, camera, keyboard, and pointer input. Relevant threats include replayed audio, nearby speakers, malicious webpage audio, prompt or indirect injection, malicious URLs, event floods, unauthorized local users, compromised dependencies, secret leakage, and misuse of microphone or camera access.
+
+## Phase 0 Controls
+
+- Deny-by-default foundation: no executable capabilities are registered yet.
+- Typed contracts reject control characters, oversized text, invalid confidence values, and malformed mappings.
+- Event bus is bounded to provide backpressure.
+- Raw media retention defaults to disabled.
+- Log redaction covers common key-value secret patterns.
+- Capability registry rejects prohibited capabilities and duplicate IDs.
+- Policy rejects unknown arguments, unsupported platforms, missing permissions, missing fresh confirmations, and mutating actions while the screen is locked.
+- Confirmation service binds approval to the exact action request, expires it quickly, and consumes it after one use.
+- Fixed-window rate limiting can be attached to policy evaluation.
+- Serialized dispatcher refuses denied requests before handler lookup and records denials/results to audit history.
+- URL policy rejects non-HTTPS schemes by default, unallowlisted hosts, private/local hosts, embedded credentials, control characters, empty searches, and oversized searches.
+- JSON permission and audit storage reject malformed local state.
+- Lock-state policy input is isolated behind an adapter boundary. The Windows wrapper treats API failures or unknown session state as locked.
+
+## Remaining Risks
+
+- The previous `../jarvis` prototype contains direct system execution, browser opening, media control, and pointer automation. It should not be run as a trusted VisionAI build.
+- The Windows lock-state wrapper still needs runtime verification on Windows once Python is available.
+- No real capability handlers exist yet.

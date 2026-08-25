@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+.venv*/
+venv/
+env/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Models and large binaries
+models/
+*.pt
+*.pth
+*.onnx
+
+# Audio/video captured at runtime
+*.wav
+*.mp3
+*.mp4
+
+# Local tooling state (never commit assistant/tool metadata)
+.claude/
+.codex/
+CLAUDE.md
+AGENTS.md
+AGENT.md
+CODEX.md

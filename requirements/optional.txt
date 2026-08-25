@@ -1,0 +1,15 @@
+# Dependencies for subsystems not yet implemented (Phase 3+).
+# Pin exact versions and verify licence/maintenance status before enabling
+# each block, per docs/DECISIONS/.
+
+# --- UI (Phase 2) ---
+# PySide6==6.7.*
+
+# --- Voice (Phase 3) ---
+# sounddevice==0.4.*
+# faster-whisper==1.0.*      # Whisper-compatible local STT
+# pyttsx3==2.90              # offline TTS
+
+# --- Vision (Phase 5) ---
+# opencv-python==4.10.*
+# mediapipe==0.10.*
