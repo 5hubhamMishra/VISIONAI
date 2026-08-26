@@ -21,6 +21,20 @@ def test_planner_maps_direct_system_commands() -> None:
     assert _planned_step("stop").capability_id == "system.stop"
 
 
+def test_planner_gives_clear_history_a_real_summary_not_a_generic_one() -> None:
+    """The generic "Run <capability>." summary is harmless for read-only
+    direct phrases (they never reach a prompt), but system.clear_history's
+    summary is shown directly in a confirmation/permission dialog -- found
+    by live-running that exact dialog and seeing the generic text appear.
+    """
+
+    runtime = build_runtime()
+    _intent, plan = runtime.planner.plan("clear history")
+
+    assert plan.summary == "Clear the local audit history."
+    assert "Run " not in plan.summary
+
+
 def test_planner_maps_allowlisted_app_open() -> None:
     step = _planned_step("launch calculator")
 

@@ -45,6 +45,15 @@ _DIRECT_CAPABILITIES = {
     "health": "system.health",
 }
 
+# Overrides the generic "Run <capability>." summary for capabilities whose
+# summary is actually shown to the user in a confirmation/permission prompt
+# (Section 9: "must display exact normalized action, target and effect").
+# Read-only direct phrases never reach a prompt, so a generic summary for
+# them is harmless; system.clear_history does, so it needs a real one.
+_DIRECT_SUMMARIES = {
+    "system.clear_history": "Clear the local audit history.",
+}
+
 _MEDIA_PHRASES = {
     "mute": "mute",
     "volume mute": "mute",
@@ -83,7 +92,7 @@ class TextCommandPlanner:
                 intent_name=direct,
                 capability_id=direct,
                 arguments={},
-                summary=f"Run {direct}.",
+                summary=_DIRECT_SUMMARIES.get(direct, f"Run {direct}."),
             )
 
         media_action = _MEDIA_PHRASES.get(normalized)
