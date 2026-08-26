@@ -1,9 +1,9 @@
 from types import SimpleNamespace
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 from visionai.capabilities import CapabilityManifest, CapabilityRegistry, IdempotencyMode
 from visionai.capabilities.dispatcher import SerializedDispatcher
@@ -22,6 +22,12 @@ from visionai.orchestration.event_orchestrator import EventOrchestrator
 from visionai.policy import ConfirmationService, FixedWindowRateLimiter, PolicyContext, PolicyEngine
 from visionai.runtime import build_runtime
 from visionai.ui.main_window import MainWindow
+
+
+def _wait_for_command_complete(window: MainWindow, qtbot: Any) -> None:
+    # `_is_worker_running()` reflects real worker lifecycle regardless of
+    # whether Run, Stop, or a confirmation follow-up started the worker.
+    qtbot.waitUntil(lambda: not window._is_worker_running(), timeout=5000)
 
 
 def _sensitive_manifest() -> CapabilityManifest:
@@ -78,8 +84,47 @@ def _build_sensitive_runtime(calls: list[ActionRequest]) -> Any:
     )
     return SimpleNamespace(
         audit=audit,
+        operations=OperationController(),
         output_bus=output_bus,
         orchestrator=orchestrator,
+        registry=registry,
+        state_machine=state,
+    )
+
+
+class _EmptyAudit:
+    def list(self) -> tuple[Any, ...]:
+        return ()
+
+
+class _SlowOrchestrator(QObject):
+    started = Signal()
+
+    def __init__(self, *, output_bus: EventBus, operations: OperationController) -> None:
+        super().__init__()
+        self._output_bus = output_bus
+        self._operations = operations
+
+    async def process_event(self, event: Any) -> None:
+        token = self._operations.begin_operation()
+        self.started.emit()
+        token.wait(timeout=2)
+        self._operations.finish_operation(token)
+        await self._output_bus.publish(
+            ActionResult(request_id=event.id, success=True, message="Slow command complete.")
+        )
+
+
+def _build_slow_runtime() -> Any:
+    output_bus = EventBus(max_size=10)
+    operations = OperationController()
+    state = StateMachine()
+    return SimpleNamespace(
+        audit=_EmptyAudit(),
+        operations=operations,
+        output_bus=output_bus,
+        orchestrator=_SlowOrchestrator(output_bus=output_bus, operations=operations),
+        registry=SimpleNamespace(list=lambda: ()),
         state_machine=state,
     )
 
@@ -93,6 +138,7 @@ def test_main_window_runs_command_through_runtime(qtbot: Any) -> None:
     window.show()
     window._command_input.setText("open notepad")
     qtbot.mouseClick(window._run_button, Qt.MouseButton.LeftButton)
+    _wait_for_command_complete(window, qtbot)
 
     assert launched == ["notepad.exe"]
     assert window._output.toPlainText() == "Opening notepad."
@@ -115,6 +161,7 @@ def test_main_window_confirms_sensitive_action_before_execution(
 
     window._command_input.setText("do the sensitive thing")
     qtbot.mouseClick(window._run_button, Qt.MouseButton.LeftButton)
+    _wait_for_command_complete(window, qtbot)
 
     assert len(calls) == 1
     assert window._output.toPlainText() == "Sensitive action done."
@@ -134,6 +181,7 @@ def test_main_window_declining_confirmation_prevents_execution(
 
     window._command_input.setText("do the sensitive thing")
     qtbot.mouseClick(window._run_button, Qt.MouseButton.LeftButton)
+    _wait_for_command_complete(window, qtbot)
 
     assert calls == []
     assert window._output.toPlainText() == "Action cancelled."
@@ -148,6 +196,7 @@ def test_main_window_renders_non_executable_text(qtbot: Any) -> None:
 
     window._command_input.setText("please do the risky vague thing")
     qtbot.keyClick(window._command_input, Qt.Key.Key_Return)
+    _wait_for_command_complete(window, qtbot)
 
     assert window._output.toPlainText() == "No executable action selected."
     assert window._history.count() == 0
@@ -159,6 +208,7 @@ def test_main_window_stop_button_reports_no_active_operation(qtbot: Any) -> None
     qtbot.addWidget(window)
 
     qtbot.mouseClick(window._stop_button, Qt.MouseButton.LeftButton)
+    _wait_for_command_complete(window, qtbot)
 
     assert window._output.toPlainText() == "No operation is currently running."
     assert window._status_label.text() == "IDLE"
@@ -176,7 +226,60 @@ def test_main_window_stop_button_is_independent_of_run_state(qtbot: Any) -> None
 
     assert window._stop_button.isEnabled() is True
     qtbot.mouseClick(window._stop_button, Qt.MouseButton.LeftButton)
+    _wait_for_command_complete(window, qtbot)
     assert window._output.toPlainText() == "No operation is currently running."
+
+
+def test_main_window_stop_button_can_cancel_while_worker_is_running(qtbot: Any) -> None:
+    runtime = _build_slow_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    window._command_input.setText("slow command")
+    with qtbot.waitSignal(runtime.orchestrator.started, timeout=5000):
+        qtbot.mouseClick(window._run_button, Qt.MouseButton.LeftButton)
+
+    assert window._run_button.isEnabled() is False
+    qtbot.mouseClick(window._stop_button, Qt.MouseButton.LeftButton)
+
+    assert window._output.toPlainText() == "Stop requested."
+    _wait_for_command_complete(window, qtbot)
+    assert window._run_button.isEnabled() is True
+
+
+def test_main_window_diagnostics_text_reports_environment_and_state(qtbot: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    text = window._diagnostics_text()
+
+    assert "VisionAI: 0.1.0" in text
+    assert "PySide6:" in text
+    assert "Registered capabilities: " in text
+    assert "Registered capabilities: 0" not in text
+    assert "State: IDLE" in text
+    assert "Voice input: not connected" in text
+    assert "Camera/vision input: not connected" in text
+
+
+def test_main_window_diagnostics_button_opens_a_dialog(qtbot: Any, monkeypatch: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    shown: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda parent, title, text: shown.append((title, text)),
+    )
+
+    qtbot.mouseClick(window._diagnostics_button, Qt.MouseButton.LeftButton)
+
+    assert len(shown) == 1
+    assert shown[0][0] == "Diagnostics"
+    assert "VisionAI:" in shown[0][1]
 
 
 def test_main_window_tab_order_reaches_every_control_without_a_trap(qtbot: Any) -> None:
@@ -191,6 +294,7 @@ def test_main_window_tab_order_reaches_every_control_without_a_trap(qtbot: Any) 
     expected_order = [
         window._run_button,
         window._stop_button,
+        window._diagnostics_button,
         window._output,
         window._history,
         window._command_input,
@@ -210,6 +314,7 @@ def test_main_window_tab_order_reverses_cleanly_with_shift_tab(qtbot: Any) -> No
     expected_reverse_order = [
         window._history,
         window._output,
+        window._diagnostics_button,
         window._stop_button,
         window._run_button,
         window._command_input,

@@ -38,9 +38,11 @@ visionai --text "what time is it"
 visionai-ui
 ```
 
-Opens a minimal window: a command input, a Run button, a Stop button, a result area, an audit history list, and a tray icon. Type any of the same commands shown above (e.g. `open notepad`, `what time is it`) and press Enter or click Run. This is not the full application window described for later phases -- there are no settings, onboarding, or diagnostics yet -- but every command it runs goes through the same `TextCommandPlanner`, policy engine, and dispatcher as the console, so nothing typed into the window can do anything the console commands above cannot already do.
+Opens a minimal window: a command input, a Run button, a Stop button, a Diagnostics button, a result area, an audit history list, and a tray icon. Type any of the same commands shown above (e.g. `open notepad`, `what time is it`) and press Enter or click Run. This is not the full application window described for later phases -- there are no settings or onboarding yet -- but every command it runs goes through the same `TextCommandPlanner`, policy engine, and dispatcher as the console, so nothing typed into the window can do anything the console commands above cannot already do.
 
-The Stop button requests cooperative cancellation (the same as `visionai system.stop`) and stays clickable even while a command is running, unlike the command input and Run button. Since every command currently completes instantly, clicking it while nothing is running just reports that no operation is active -- it does not yet have anything real to cancel.
+The Stop button requests cooperative cancellation and stays clickable even while a command is running, unlike the command input and Run button. Since the registered commands currently complete quickly, clicking it while nothing is running just reports that no operation is active.
+
+The Diagnostics button shows a read-only status summary: app/library versions, registered capability count, tray availability, current state, and which input subsystems are still disconnected.
 
 If a future command requires confirmation, the window asks before executing it. Choosing No cancels the pending request; choosing Yes sends the bound confirmation back through the orchestrator and dispatcher. No registered command currently requires this prompt yet, but the UI path is in place.
 

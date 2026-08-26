@@ -1,14 +1,15 @@
 """Minimal desktop main window: a thin front end over the safe runtime.
 
 This is the first Phase 2 slice, not the full main window described in
-Section 14 of the master prompt (no settings, onboarding, or diagnostics
-yet). It exists to prove the UI can drive the already-tested
+Section 14 of the master prompt (no settings or onboarding yet). It
+exists to prove the UI can drive the already-tested
 orchestrator/state machine/dispatcher path safely, not to be a finished
 product. Every typed command is turned into a final TranscriptEvent and
 handed to the same `EventOrchestrator` the CLI and automated tests use --
 this window adds no new planning or execution logic of its own. The tray
-icon (show/hide, quit) is the one exception: it is pure window-lifecycle
-control with no runtime authority.
+icon (show/hide, quit) and the diagnostics view are the exceptions: they
+are pure window-lifecycle/read-only-introspection controls with no
+runtime authority.
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ import asyncio
 import sys
 from typing import TYPE_CHECKING
 
+import PySide6
+from PySide6.QtCore import QObject, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -34,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import visionai
 from visionai.core.events import (
     ActionPlan,
     ActionResult,
@@ -48,12 +52,67 @@ if TYPE_CHECKING:
     from PySide6.QtGui import QCloseEvent
 
 
+class _RuntimeWorker(QObject):
+    """Run one runtime operation off the GUI thread."""
+
+    finished = Signal(list)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        *,
+        runtime: Runtime,
+        text: str | None = None,
+        confirmation: ConfirmationRequest | None = None,
+    ) -> None:
+        super().__init__()
+        self._runtime = runtime
+        self._text = text
+        self._confirmation = confirmation
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            if self._confirmation is not None:
+                outputs = asyncio.run(_confirm_runtime_request(self._runtime, self._confirmation))
+            elif self._text is not None:
+                outputs = asyncio.run(_process_runtime_text(self._runtime, self._text))
+            else:
+                outputs = []
+        except Exception as exc:  # pragma: no cover - defensive GUI boundary
+            self.failed.emit(str(exc))
+            return
+        self.finished.emit(outputs)
+
+
+async def _process_runtime_text(runtime: Runtime, text: str) -> list[EventBase]:
+    event = TranscriptEvent(text=text, confidence=1.0, language="en", is_final=True)
+    await runtime.orchestrator.process_event(event)
+    return await _drain_runtime_outputs(runtime)
+
+
+async def _confirm_runtime_request(
+    runtime: Runtime, confirmation: ConfirmationRequest
+) -> list[EventBase]:
+    await runtime.orchestrator.confirm(confirmation.id)
+    return await _drain_runtime_outputs(runtime)
+
+
+async def _drain_runtime_outputs(runtime: Runtime) -> list[EventBase]:
+    outputs: list[EventBase] = []
+    while runtime.output_bus.size:
+        outputs.append(await runtime.output_bus.next_event())
+    return outputs
+
+
 class MainWindow(QMainWindow):
     """Type a command, run it through the real runtime, see the result."""
 
     def __init__(self, runtime: Runtime, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._runtime = runtime
+        self._worker_thread: QThread | None = None
+        self._worker: _RuntimeWorker | None = None
         self.setWindowTitle("VisionAI")
 
         self._status_label = QLabel(self._runtime.state_machine.state.name)
@@ -69,6 +128,8 @@ class MainWindow(QMainWindow):
         self._stop_button = QPushButton("Stop")
         self._stop_button.setAccessibleName("Stop current operation")
         self._stop_button.setToolTip("Request cooperative cancellation of the current operation")
+        self._diagnostics_button = QPushButton("Diagnostics")
+        self._diagnostics_button.setAccessibleName("Show diagnostics")
 
         self._output = QTextEdit()
         self._output.setReadOnly(True)
@@ -82,6 +143,7 @@ class MainWindow(QMainWindow):
         input_row.addWidget(self._command_input)
         input_row.addWidget(self._run_button)
         input_row.addWidget(self._stop_button)
+        input_row.addWidget(self._diagnostics_button)
 
         result_label = QLabel("Result:")
         result_label.setBuddy(self._output)
@@ -103,6 +165,7 @@ class MainWindow(QMainWindow):
         self._run_button.clicked.connect(self.run_current_command)
         self._command_input.returnPressed.connect(self.run_current_command)
         self._stop_button.clicked.connect(self.stop_current_operation)
+        self._diagnostics_button.clicked.connect(self.show_diagnostics)
         self._refresh_history()
         self._command_input.setFocus()
 
@@ -153,16 +216,53 @@ class MainWindow(QMainWindow):
         else:
             event.accept()
 
+    def show_diagnostics(self) -> None:
+        """Show the diagnostics view (Section 6/14's required UI component)."""
+
+        QMessageBox.information(self, "Diagnostics", self._diagnostics_text())
+
+    def _diagnostics_text(self) -> str:
+        """Build the diagnostics summary. Read-only introspection only.
+
+        Every value here is either a library/environment fact or read
+        straight off the runtime's own registry/state; nothing here can
+        affect policy, dispatch, or the state machine.
+        """
+
+        tray_status = "available" if QSystemTrayIcon.isSystemTrayAvailable() else "not available"
+        lines = [
+            f"VisionAI: {visionai.__version__}",
+            f"Python: {sys.version.split()[0]}",
+            f"PySide6: {PySide6.__version__}",
+            f"Registered capabilities: {len(self._runtime.registry.list())}",
+            f"System tray: {tray_status}",
+            f"State: {self._runtime.state_machine.state.name}",
+            "Voice input: not connected (Phase 3 not started)",
+            "Camera/vision input: not connected (Phase 5 not started)",
+            "Speech/vision processing: local only (no cloud provider configured)",
+        ]
+        return "\n".join(lines)
+
     def stop_current_operation(self) -> None:
         """Request cooperative cancellation, independent of the Run/input state."""
 
-        outputs = asyncio.run(self._process("stop"))
-        self._render_result(outputs)
-        self._status_label.setText(self._runtime.state_machine.state.name)
-        self._refresh_history()
+        if self._is_worker_running():
+            if self._runtime.operations.cancel_active_operation():
+                self._output.setPlainText("Stop requested.")
+            else:
+                self._output.setPlainText("No operation is currently running.")
+            self._status_label.setText(self._runtime.state_machine.state.name)
+            return
+
+        self._command_input.setEnabled(False)
+        self._run_button.setEnabled(False)
+        self._start_worker(text="stop")
 
     def run_current_command(self) -> None:
         """Plan and dispatch the text currently in the command input."""
+
+        if self._is_worker_running():
+            return
 
         text = self._command_input.text().strip()
         if not text:
@@ -170,19 +270,58 @@ class MainWindow(QMainWindow):
 
         self._command_input.setEnabled(False)
         self._run_button.setEnabled(False)
-        try:
-            outputs = asyncio.run(self._process(text))
-            confirmation_result = self._handle_confirmation(outputs)
-            if confirmation_result is not None:
-                outputs = confirmation_result
-        finally:
-            self._command_input.setEnabled(True)
-            self._run_button.setEnabled(True)
+        self._start_worker(text=text)
+
+    def _start_worker(
+        self,
+        *,
+        text: str | None = None,
+        confirmation: ConfirmationRequest | None = None,
+    ) -> None:
+        thread = QThread(self)
+        worker = _RuntimeWorker(runtime=self._runtime, text=text, confirmation=confirmation)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_worker_finished)
+        worker.failed.connect(self._on_worker_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        self._worker_thread = thread
+        self._worker = worker
+        thread.start()
+
+    def _is_worker_running(self) -> bool:
+        return self._worker_thread is not None and self._worker_thread.isRunning()
+
+    def _clear_worker(self) -> None:
+        self._worker_thread = None
+        self._worker = None
+
+    def _on_worker_finished(self, outputs: list[EventBase]) -> None:
+        self._clear_worker()
+
+        confirmation_result = self._handle_confirmation(outputs)
+        if confirmation_result is not None:
+            outputs = confirmation_result
+            if self._is_worker_running():
+                return
 
         self._render_result(outputs)
         self._status_label.setText(self._runtime.state_machine.state.name)
         self._refresh_history()
         self._command_input.clear()
+        self._command_input.setEnabled(True)
+        self._run_button.setEnabled(True)
+        self._command_input.setFocus()
+
+    def _on_worker_failed(self, message: str) -> None:
+        self._clear_worker()
+        self._output.setPlainText(f"Error: {message}")
+        self._status_label.setText(self._runtime.state_machine.state.name)
+        self._command_input.setEnabled(True)
+        self._run_button.setEnabled(True)
         self._command_input.setFocus()
 
     def _handle_confirmation(self, outputs: list[EventBase]) -> list[EventBase] | None:
@@ -191,7 +330,8 @@ class MainWindow(QMainWindow):
             return None
 
         if self._ask_confirmation(confirmation):
-            return asyncio.run(self._confirm(confirmation))
+            self._start_worker(confirmation=confirmation)
+            return []
 
         self._runtime.orchestrator.cancel_pending_confirmation(confirmation.id)
         return [ActionPlan(steps=(), summary="Action cancelled.")]
@@ -205,21 +345,6 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.No,
         )
         return answer == QMessageBox.StandardButton.Yes
-
-    async def _confirm(self, confirmation: ConfirmationRequest) -> list[EventBase]:
-        await self._runtime.orchestrator.confirm(confirmation.id)
-        outputs: list[EventBase] = []
-        while self._runtime.output_bus.size:
-            outputs.append(await self._runtime.output_bus.next_event())
-        return outputs
-
-    async def _process(self, text: str) -> list[EventBase]:
-        event = TranscriptEvent(text=text, confidence=1.0, language="en", is_final=True)
-        await self._runtime.orchestrator.process_event(event)
-        outputs: list[EventBase] = []
-        while self._runtime.output_bus.size:
-            outputs.append(await self._runtime.output_bus.next_event())
-        return outputs
 
     def _render_result(self, outputs: list[EventBase]) -> None:
         result = next((o for o in outputs if isinstance(o, ActionResult)), None)
