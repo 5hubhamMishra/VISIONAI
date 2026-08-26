@@ -71,7 +71,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## Known Defects
 
-- Existing `../jarvis` prototype still contains direct OS/browser/media execution paths.
+- Existing `../jarvis` prototype still contains direct OS/browser/media execution paths, including a concrete, traceable OS command injection path: `brain/intent_parser.py`'s `open_app`/`web` intents fall back to the *raw spoken word* when it isn't in the `APP_COMMANDS`/URL allowlist dicts (`config["apps"].get(app, app)` -- the fallback default is the unvalidated input itself, not a rejection), and `actions/executor.py` repeats the identical fallback (`APP_COMMANDS.get(name, name)`) before passing the result straight to `subprocess.Popen(cmd, shell=True)`. A voice command like "open calc & del /f /q ..." would have `&` interpreted by `cmd.exe` as a command separator, chaining an arbitrary second command. This is exactly the class of "malicious/replayed audio" threat the master prompt's threat model calls out, and exactly why the new `app.open` capability rejects an unrecognized app outright instead of falling back to the input.
 - Existing `../jarvis` docs claim production readiness without verification evidence.
 - Existing `../jarvis` logs are very large and should be rotated or removed with user approval.
 - Existing `../jarvis` venv is not runnable in this workspace.
