@@ -49,6 +49,7 @@ Phase 1 Safety foundation locally verified.
 - Fixed a fail-open gap in `UrlPolicy`: an empty `allowed_hosts` previously allowed any public hostname through; it now denies by default, matching its documented behavior
 - Fixed a critical gap in `WindowsLockStateAdapter`: it previously checked `ProcessIdToSessionId` on the current process, which cannot detect lock state at all (a process keeps its session whether the workstation is locked or not) and would have reported "unlocked" almost always, defeating locked-screen mutation blocking entirely. It now checks whether the input desktop can be opened, which correctly fails while the workstation is locked or a secure desktop (e.g. a UAC prompt) is active. Verified against the live unlocked session (no crash, correct result) and against mocked locked/failure branches; the true locked-state path still needs a human to lock the screen and confirm (see Known Defects).
 - Fixed an audit-integrity gap in `SerializedDispatcher`: denied requests were audited using the caller-supplied `request.risk_level` instead of the registered capability's actual `manifest.risk_level`, so a request could understate its true severity in the audit log for denied attempts. Denials are now audited with the manifest's risk level, matching the already-correct behavior for successful executions.
+- Fixed a thread-safety gap in `FixedWindowRateLimiter`: its per-key window state was mutated with no lock, unlike every other shared-mutable-state class in this codebase (`InMemoryAuditSink`, `JsonlAuditSink`). `SerializedDispatcher` only serializes handler execution, not policy evaluation, so once multiple recognition threads (voice, gesture) dispatch concurrently this had a real TOCTOU race that could let the limit be exceeded. Added a lock and a concurrency regression test (100 threads racing via a barrier) that verifies the limit holds exactly.
 
 ## Implemented but Not Fully Verified
 
@@ -102,7 +103,7 @@ cd visionai
 - Python: 3.12.10
 - Ruff: passed
 - mypy: passed for 27 source files
-- pytest: 71 passed, 89% coverage
+- pytest: 72 passed, 89% coverage
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

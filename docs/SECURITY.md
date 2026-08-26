@@ -14,7 +14,7 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 - Capability registry rejects prohibited capabilities and duplicate IDs.
 - Policy rejects unknown arguments, unsupported platforms, missing permissions, missing fresh confirmations, and mutating actions while the screen is locked.
 - Confirmation service binds approval to the exact action request, expires it quickly, and consumes it after one use.
-- Fixed-window rate limiting can be attached to policy evaluation.
+- Fixed-window rate limiting can be attached to policy evaluation and is safe under concurrent access from multiple recognition threads.
 - Serialized dispatcher refuses denied requests before handler lookup and records denials/results to audit history, always using the registered capability's manifest risk level rather than the caller-supplied request field, so a request cannot understate its own severity in the audit trail.
 - URL policy rejects non-HTTPS schemes by default, unallowlisted hosts, private/local hosts, embedded credentials, control characters, empty searches, and oversized searches.
 - JSON permission and audit storage reject malformed local state.
