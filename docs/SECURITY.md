@@ -6,7 +6,7 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 
 ## Phase 0 Controls
 
-- Deny-by-default foundation: no executable capabilities are registered yet.
+- Deny-by-default foundation: every capability must be explicitly registered with a manifest before it is reachable, and the one capability with a real side effect (`app.open`) uses an exact-executable allowlist rather than trusting caller-supplied input.
 - The application state machine is safe under concurrent access from multiple recognition threads (voice, gesture): transitions are serialized so only one of several racing callers can ever succeed, and the audit trail cannot be corrupted by interleaved transitions.
 - Typed contracts reject control characters, oversized text, invalid confidence values, and malformed mappings.
 - Event bus is bounded to provide backpressure; closing it is guaranteed to be observed by consumers (via a separate close signal) even if the bounded queue is full at that moment, after draining any already-queued events.
@@ -20,9 +20,10 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 - URL policy rejects non-HTTPS schemes by default, unallowlisted hosts, private/local hosts, embedded credentials, control characters, empty searches, and oversized searches.
 - JSON permission and audit storage reject malformed local state.
 - Lock-state policy input is isolated behind an adapter boundary. The Windows wrapper checks whether the interactive desktop can be opened (`OpenInputDesktop`), which fails while the workstation is locked or a secure desktop such as a UAC prompt is active, and treats any check failure or unreachable desktop as locked.
+- `app.open` opens one allowlisted desktop application by its exact executable name with `shell=False` -- never a shell string, never user-supplied text. The allowlist (`notepad`, `calculator`, `paint`) deliberately excludes anything that is itself a general-purpose command surface (a shell, a terminal, Task Manager), since exposing one of those would let an "open an app" capability be used to reach arbitrary further execution.
 
 ## Remaining Risks
 
 - The previous `../jarvis` prototype contains direct system execution, browser opening, media control, and pointer automation. It should not be run as a trusted VisionAI build.
-- The Windows lock-state wrapper has been verified against a live *unlocked* session (correctly reports unlocked, no crash) and against mocked locked/failure branches in unit tests. Its behavior against a genuinely *locked* workstation has not been manually verified, since that requires a human to lock the screen and observe the result — do not treat the locked-state path as field-tested until that manual check has been done.
-- No real capability handlers with side effects exist yet; only read-only system info capabilities are wired to the dispatcher.
+- The Windows lock-state wrapper has been verified against a live *unlocked* session (correctly reports unlocked, no crash) and against mocked locked/failure branches in unit tests. Its behavior against a genuinely *locked* workstation has not been manually verified, since that requires a human to lock the screen and observe the result -- do not treat the locked-state path as field-tested until that manual check has been done.
+- `app.open` is the only capability with a real side effect wired to the dispatcher; everything else is still read-only.

@@ -6,6 +6,12 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from visionai.capabilities import CapabilityRegistry, SerializedDispatcher
+from visionai.capabilities.applications import (
+    Launcher,
+    app_open_manifest,
+    default_launcher,
+    make_app_open_handler,
+)
 from visionai.capabilities.system_info import system_info_handlers, system_info_manifests
 from visionai.observability import InMemoryAuditSink
 from visionai.policy import FixedWindowRateLimiter, PolicyEngine
@@ -20,16 +26,26 @@ class Runtime:
     dispatcher: SerializedDispatcher
 
 
-def build_runtime() -> Runtime:
-    """Build the local runtime with only read-only built-in capabilities."""
+def build_runtime(*, launcher: Launcher = default_launcher) -> Runtime:
+    """Build the local runtime with the currently trusted built-in capabilities.
 
-    registry = CapabilityRegistry(system_info_manifests())
+    `launcher` is injectable so tests can verify app.open dispatch end to
+    end through the real policy and dispatcher path without spawning a
+    real process.
+    """
+
+    manifests = (*system_info_manifests(), app_open_manifest())
+    registry = CapabilityRegistry(manifests)
     audit = InMemoryAuditSink()
     policy = PolicyEngine(registry, FixedWindowRateLimiter())
+    handlers = {
+        **system_info_handlers(lambda: datetime.now().astimezone()),
+        "app.open": make_app_open_handler(launcher),
+    }
     dispatcher = SerializedDispatcher(
         registry=registry,
         policy=policy,
         audit=audit,
-        handlers=system_info_handlers(lambda: datetime.now().astimezone()),
+        handlers=handlers,
     )
     return Runtime(registry=registry, audit=audit, dispatcher=dispatcher)

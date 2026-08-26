@@ -4,32 +4,37 @@ from __future__ import annotations
 
 import argparse
 
-from visionai.core.events import ActionRequest, RiskLevel
+from visionai.core.events import ActionRequest
 from visionai.policy import PolicyContext
 from visionai.runtime import build_runtime
 
 
 def main() -> int:
-    """Run a read-only built-in capability through policy and dispatcher."""
+    """Run one registered capability through the full policy and dispatcher path."""
 
     parser = argparse.ArgumentParser(prog="visionai")
     parser.add_argument(
         "capability",
         nargs="?",
-        choices=("system.time", "system.date", "system.battery", "system.health"),
+        choices=("system.time", "system.date", "system.battery", "system.health", "app.open"),
         default="system.time",
     )
     parser.add_argument("--format", default=None)
+    parser.add_argument("--app", default=None, help="Application to open (app.open only).")
     args = parser.parse_args()
 
     runtime = build_runtime()
-    arguments = {}
+    arguments: dict[str, str] = {}
     if args.format is not None:
         arguments["format"] = args.format
+    if args.app is not None:
+        arguments["app"] = args.app
+
+    manifest = runtime.registry.get(args.capability)
     request = ActionRequest(
         capability_id=args.capability,
         arguments=arguments,
-        risk_level=RiskLevel.READ_ONLY,
+        risk_level=manifest.risk_level,
     )
     result = runtime.dispatcher.dispatch(request, PolicyContext())
     print(result.message)

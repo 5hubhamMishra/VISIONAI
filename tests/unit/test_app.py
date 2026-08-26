@@ -19,3 +19,14 @@ def test_app_returns_failure_for_unsupported_format(monkeypatch, capsys) -> None
 
     assert exit_code == 1
     assert "Unsupported date format." in output
+
+
+def test_app_rejects_unallowlisted_app_open_without_launching_anything(monkeypatch, capsys) -> None:
+    """Safe to run for real: rejected before default_launcher is ever called."""
+    monkeypatch.setattr("sys.argv", ["visionai", "app.open", "--app", "powershell"])
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "not an allowlisted application" in output

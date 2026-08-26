@@ -1,5 +1,10 @@
 """Capability registry and manifest contracts."""
 
+from visionai.capabilities.applications import (
+    ALLOWED_APPLICATIONS,
+    app_open_manifest,
+    make_app_open_handler,
+)
 from visionai.capabilities.dispatcher import CapabilityHandler, SerializedDispatcher
 from visionai.capabilities.manifest import (
     CapabilityManifest,
@@ -22,6 +27,7 @@ from visionai.capabilities.system_info import (
 )
 
 __all__ = [
+    "ALLOWED_APPLICATIONS",
     "CapabilityHandler",
     "CapabilityManifest",
     "CapabilityRegistry",
@@ -29,6 +35,8 @@ __all__ = [
     "ParameterSpec",
     "ParameterType",
     "SerializedDispatcher",
+    "app_open_manifest",
+    "make_app_open_handler",
     "make_system_battery_handler",
     "make_system_date_handler",
     "make_system_health_handler",

@@ -24,14 +24,15 @@ Phase 0 tests cover core contracts and invariants:
 - Concurrency regression tests reproduce and then verify the fix for three races found during review: `FixedWindowRateLimiter` (100 threads racing through a barrier must not exceed the configured limit), `StateMachine` (50 threads racing a transition must yield exactly one success and an unbroken history chain, reproduced with `sys.setswitchinterval` tightened to widen the race window), and `EventBus.close()` (closing a completely full queue must not deadlock a consumer waiting in `next_event()`).
 - Logging redaction tests exercise the actual filter against realistic `LogRecord`s, not only the pure `redact_message()` helper: lazy `%s`-style arguments, dict-style arguments, and messages with no secret at all, plus a test that `configure_logging()` attaches the filter to installed handlers (not just the root logger).
 - System info capability tests cover `system.time`, `system.date`, `system.battery` (including the "no battery detected" fallback), and `system.health`, both as isolated handlers with injected fakes and end to end through `build_runtime()`'s real dispatcher and policy path.
+- `app.open` tests cover manifest risk classification, an injected fake launcher for the success/case-insensitivity/OS-error paths (so no real process spawns), policy rejection of unknown/missing arguments and rate-limit exhaustion, and two things verified with the *real* `default_launcher`: the denial path for an unallowlisted app (safe, since nothing launches), and a genuine end-to-end run through the CLI that actually opened Notepad as a live process (confirmed via `Get-Process`) before it was closed.
 
 ## Verified Results
 
 Verified locally on Windows with Python 3.12.10 using `scripts\verify.ps1`:
 
 - Ruff: passed
-- mypy: passed for 27 source files
-- pytest: 79 passed
+- mypy: passed for 28 source files
+- pytest: 91 passed
 - Coverage: 91%
 - Bandit: passed
 - pip-audit: no known vulnerabilities found

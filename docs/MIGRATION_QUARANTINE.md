@@ -21,4 +21,8 @@ The previous `../jarvis` prototype is reference material only. It must not be tr
 
 ## Current Status
 
-No old prototype capability has been migrated into the trusted `visionai` runtime.
+One old prototype behavior has been migrated into the trusted `visionai` runtime, following all six steps above:
+
+- **`app.open`** (open an allowlisted desktop application), migrated from `../jarvis/actions/executor.py`'s app-launch logic as reference material only. The old code used `subprocess.Popen(cmd, shell=True)` against a broad app list that included a shell (`cmd`, `powershell`), a terminal, and Task Manager. The new capability deliberately excludes anything that is itself a general-purpose command surface, uses exact executable names with `shell=False`, and is Risk 1 (Reversible) per Section 9 of the master prompt -- see `src/visionai/capabilities/applications.py`.
+
+No other old prototype capability (voice, gesture, media control, browser, LLM) has been migrated.
