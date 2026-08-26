@@ -49,6 +49,9 @@ class MainWindow(QMainWindow):
         command_label.setBuddy(self._command_input)
         self._run_button = QPushButton("Run")
         self._run_button.setAccessibleName("Run command")
+        self._stop_button = QPushButton("Stop")
+        self._stop_button.setAccessibleName("Stop current operation")
+        self._stop_button.setToolTip("Request cooperative cancellation of the current operation")
 
         self._output = QTextEdit()
         self._output.setReadOnly(True)
@@ -61,6 +64,7 @@ class MainWindow(QMainWindow):
         input_row.addWidget(command_label)
         input_row.addWidget(self._command_input)
         input_row.addWidget(self._run_button)
+        input_row.addWidget(self._stop_button)
 
         layout = QVBoxLayout()
         layout.addWidget(self._status_label)
@@ -76,6 +80,15 @@ class MainWindow(QMainWindow):
 
         self._run_button.clicked.connect(self.run_current_command)
         self._command_input.returnPressed.connect(self.run_current_command)
+        self._stop_button.clicked.connect(self.stop_current_operation)
+        self._refresh_history()
+
+    def stop_current_operation(self) -> None:
+        """Request cooperative cancellation, independent of the Run/input state."""
+
+        outputs = asyncio.run(self._process("stop"))
+        self._render_result(outputs)
+        self._status_label.setText(self._runtime.state_machine.state.name)
         self._refresh_history()
 
     def run_current_command(self) -> None:

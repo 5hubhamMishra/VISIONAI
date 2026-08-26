@@ -38,6 +38,32 @@ def test_main_window_renders_non_executable_text(qtbot: Any) -> None:
     assert window._history.count() == 0
 
 
+def test_main_window_stop_button_reports_no_active_operation(qtbot: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    qtbot.mouseClick(window._stop_button, Qt.MouseButton.LeftButton)
+
+    assert window._output.toPlainText() == "No operation is currently running."
+    assert window._status_label.text() == "IDLE"
+    assert window._history.count() == 1
+    assert "[system.control]" in window._history.item(0).text()
+
+
+def test_main_window_stop_button_is_independent_of_run_state(qtbot: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    window._command_input.setEnabled(False)
+    window._run_button.setEnabled(False)
+
+    assert window._stop_button.isEnabled() is True
+    qtbot.mouseClick(window._stop_button, Qt.MouseButton.LeftButton)
+    assert window._output.toPlainText() == "No operation is currently running."
+
+
 def test_main_window_ignores_empty_input(qtbot: Any) -> None:
     runtime = build_runtime()
     window = MainWindow(runtime)
