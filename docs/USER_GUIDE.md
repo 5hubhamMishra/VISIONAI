@@ -42,6 +42,8 @@ Opens a minimal window: a command input, a Run button, a Stop button, a result a
 
 The Stop button requests cooperative cancellation (the same as `visionai system.stop`) and stays clickable even while a command is running, unlike the command input and Run button. Since every command currently completes instantly, clicking it while nothing is running just reports that no operation is active -- it does not yet have anything real to cancel.
 
+If a future command requires confirmation, the window asks before executing it. Choosing No cancels the pending request; choosing Yes sends the bound confirmation back through the orchestrator and dispatcher. No registered command currently requires this prompt yet, but the UI path is in place.
+
 The window also has a system tray icon (a placeholder icon for now, not final branding). Left-clicking it shows or hides the window; right-clicking opens a menu with "Show VisionAI" and "Quit". Closing the window (the title bar's close button) minimizes it to the tray instead of exiting, so VisionAI keeps running in the background -- use the tray menu's "Quit" to actually exit.
 
 Use the previous prototype only as untrusted reference material during migration.

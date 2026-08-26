@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QPushButton,
     QStyle,
     QSystemTrayIcon,
@@ -33,7 +34,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from visionai.core.events import ActionPlan, ActionResult, ErrorEvent, EventBase, TranscriptEvent
+from visionai.core.events import (
+    ActionPlan,
+    ActionResult,
+    ConfirmationRequest,
+    ErrorEvent,
+    EventBase,
+    TranscriptEvent,
+)
 from visionai.runtime import Runtime, build_runtime
 
 if TYPE_CHECKING:
@@ -164,6 +172,9 @@ class MainWindow(QMainWindow):
         self._run_button.setEnabled(False)
         try:
             outputs = asyncio.run(self._process(text))
+            confirmation_result = self._handle_confirmation(outputs)
+            if confirmation_result is not None:
+                outputs = confirmation_result
         finally:
             self._command_input.setEnabled(True)
             self._run_button.setEnabled(True)
@@ -173,6 +184,34 @@ class MainWindow(QMainWindow):
         self._refresh_history()
         self._command_input.clear()
         self._command_input.setFocus()
+
+    def _handle_confirmation(self, outputs: list[EventBase]) -> list[EventBase] | None:
+        confirmation = next((o for o in outputs if isinstance(o, ConfirmationRequest)), None)
+        if confirmation is None:
+            return None
+
+        if self._ask_confirmation(confirmation):
+            return asyncio.run(self._confirm(confirmation))
+
+        self._runtime.orchestrator.cancel_pending_confirmation(confirmation.id)
+        return [ActionPlan(steps=(), summary="Action cancelled.")]
+
+    def _ask_confirmation(self, confirmation: ConfirmationRequest) -> bool:
+        answer = QMessageBox.question(
+            self,
+            "Confirm action",
+            confirmation.action_summary,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    async def _confirm(self, confirmation: ConfirmationRequest) -> list[EventBase]:
+        await self._runtime.orchestrator.confirm(confirmation.id)
+        outputs: list[EventBase] = []
+        while self._runtime.output_bus.size:
+            outputs.append(await self._runtime.output_bus.next_event())
+        return outputs
 
     async def _process(self, text: str) -> list[EventBase]:
         event = TranscriptEvent(text=text, confidence=1.0, language="en", is_final=True)

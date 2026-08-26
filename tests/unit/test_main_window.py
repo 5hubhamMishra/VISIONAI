@@ -1,11 +1,87 @@
+from types import SimpleNamespace
 from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
+from visionai.capabilities import CapabilityManifest, CapabilityRegistry, IdempotencyMode
+from visionai.capabilities.dispatcher import SerializedDispatcher
+from visionai.core.cancellation import OperationController
+from visionai.core.event_bus import EventBus
+from visionai.core.events import (
+    ActionPlan,
+    ActionRequest,
+    ActionResult,
+    Intent,
+    RiskLevel,
+)
+from visionai.core.state import StateMachine
+from visionai.observability import InMemoryAuditSink
+from visionai.orchestration.event_orchestrator import EventOrchestrator
+from visionai.policy import ConfirmationService, FixedWindowRateLimiter, PolicyContext, PolicyEngine
 from visionai.runtime import build_runtime
 from visionai.ui.main_window import MainWindow
+
+
+def _sensitive_manifest() -> CapabilityManifest:
+    return CapabilityManifest(
+        id="test.sensitive",
+        description="A synthetic sensitive capability for confirmation dialog tests.",
+        risk_level=RiskLevel.SENSITIVE,
+        permission_required=True,
+        confirmation_required=True,
+        rate_limit_per_minute=10,
+        timeout_seconds=3,
+        idempotency=IdempotencyMode.IDEMPOTENT,
+        audit_category="test.sensitive",
+        handler_id="test.sensitive",
+    )
+
+
+class _FixedPlanner:
+    def plan(self, text: str) -> tuple[Intent, ActionPlan]:
+        request = ActionRequest(capability_id="test.sensitive", risk_level=RiskLevel.SENSITIVE)
+        return (
+            Intent(name="test.sensitive", confidence=1.0, source_text=text),
+            ActionPlan(steps=(request,), summary="Do the sensitive thing."),
+        )
+
+
+def _build_sensitive_runtime(calls: list[ActionRequest]) -> Any:
+    registry = CapabilityRegistry([_sensitive_manifest()])
+    audit = InMemoryAuditSink()
+
+    def handler(request: ActionRequest) -> ActionResult:
+        calls.append(request)
+        return ActionResult(request_id=request.id, success=True, message="Sensitive action done.")
+
+    dispatcher = SerializedDispatcher(
+        registry=registry,
+        policy=PolicyEngine(registry, FixedWindowRateLimiter()),
+        audit=audit,
+        handlers={"test.sensitive": handler},
+    )
+    output_bus = EventBus(max_size=10)
+    state = StateMachine()
+    orchestrator = EventOrchestrator(
+        input_bus=EventBus(max_size=10),
+        output_bus=output_bus,
+        planner=_FixedPlanner(),
+        dispatcher=dispatcher,
+        operations=OperationController(),
+        confirmation=ConfirmationService(),
+        state_machine=state,
+        policy_context_factory=lambda: PolicyContext(
+            granted_capabilities=frozenset({"test.sensitive"})
+        ),
+    )
+    return SimpleNamespace(
+        audit=audit,
+        output_bus=output_bus,
+        orchestrator=orchestrator,
+        state_machine=state,
+    )
 
 
 def test_main_window_runs_command_through_runtime(qtbot: Any) -> None:
@@ -26,6 +102,43 @@ def test_main_window_runs_command_through_runtime(qtbot: Any) -> None:
     assert window._command_input.text() == ""
     assert window._command_input.isEnabled() is True
     assert window._run_button.isEnabled() is True
+
+
+def test_main_window_confirms_sensitive_action_before_execution(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    calls: list[ActionRequest] = []
+    runtime = _build_sensitive_runtime(calls)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window, "_ask_confirmation", lambda confirmation: True)
+
+    window._command_input.setText("do the sensitive thing")
+    qtbot.mouseClick(window._run_button, Qt.MouseButton.LeftButton)
+
+    assert len(calls) == 1
+    assert window._output.toPlainText() == "Sensitive action done."
+    assert window._status_label.text() == "IDLE"
+    assert window._history.count() == 1
+    assert "[test.sensitive] Sensitive action done." in window._history.item(0).text()
+
+
+def test_main_window_declining_confirmation_prevents_execution(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    calls: list[ActionRequest] = []
+    runtime = _build_sensitive_runtime(calls)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window, "_ask_confirmation", lambda confirmation: False)
+
+    window._command_input.setText("do the sensitive thing")
+    qtbot.mouseClick(window._run_button, Qt.MouseButton.LeftButton)
+
+    assert calls == []
+    assert window._output.toPlainText() == "Action cancelled."
+    assert window._status_label.text() == "IDLE"
+    assert window._history.count() == 0
 
 
 def test_main_window_renders_non_executable_text(qtbot: Any) -> None:
