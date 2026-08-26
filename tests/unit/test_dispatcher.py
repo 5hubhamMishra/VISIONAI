@@ -89,6 +89,40 @@ def test_dispatcher_returns_policy_denial_without_second_handler_call() -> None:
     assert audit.list()[-1].summary == "rate limit exceeded"
 
 
+def test_dispatcher_audits_denials_with_the_manifests_risk_level_not_the_requests() -> None:
+    """A caller-supplied risk_level must not be able to understate severity in the audit log."""
+    sensitive_manifest = CapabilityManifest(
+        id="clipboard.read",
+        description="Read the clipboard.",
+        risk_level=RiskLevel.SENSITIVE,
+        permission_required=True,
+        confirmation_required=True,
+        rate_limit_per_minute=10,
+        timeout_seconds=2,
+        idempotency=IdempotencyMode.IDEMPOTENT,
+        audit_category="clipboard",
+        handler_id="clipboard.read",
+    )
+    registry = CapabilityRegistry([sensitive_manifest])
+    audit = InMemoryAuditSink()
+    dispatcher = SerializedDispatcher(
+        registry=registry,
+        policy=PolicyEngine(registry),
+        audit=audit,
+        handlers={"clipboard.read": lambda request: ActionResult(
+            request_id=request.id, success=True, message="ok"
+        )},
+    )
+    # risk_level here is spoofed as READ_ONLY even though the registered
+    # capability is SENSITIVE; the audit must trust the manifest, not this.
+    request = ActionRequest(capability_id="clipboard.read", risk_level=RiskLevel.READ_ONLY)
+
+    result = dispatcher.dispatch(request, PolicyContext())
+
+    assert result.success is False
+    assert audit.list()[-1].risk_level == RiskLevel.SENSITIVE
+
+
 def test_dispatcher_rejects_missing_handler_after_policy_allows() -> None:
     registry = CapabilityRegistry([_manifest()])
     dispatcher = SerializedDispatcher(

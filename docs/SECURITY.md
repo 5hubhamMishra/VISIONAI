@@ -15,7 +15,7 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 - Policy rejects unknown arguments, unsupported platforms, missing permissions, missing fresh confirmations, and mutating actions while the screen is locked.
 - Confirmation service binds approval to the exact action request, expires it quickly, and consumes it after one use.
 - Fixed-window rate limiting can be attached to policy evaluation.
-- Serialized dispatcher refuses denied requests before handler lookup and records denials/results to audit history.
+- Serialized dispatcher refuses denied requests before handler lookup and records denials/results to audit history, always using the registered capability's manifest risk level rather than the caller-supplied request field, so a request cannot understate its own severity in the audit trail.
 - URL policy rejects non-HTTPS schemes by default, unallowlisted hosts, private/local hosts, embedded credentials, control characters, empty searches, and oversized searches.
 - JSON permission and audit storage reject malformed local state.
 - Lock-state policy input is isolated behind an adapter boundary. The Windows wrapper checks whether the interactive desktop can be opened (`OpenInputDesktop`), which fails while the workstation is locked or a secure desktop such as a UAC prompt is active, and treats any check failure or unreachable desktop as locked.

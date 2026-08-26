@@ -40,6 +40,11 @@ class SerializedDispatcher:
         self._handlers[handler_id] = handler
 
     def dispatch(self, request: ActionRequest, context: PolicyContext) -> ActionResult:
+        # Looked up from the registry, not request.risk_level: the caller
+        # supplies that field, so trusting it for audit severity would let a
+        # malicious or buggy request understate its true risk in the log.
+        manifest = self._registry.get(request.capability_id)
+
         decision = self._policy.evaluate(request, context)
         if not decision.allowed:
             self._audit.record(
@@ -47,12 +52,11 @@ class SerializedDispatcher:
                     category="policy",
                     actor="system",
                     summary=decision.reason,
-                    risk_level=request.risk_level,
+                    risk_level=manifest.risk_level,
                 )
             )
             return ActionResult(request_id=request.id, success=False, message=decision.reason)
 
-        manifest = self._registry.get(request.capability_id)
         handler = self._handlers.get(manifest.handler_id)
         if handler is None:
             raise DispatchError(f"handler is not registered: {manifest.handler_id}")
