@@ -46,6 +46,7 @@ Phase 1 Safety foundation locally verified.
 - Runtime assembly (`visionai.runtime.build_runtime`) wiring the registry, policy engine, rate limiter, audit sink, and dispatcher together
 - Console entry point (`visionai.app.main`) that dispatches a read-only capability through the full policy + dispatcher path
 - Battery and CPU/memory probes backed by `psutil`, injectable for testing, with a graceful "no battery detected" fallback on desktops/VMs without one
+- Fixed a fail-open gap in `UrlPolicy`: an empty `allowed_hosts` previously allowed any public hostname through; it now denies by default, matching its documented behavior
 
 ## Implemented but Not Fully Verified
 
@@ -98,7 +99,7 @@ cd visionai
 - Python: 3.12.10
 - Ruff: passed
 - mypy: passed for 27 source files
-- pytest: 67 passed, 88% coverage
+- pytest: 68 passed, 88% coverage
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

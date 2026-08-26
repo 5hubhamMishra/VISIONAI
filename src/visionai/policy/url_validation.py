@@ -75,7 +75,7 @@ class UrlPolicy:
             raise UrlValidationError("URL host is invalid") from exc
         if _is_private_host(normalized) and not self.allow_private_hosts:
             raise UrlValidationError("URL host is private or local")
-        if self.allowed_hosts and normalized not in self.allowed_hosts:
+        if normalized not in self.allowed_hosts:
             raise UrlValidationError("URL host is not allowlisted")
         return normalized
 

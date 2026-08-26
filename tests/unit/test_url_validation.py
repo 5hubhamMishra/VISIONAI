@@ -32,6 +32,14 @@ def test_url_policy_rejects_unallowlisted_host() -> None:
         policy.normalize_url("https://evil.example")
 
 
+def test_url_policy_denies_public_host_when_allowlist_is_empty() -> None:
+    """An unconfigured allowlist must deny, not silently allow, every public host."""
+    policy = UrlPolicy()
+
+    with pytest.raises(UrlValidationError):
+        policy.normalize_url("https://not-actually-allowlisted.example/")
+
+
 def test_url_policy_rejects_local_and_private_hosts_by_default() -> None:
     policy = UrlPolicy()
 
