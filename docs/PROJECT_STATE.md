@@ -2,7 +2,8 @@
 
 ## Current Phase
 
-Phase 1 Safety foundation locally verified.
+Phase 1 safety foundation locally verified; Phase 4 capability migration is
+underway through narrow, policy-gated slices.
 
 ## Last Verified Commit
 
@@ -54,6 +55,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Fixed a thread-safety gap in `StateMachine` itself: `transition()`/`cancel()`/`on_transition()` had no lock, so concurrent callers (voice thread, gesture thread) could all observe the same starting state and all succeed, corrupting `history`'s from/to invariant -- exactly the uncontrolled shared-state problem this class exists to replace. Reproduced deterministically (50 threads racing via a barrier with `sys.setswitchinterval` tightened; 4/5 trials showed multiple simultaneous "successful" transitions to the same target before the fix, 0/10 after). Listeners are still notified outside the lock so a callback cannot deadlock or block other threads.
 - Fixed the log redaction control (Section 15 "log redaction"): it did not work at all as wired. `RedactionFilter` was attached to the *root* logger via `Logger.addFilter`, but a filter on a logger only gates that logger's own calls -- it is never consulted for records from named child loggers (the only kind `get_logger()` returns) reaching the same handlers by propagating up the hierarchy, so redaction silently never ran for any real application logger. Separately, even when attached correctly, redacting `record.msg` and `record.args` independently before %-substitution could leave a placeholder in `msg` with no matching arg (e.g. a secret passed the idiomatic way, `logger.info("api_key=%s", key)`, has no "key=" prefix in `args` alone to match against), which either failed to redact the secret or crashed message rendering with `TypeError: not all arguments converted during string formatting`. Verified both failure modes live before fixing. Fix: attach the filter to each handler instead of the root logger, and redact the fully substituted message (`record.getMessage()`) rather than msg/args separately, then clear `args` so no further substitution is attempted.
 - Migrated the first `../jarvis` prototype behavior into the trusted runtime, per the user's decision and `docs/MIGRATION_QUARANTINE.md`'s required steps: `app.open`, a Risk 1 (Reversible) capability that opens one allowlisted desktop application (`notepad`, `calculator`, `paint`) by its exact executable name with `shell=False`. Deliberately excludes anything from the old prototype's broader app list that is itself a general-purpose command surface (`cmd`, `powershell`, Task Manager), since those would reintroduce the arbitrary-execution risk this capability exists to avoid. Verified live end to end through the actual CLI and dispatcher: the denial path (`cmd` rejected) and the real launch path (Notepad actually opened as a live process, confirmed via `Get-Process`, then closed).
+- Added the two remaining Section 13 initial safe capabilities that don't require an orchestrator: `system.capabilities` (lists every registered capability by ID and description) and `system.help` (summarizes current functionality and the registered count). Both are pure registry introspection, Risk 0 (Read-only). "Stop current operation" is still deferred -- there is no orchestrator or in-flight operation yet for it to stop.
 
 ## Implemented but Not Fully Verified
 
@@ -67,7 +69,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 1. Decide whether to disable or quarantine unsafe direct execution paths in the old `../jarvis` prototype itself (distinct from the new package, which never imports from it).
 2. Decide which prototype feature to migrate next (media control, browser/search, or something else).
-3. Add remaining Section 13 initial safe capabilities (help, capability list, stop current operation) once a real orchestrator/state machine wiring exists to stop.
+3. Add "stop current operation" once a real orchestrator/state machine wiring exists for it to interrupt.
 
 ## Known Defects
 
@@ -90,6 +92,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Windows lock-state adapter is conservative: unknown state blocks mutating actions.
 - Previous prototype code must not be treated as policy-compliant until migrated and tested.
 - Further old-prototype migration must pass `docs/MIGRATION_QUARANTINE.md` gates.
+- `system.help` and `system.capabilities` are read-only registry introspection only.
 - `app.open` launches by exact executable name with `shell=False`, never a shell string; its allowlist (`notepad`, `calculator`, `paint`) deliberately excludes any general-purpose command surface (shell, terminal, task manager).
 
 ## Required Decisions
@@ -108,8 +111,8 @@ cd visionai
 
 - Python: 3.12.10
 - Ruff: passed
-- mypy: passed for 28 source files
-- pytest: 91 passed, 91% coverage
+- mypy: passed for 29 source files
+- pytest: 98 passed, 92% coverage
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

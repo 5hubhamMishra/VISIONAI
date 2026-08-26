@@ -12,6 +12,7 @@ from visionai.capabilities.applications import (
     default_launcher,
     make_app_open_handler,
 )
+from visionai.capabilities.meta import meta_handlers, meta_manifests
 from visionai.capabilities.system_info import system_info_handlers, system_info_manifests
 from visionai.observability import InMemoryAuditSink
 from visionai.policy import FixedWindowRateLimiter, PolicyEngine
@@ -34,13 +35,14 @@ def build_runtime(*, launcher: Launcher = default_launcher) -> Runtime:
     real process.
     """
 
-    manifests = (*system_info_manifests(), app_open_manifest())
+    manifests = (*system_info_manifests(), app_open_manifest(), *meta_manifests())
     registry = CapabilityRegistry(manifests)
     audit = InMemoryAuditSink()
     policy = PolicyEngine(registry, FixedWindowRateLimiter())
     handlers = {
         **system_info_handlers(lambda: datetime.now().astimezone()),
         "app.open": make_app_open_handler(launcher),
+        **meta_handlers(registry),
     }
     dispatcher = SerializedDispatcher(
         registry=registry,

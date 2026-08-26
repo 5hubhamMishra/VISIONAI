@@ -13,6 +13,7 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 - Raw media retention defaults to disabled.
 - Log redaction covers common key-value secret patterns, including secrets passed as lazy %-style logging arguments rather than baked into the message template; the filter is attached to every configured handler so it applies to all named application loggers, not only the root logger.
 - Capability registry rejects prohibited capabilities and duplicate IDs.
+- `system.help` and `system.capabilities` are read-only registry introspection only; they do not execute shell commands, inspect files, or call external services.
 - Policy rejects unknown arguments, unsupported platforms, missing permissions, missing fresh confirmations, and mutating actions while the screen is locked.
 - Confirmation service binds approval to the exact action request, expires it quickly, and consumes it after one use.
 - Fixed-window rate limiting can be attached to policy evaluation and is safe under concurrent access from multiple recognition threads.
@@ -26,4 +27,4 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 
 - The previous `../jarvis` prototype contains direct system execution, browser opening, media control, and pointer automation. It should not be run as a trusted VisionAI build. Concretely: `brain/intent_parser.py`'s `open_app` intent falls back to the raw spoken word when it is not in the `APP_COMMANDS` allowlist (`config["apps"].get(app, app)` -- the fallback is the unvalidated input, not a rejection), and `actions/executor.py` repeats the same fallback before `subprocess.Popen(cmd, shell=True)`. A voice command such as "open calc & del /f /q ..." would have `&` interpreted by `cmd.exe` as a command separator, chaining an attacker-controlled second command -- exactly the "replayed/malicious audio" threat named above, and the reason `app.open`'s new implementation rejects an unrecognized name outright instead of falling back to it.
 - The Windows lock-state wrapper has been verified against a live *unlocked* session (correctly reports unlocked, no crash) and against mocked locked/failure branches in unit tests. Its behavior against a genuinely *locked* workstation has not been manually verified, since that requires a human to lock the screen and observe the result -- do not treat the locked-state path as field-tested until that manual check has been done.
-- `app.open` is the only capability with a real side effect wired to the dispatcher; everything else is still read-only.
+- `app.open` is the only capability with a real side effect wired to the dispatcher; everything else currently wired is read-only.

@@ -9,6 +9,8 @@ visionai system.time
 visionai system.date --format iso
 visionai system.battery
 visionai system.health
+visionai system.capabilities
+visionai system.help
 visionai app.open --app notepad
 ```
 

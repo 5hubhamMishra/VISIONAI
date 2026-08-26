@@ -12,6 +12,14 @@ from visionai.capabilities.manifest import (
     ParameterSpec,
     ParameterType,
 )
+from visionai.capabilities.meta import (
+    make_system_capabilities_handler,
+    make_system_help_handler,
+    meta_handlers,
+    meta_manifests,
+    system_capabilities_manifest,
+    system_help_manifest,
+)
 from visionai.capabilities.registry import CapabilityRegistry
 from visionai.capabilities.system_info import (
     make_system_battery_handler,
@@ -38,12 +46,18 @@ __all__ = [
     "app_open_manifest",
     "make_app_open_handler",
     "make_system_battery_handler",
+    "make_system_capabilities_handler",
     "make_system_date_handler",
     "make_system_health_handler",
+    "make_system_help_handler",
     "make_system_time_handler",
+    "meta_handlers",
+    "meta_manifests",
     "system_battery_manifest",
+    "system_capabilities_manifest",
     "system_date_manifest",
     "system_health_manifest",
+    "system_help_manifest",
     "system_info_handlers",
     "system_info_manifests",
     "system_time_manifest",

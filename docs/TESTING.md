@@ -25,15 +25,16 @@ Phase 0 tests cover core contracts and invariants:
 - Logging redaction tests exercise the actual filter against realistic `LogRecord`s, not only the pure `redact_message()` helper: lazy `%s`-style arguments, dict-style arguments, and messages with no secret at all, plus a test that `configure_logging()` attaches the filter to installed handlers (not just the root logger).
 - System info capability tests cover `system.time`, `system.date`, `system.battery` (including the "no battery detected" fallback), and `system.health`, both as isolated handlers with injected fakes and end to end through `build_runtime()`'s real dispatcher and policy path.
 - `app.open` tests cover manifest risk classification, an injected fake launcher for the success/case-insensitivity/OS-error paths (so no real process spawns), policy rejection of unknown/missing arguments and rate-limit exhaustion, and two things verified with the *real* `default_launcher`: the denial path for an unallowlisted app (safe, since nothing launches), and a genuine end-to-end run through the CLI that actually opened Notepad as a live process (confirmed via `Get-Process`) before it was closed.
+- `system.capabilities`/`system.help` tests cover manifest risk classification, listing sorted by ID, the empty-registry case, and end to end through `build_runtime()` -- including that the listing correctly includes itself.
 
 ## Verified Results
 
 Verified locally on Windows with Python 3.12.10 using `scripts\verify.ps1`:
 
 - Ruff: passed
-- mypy: passed for 28 source files
-- pytest: 91 passed
-- Coverage: 91%
+- mypy: passed for 29 source files
+- pytest: 98 passed
+- Coverage: 92%
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

@@ -7,9 +7,12 @@ capabilities, and returns clear visual and spoken feedback.
 
 ## Status
 
-This project is in **Phase 0 (Foundation)**. No voice, vision, or capability
-execution is implemented yet. See [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md)
-for the current phase, verified functionality, and next steps.
+This project has a locally verified safety foundation plus a small trusted
+runtime. Voice and gesture input are not connected yet, but the console entry
+point can run policy-gated capabilities for system information, capability
+help/listing, and opening one allowlisted desktop app. See
+[docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) for the current phase, verified
+functionality, and next steps.
 
 ## Priorities
 
