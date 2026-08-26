@@ -16,7 +16,7 @@ def main() -> int:
     parser.add_argument(
         "capability",
         nargs="?",
-        choices=("system.time", "system.date"),
+        choices=("system.time", "system.date", "system.battery", "system.health"),
         default="system.time",
     )
     parser.add_argument("--format", default=None)

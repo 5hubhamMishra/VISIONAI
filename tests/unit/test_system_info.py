@@ -2,7 +2,11 @@ from datetime import datetime
 
 from visionai.capabilities import CapabilityRegistry
 from visionai.capabilities.system_info import (
+    BatteryStatus,
+    HealthSnapshot,
+    make_system_battery_handler,
     make_system_date_handler,
+    make_system_health_handler,
     make_system_time_handler,
     system_info_manifests,
 )
@@ -20,6 +24,8 @@ def test_system_info_manifests_register_as_read_only() -> None:
 
     assert registry.get("system.time").risk_level == RiskLevel.READ_ONLY
     assert registry.get("system.date").risk_level == RiskLevel.READ_ONLY
+    assert registry.get("system.battery").risk_level == RiskLevel.READ_ONLY
+    assert registry.get("system.health").risk_level == RiskLevel.READ_ONLY
 
 
 def test_system_time_handler_formats_supported_outputs() -> None:
@@ -70,6 +76,47 @@ def test_system_info_handlers_reject_unsupported_formats_without_side_effect() -
     assert date_result.message == "Unsupported date format."
 
 
+def test_system_battery_handler_reports_no_battery() -> None:
+    handler = make_system_battery_handler(lambda: BatteryStatus(percent=None, plugged_in=None))
+
+    result = handler(ActionRequest(capability_id="system.battery", risk_level=RiskLevel.READ_ONLY))
+
+    assert result.success is True
+    assert result.message == "No battery detected."
+
+
+def test_system_battery_handler_reports_charge_and_power_source() -> None:
+    handler = make_system_battery_handler(
+        lambda: BatteryStatus(percent=87.4, plugged_in=True)
+    )
+
+    result = handler(ActionRequest(capability_id="system.battery", risk_level=RiskLevel.READ_ONLY))
+
+    assert result.success is True
+    assert result.message == "Battery is at 87% and plugged in."
+
+
+def test_system_battery_handler_reports_on_battery_power() -> None:
+    handler = make_system_battery_handler(
+        lambda: BatteryStatus(percent=42.0, plugged_in=False)
+    )
+
+    result = handler(ActionRequest(capability_id="system.battery", risk_level=RiskLevel.READ_ONLY))
+
+    assert result.message == "Battery is at 42% and on battery power."
+
+
+def test_system_health_handler_reports_cpu_and_memory() -> None:
+    handler = make_system_health_handler(
+        lambda: HealthSnapshot(cpu_percent=12.3, memory_percent=55.6)
+    )
+
+    result = handler(ActionRequest(capability_id="system.health", risk_level=RiskLevel.READ_ONLY))
+
+    assert result.success is True
+    assert result.message == "CPU is at 12% and memory is at 56%."
+
+
 def test_runtime_dispatches_system_time_through_policy_and_audit() -> None:
     runtime = build_runtime()
     request = ActionRequest(capability_id="system.time", risk_level=RiskLevel.READ_ONLY)
@@ -79,6 +126,27 @@ def test_runtime_dispatches_system_time_through_policy_and_audit() -> None:
     assert result.success is True
     assert result.message.startswith("It is ")
     assert runtime.audit.list()[0].category == "system.info"
+
+
+def test_runtime_dispatches_system_health_with_real_probe() -> None:
+    runtime = build_runtime()
+    request = ActionRequest(capability_id="system.health", risk_level=RiskLevel.READ_ONLY)
+
+    result = runtime.dispatcher.dispatch(request, PolicyContext())
+
+    assert result.success is True
+    assert result.message.startswith("CPU is at ")
+    assert "memory is at" in result.message
+
+
+def test_runtime_dispatches_system_battery_with_real_probe() -> None:
+    runtime = build_runtime()
+    request = ActionRequest(capability_id="system.battery", risk_level=RiskLevel.READ_ONLY)
+
+    result = runtime.dispatcher.dispatch(request, PolicyContext())
+
+    assert result.success is True
+    assert result.message in {"No battery detected."} or result.message.startswith("Battery is at ")
 
 
 def test_policy_rejects_unknown_system_info_arguments_before_handler() -> None:

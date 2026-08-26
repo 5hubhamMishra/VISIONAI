@@ -42,9 +42,10 @@ Phase 1 Safety foundation locally verified.
 - CI workflow and local verification scripts for formatting, typing, tests, security scan, and dependency audit
 - Migration quarantine documentation for the previous prototype
 - Environment repair documentation for Python 3.12 and virtual environment recreation
-- Phase 4 read-only system info capabilities (`system.time`, `system.date`) with manifests and handlers
+- Phase 4 read-only system info capabilities (`system.time`, `system.date`, `system.battery`, `system.health`) with manifests and handlers
 - Runtime assembly (`visionai.runtime.build_runtime`) wiring the registry, policy engine, rate limiter, audit sink, and dispatcher together
 - Console entry point (`visionai.app.main`) that dispatches a read-only capability through the full policy + dispatcher path
+- Battery and CPU/memory probes backed by `psutil`, injectable for testing, with a graceful "no battery detected" fallback on desktops/VMs without one
 
 ## Implemented but Not Fully Verified
 
@@ -56,9 +57,9 @@ Phase 1 Safety foundation locally verified.
 
 ## Approved Next Tasks
 
-1. Add remaining Phase 4 read-only capabilities (battery, basic system health) per the master prompt's initial safe capability list.
-2. Disable or quarantine unsafe direct execution paths in the old prototype before any migration into `visionai`.
-3. Decide which safe prototype feature to migrate first behind the Phase 1 gates.
+1. Disable or quarantine unsafe direct execution paths in the old prototype before any migration into `visionai`.
+2. Decide which safe prototype feature to migrate first behind the Phase 1 gates.
+3. Add remaining Section 13 initial safe capabilities (help, capability list, stop current operation) once a real orchestrator/state machine wiring exists to stop.
 
 ## Known Defects
 
@@ -97,7 +98,7 @@ cd visionai
 - Python: 3.12.10
 - Ruff: passed
 - mypy: passed for 27 source files
-- pytest: 61 passed, 88% coverage
+- pytest: 67 passed, 88% coverage
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 
