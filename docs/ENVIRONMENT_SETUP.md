@@ -35,3 +35,28 @@ C:\Users\shubh\AppData\Local\Programs\Python\Python312\python.exe
 ```
 
 The current verified environment is `.venv312`. The older `.venv` directory may remain partially locked and should not be used.
+
+## Known Issue: OneDrive Sync Can Corrupt the Virtual Environment
+
+This workspace lives inside a OneDrive-synced folder
+(`...\OneDrive\Desktop\DESKTOP\projects\demo\visionai`). OneDrive's
+background sync can lock, move, or partially write files while `pip`
+is rapidly creating or rewriting files during `python -m venv` or
+`pip install`, corrupting the environment mid-write. This is a
+plausible explanation for the blocker above, and was confirmed twice
+directly on this machine with a different symptom:
+
+- `pip` itself became unusable (`ModuleNotFoundError: No module named
+  pip._vendor.rich`, then later `No module named pip`) immediately
+  after an install that had printed a transient `OSError` mid-run,
+  with no unrelated cause found.
+
+If a virtual environment inside this folder becomes unusable, don't
+keep retrying in place -- delete the broken `.venv*` folder and
+recreate it, and while doing so either:
+
+- Pause OneDrive sync (right-click the OneDrive tray icon > Pause
+  syncing) until `pip install` finishes, or
+- Create the virtual environment somewhere outside the OneDrive tree
+  (for example `%TEMP%\visionai-venv`) and point `scripts\verify.ps1`
+  or your shell at that path instead of a local `.venv*` folder.
