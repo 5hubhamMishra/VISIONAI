@@ -32,6 +32,16 @@ def test_app_runs_system_capabilities(monkeypatch, capsys) -> None:
     assert "app.open:" in output
 
 
+def test_app_runs_system_stop(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("sys.argv", ["visionai", "system.stop"])
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "No operation is currently running." in output
+
+
 def test_app_runs_browser_search(monkeypatch) -> None:
     opened: list[str] = []
     monkeypatch.setattr("sys.argv", ["visionai", "browser.search", "--query", "hello world"])

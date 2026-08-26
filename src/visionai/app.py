@@ -23,6 +23,7 @@ def main() -> int:
             "system.health",
             "system.capabilities",
             "system.help",
+            "system.stop",
             "app.open",
             "browser.open",
             "browser.search",

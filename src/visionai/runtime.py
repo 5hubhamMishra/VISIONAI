@@ -26,6 +26,7 @@ from visionai.capabilities.media import (
 )
 from visionai.capabilities.meta import meta_handlers, meta_manifests
 from visionai.capabilities.system_info import system_info_handlers, system_info_manifests
+from visionai.core.cancellation import OperationController
 from visionai.observability import InMemoryAuditSink
 from visionai.policy import FixedWindowRateLimiter, PolicyEngine
 
@@ -37,6 +38,7 @@ class Runtime:
     registry: CapabilityRegistry
     audit: InMemoryAuditSink
     dispatcher: SerializedDispatcher
+    operations: OperationController
 
 
 def build_runtime(
@@ -44,6 +46,7 @@ def build_runtime(
     launcher: Launcher = default_launcher,
     browser_opener: BrowserOpener = default_browser_opener,
     key_presser: KeyPresser = default_key_presser,
+    operation_controller: OperationController | None = None,
 ) -> Runtime:
     """Build the local runtime with the currently trusted built-in capabilities.
 
@@ -61,6 +64,7 @@ def build_runtime(
         *meta_manifests(),
     )
     registry = CapabilityRegistry(manifests)
+    operations = operation_controller or OperationController()
     audit = InMemoryAuditSink()
     policy = PolicyEngine(registry, FixedWindowRateLimiter())
     handlers = {
@@ -68,7 +72,7 @@ def build_runtime(
         "app.open": make_app_open_handler(launcher),
         **browser_handlers(browser_opener),
         **media_handlers(key_presser),
-        **meta_handlers(registry),
+        **meta_handlers(registry, operations),
     }
     dispatcher = SerializedDispatcher(
         registry=registry,
@@ -76,4 +80,4 @@ def build_runtime(
         audit=audit,
         handlers=handlers,
     )
-    return Runtime(registry=registry, audit=audit, dispatcher=dispatcher)
+    return Runtime(registry=registry, audit=audit, dispatcher=dispatcher, operations=operations)

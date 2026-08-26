@@ -20,3 +20,4 @@
 - Locally quarantined that old `../jarvis` app/web/system execution path in this workspace. The source edits are outside the `visionai/` Git repository, so the trusted repo records the hardening but still treats the old prototype as untrusted reference material.
 - Migrated safe browser/search behavior into the trusted runtime as `browser.open` and `browser.search`, both reversible and allowlist-backed. Site names map to fixed HTTPS URLs, search queries are encoded through `UrlPolicy`, and tests inject the browser opener so verification never launches a real browser.
 - Migrated safe media behavior into the trusted runtime as `media.control`, a reversible allowlisted media-key capability with injected key pressing for tests.
+- Added `system.stop`, backed by `OperationController`, to request cooperative cancellation of the current operation without killing threads or processes directly.

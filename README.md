@@ -10,8 +10,9 @@ capabilities, and returns clear visual and spoken feedback.
 This project has a locally verified safety foundation plus a small trusted
 runtime. Voice and gesture input are not connected yet, but the console entry
 point can run policy-gated capabilities for system information, capability
-help/listing, opening one allowlisted desktop app, and opening allowlisted
-browser/search destinations, plus allowlisted media controls. See
+help/listing, cooperative stop requests, opening one allowlisted desktop app,
+and opening allowlisted browser/search destinations, plus allowlisted media
+controls. See
 [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) for the current phase, verified
 functionality, and next steps.
 

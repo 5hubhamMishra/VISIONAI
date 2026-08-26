@@ -14,6 +14,7 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 - Log redaction covers common key-value secret patterns, including secrets passed as lazy %-style logging arguments rather than baked into the message template; the filter is attached to every configured handler so it applies to all named application loggers, not only the root logger.
 - Capability registry rejects prohibited capabilities and duplicate IDs.
 - `system.help` and `system.capabilities` are read-only registry introspection only; they do not execute shell commands, inspect files, or call external services.
+- `system.stop` only requests cooperative cancellation through `OperationController`; it never kills processes or threads directly and is safe to call when no operation is active.
 - Policy rejects unknown arguments, unsupported platforms, missing permissions, missing fresh confirmations, and mutating actions while the screen is locked.
 - Confirmation service binds approval to the exact action request, expires it quickly, and consumes it after one use.
 - Fixed-window rate limiting can be attached to policy evaluation and is safe under concurrent access from multiple recognition threads.

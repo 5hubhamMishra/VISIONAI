@@ -1,9 +1,7 @@
 """Meta capabilities: help and capability listing.
 
-Both are read-only introspection over the capability registry itself,
-matching Section 13's "help" and "capability list" initial safe
-capabilities. Unlike "stop current operation" (also in that list),
-neither needs an orchestrator or state machine wired up to be useful.
+These cover Section 13's initial safe capabilities: help, capability
+listing, and stopping the current operation.
 """
 
 from __future__ import annotations
@@ -11,6 +9,7 @@ from __future__ import annotations
 from visionai.capabilities.dispatcher import CapabilityHandler
 from visionai.capabilities.manifest import CapabilityManifest, IdempotencyMode
 from visionai.capabilities.registry import CapabilityRegistry
+from visionai.core.cancellation import OperationController
 from visionai.core.events import ActionRequest, ActionResult, RiskLevel
 
 
@@ -44,10 +43,38 @@ def system_help_manifest() -> CapabilityManifest:
     )
 
 
+def system_stop_manifest() -> CapabilityManifest:
+    """Return the manifest for stopping the current operation."""
+
+    return CapabilityManifest(
+        id="system.stop",
+        description="Request cancellation of the current operation.",
+        risk_level=RiskLevel.READ_ONLY,
+        rate_limit_per_minute=60,
+        timeout_seconds=1,
+        idempotency=IdempotencyMode.IDEMPOTENT,
+        audit_category="system.control",
+        handler_id="system.stop",
+    )
+
+
 def meta_manifests() -> tuple[CapabilityManifest, ...]:
     """Return all built-in meta-capability manifests."""
 
-    return (system_capabilities_manifest(), system_help_manifest())
+    return (system_capabilities_manifest(), system_help_manifest(), system_stop_manifest())
+
+
+def make_system_stop_handler(controller: OperationController) -> CapabilityHandler:
+    """Create a handler that requests cooperative cancellation."""
+
+    def handle(request: ActionRequest) -> ActionResult:
+        if controller.cancel_active_operation():
+            message = "Stop requested."
+        else:
+            message = "No operation is currently running."
+        return ActionResult(request_id=request.id, success=True, message=message)
+
+    return handle
 
 
 def make_system_capabilities_handler(registry: CapabilityRegistry) -> CapabilityHandler:
@@ -74,18 +101,22 @@ def make_system_help_handler(registry: CapabilityRegistry) -> CapabilityHandler:
         message = (
             f"VisionAI is in early development with {count} capabilities registered. "
             "Run system.capabilities to list them by name. Voice and gesture input, "
-            "and any capability with side effects beyond opening an allowlisted "
-            "application, are not available yet."
+            "and any capability beyond the listed policy-gated surface, are not "
+            "available yet."
         )
         return ActionResult(request_id=request.id, success=True, message=message)
 
     return handle
 
 
-def meta_handlers(registry: CapabilityRegistry) -> dict[str, CapabilityHandler]:
+def meta_handlers(
+    registry: CapabilityRegistry,
+    operation_controller: OperationController,
+) -> dict[str, CapabilityHandler]:
     """Return all built-in meta-capability handlers, bound to `registry`."""
 
     return {
         "system.capabilities": make_system_capabilities_handler(registry),
         "system.help": make_system_help_handler(registry),
+        "system.stop": make_system_stop_handler(operation_controller),
     }

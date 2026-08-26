@@ -58,6 +58,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Migrated browser/search behavior into the trusted runtime as reversible capabilities: `browser.open` opens one fixed allowlisted site, and `browser.search` opens an encoded Google search URL. Both validate through `UrlPolicy` before the opener is called, both are injectable for tests, and neither accepts arbitrary URLs.
 - Migrated media behavior into the trusted runtime as `media.control`, a Risk 1 (Reversible) capability that accepts only fixed media actions (`play_pause`, `next`, `previous`, `volume_up`, `volume_down`, `mute`) and maps them to allowlisted media keys through an injectable key presser. Its real `default_key_presser` calls `pyautogui`, which was not declared as a project dependency -- every test injects a fake key presser, so `media.control` would have failed at runtime with "pyautogui is not installed" on a standard `pip install -r requirements/dev.txt`, undetected by the test suite. Added `pyautogui` to `requirements/base.txt`/`pyproject.toml`, then verified the real path live: toggled the mute key on and immediately off through both the raw function and the actual CLI (`visionai media.control --media-action mute` twice in a row), restoring the original state -- deliberately not testing `volume_up`/`volume_down`/`play_pause` for real, since those aren't cleanly self-reversing the way a mute toggle is.
 - Added the two remaining Section 13 initial safe capabilities that don't require an orchestrator: `system.capabilities` (lists every registered capability by ID and description) and `system.help` (summarizes current functionality and the registered count). Both are pure registry introspection, Risk 0 (Read-only). "Stop current operation" is still deferred -- there is no orchestrator or in-flight operation yet for it to stop.
+- Added the remaining Section 13 stop command as `system.stop`, backed by `OperationController`. It requests cooperative cancellation of the currently tracked operation, reports when nothing is active, and does not kill threads or processes directly.
 - Locally quarantined the old `../jarvis` prototype execution path in this workspace: app parsing now rejects injection-shaped text instead of partially matching it, unknown app/site names no longer fall back to raw spoken text, app launch uses `subprocess.Popen([cmd], shell=False)`, command-surface apps are blocked, web opens are host/scheme allowlisted, search query encoding uses `quote_plus`, mutating system commands are hard-blocked, and touched debug prints are ASCII-safe on the Windows console. These source edits are outside the `visionai/` Git repository and therefore are not pushed to `5hubhamMishra/VISIONAI`; this document records the local hardening step.
 
 ## Implemented but Not Fully Verified
@@ -72,7 +73,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 1. Decide whether to disable or quarantine unsafe direct execution paths in the old `../jarvis` prototype itself (distinct from the new package, which never imports from it).
 2. Decide which prototype feature to migrate next (voice input, gesture input, LLM response planning, or something else).
-3. Add "stop current operation" once a real orchestrator/state machine wiring exists for it to interrupt.
+3. Wire voice/gesture/orchestrator work to `OperationController` so `system.stop` can interrupt real long-running operations.
 
 ## Known Defects
 
@@ -97,6 +98,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Previous prototype code must not be treated as policy-compliant until migrated and tested.
 - Further old-prototype migration must pass `docs/MIGRATION_QUARANTINE.md` gates.
 - `system.help` and `system.capabilities` are read-only registry introspection only.
+- `system.stop` requests cooperative cancellation only; it does not terminate processes or threads directly.
 - `app.open` launches by exact executable name with `shell=False`, never a shell string; its allowlist (`notepad`, `calculator`, `paint`) deliberately excludes any general-purpose command surface (shell, terminal, task manager).
 - `browser.open` and `browser.search` validate through `UrlPolicy` and allowlisted HTTPS hosts before the browser opener is called.
 - `media.control` only maps allowlisted action names to fixed media keys and remains behind manifest, policy, dispatcher, rate-limit, and audit controls.
@@ -119,7 +121,7 @@ cd visionai
 - Python: 3.12.10
 - Ruff: passed
 - mypy: passed for 31 source files
-- pytest: 118 passed, 92% coverage
+- pytest: 126 passed, 92% coverage
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

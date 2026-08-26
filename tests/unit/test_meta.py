@@ -2,11 +2,13 @@ from visionai.capabilities import CapabilityRegistry
 from visionai.capabilities.meta import (
     make_system_capabilities_handler,
     make_system_help_handler,
+    make_system_stop_handler,
     meta_manifests,
     system_capabilities_manifest,
     system_help_manifest,
 )
 from visionai.capabilities.system_info import system_info_manifests
+from visionai.core.cancellation import OperationController
 from visionai.core.events import ActionRequest, RiskLevel
 from visionai.policy import PolicyContext
 from visionai.runtime import build_runtime
@@ -17,6 +19,7 @@ def test_meta_manifests_register_as_read_only() -> None:
 
     assert registry.get("system.capabilities").risk_level == RiskLevel.READ_ONLY
     assert registry.get("system.help").risk_level == RiskLevel.READ_ONLY
+    assert registry.get("system.stop").risk_level == RiskLevel.READ_ONLY
 
 
 def test_capabilities_handler_lists_registered_manifests_sorted_by_id() -> None:
@@ -76,3 +79,37 @@ def test_runtime_dispatches_system_help() -> None:
 
     assert result.success is True
     assert "VisionAI" in result.message
+
+
+def test_stop_handler_reports_when_no_operation_is_running() -> None:
+    controller = OperationController()
+    handler = make_system_stop_handler(controller)
+
+    result = handler(ActionRequest(capability_id="system.stop", risk_level=RiskLevel.READ_ONLY))
+
+    assert result.success is True
+    assert result.message == "No operation is currently running."
+
+
+def test_stop_handler_cancels_active_operation() -> None:
+    controller = OperationController()
+    token = controller.begin_operation()
+    handler = make_system_stop_handler(controller)
+
+    result = handler(ActionRequest(capability_id="system.stop", risk_level=RiskLevel.READ_ONLY))
+
+    assert result.success is True
+    assert result.message == "Stop requested."
+    assert token.is_cancelled is True
+
+
+def test_runtime_dispatches_system_stop() -> None:
+    runtime = build_runtime()
+    token = runtime.operations.begin_operation()
+    request = ActionRequest(capability_id="system.stop", risk_level=RiskLevel.READ_ONLY)
+
+    result = runtime.dispatcher.dispatch(request, PolicyContext(locked_screen=True))
+
+    assert result.success is True
+    assert token.is_cancelled is True
+    assert runtime.audit.list()[-1].category == "system.control"

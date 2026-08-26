@@ -11,6 +11,7 @@ visionai system.battery
 visionai system.health
 visionai system.capabilities
 visionai system.help
+visionai system.stop
 visionai app.open --app notepad
 visionai browser.open --site github
 visionai browser.search --query "VisionAI local assistant"
@@ -22,5 +23,7 @@ visionai media.control --media-action play_pause
 `browser.open` accepts `youtube`, `instagram`, `twitter`, `facebook`, `github`, `reddit`, or `netflix`. `browser.search` opens an encoded Google search URL; empty queries, control characters, and non-allowlisted hosts are rejected before anything opens.
 
 `media.control` accepts `play_pause`, `next`, `previous`, `volume_up`, `volume_down`, or `mute`.
+
+`system.stop` requests cooperative cancellation of the current operation. Until voice, vision, and long-running orchestration are wired in, it usually reports that no operation is running.
 
 Use the previous prototype only as untrusted reference material during migration.

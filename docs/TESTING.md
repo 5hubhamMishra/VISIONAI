@@ -11,6 +11,7 @@ Phase 0 tests cover core contracts and invariants:
 - State transitions are explicit and reject unapproved jumps.
 - Event bus publishes in order and rejects publish after close.
 - Logs redact common secret patterns.
+- Cancellation tests cover token signalling, raising, active-operation tracking, active cancellation, no-active-operation behavior, and ignoring stale operation tokens.
 - Capability manifests reject duplicate and prohibited registrations.
 - Policy rejects unknown arguments, wrong argument types, missing permissions, missing confirmations, unrelated confirmations, and locked-screen mutations.
 - Confirmation requests are exact-match, expiring, and single-use.
@@ -25,7 +26,7 @@ Phase 0 tests cover core contracts and invariants:
 - Logging redaction tests exercise the actual filter against realistic `LogRecord`s, not only the pure `redact_message()` helper: lazy `%s`-style arguments, dict-style arguments, and messages with no secret at all, plus a test that `configure_logging()` attaches the filter to installed handlers (not just the root logger).
 - System info capability tests cover `system.time`, `system.date`, `system.battery` (including the "no battery detected" fallback), and `system.health`, both as isolated handlers with injected fakes and end to end through `build_runtime()`'s real dispatcher and policy path.
 - `app.open` tests cover manifest risk classification, an injected fake launcher for the success/case-insensitivity/OS-error paths (so no real process spawns), policy rejection of unknown/missing arguments and rate-limit exhaustion, and two things verified with the *real* `default_launcher`: the denial path for an unallowlisted app (safe, since nothing launches), and a genuine end-to-end run through the CLI that actually opened Notepad as a live process (confirmed via `Get-Process`) before it was closed.
-- `system.capabilities`/`system.help` tests cover manifest risk classification, listing sorted by ID, the empty-registry case, and end to end through `build_runtime()` -- including that the listing correctly includes itself.
+- `system.capabilities`/`system.help`/`system.stop` tests cover manifest risk classification, listing sorted by ID, the empty-registry case, cooperative cancellation behavior, locked-screen availability, and end to end through `build_runtime()` -- including that the listing correctly includes itself.
 - Browser capability tests cover `browser.open` and `browser.search`: allowlisted site normalization, unknown-site rejection, URL policy failure before opener execution, encoded search queries, empty/control-character query rejection, runtime dispatch/audit, CLI invocation, and policy rejection of missing/unknown arguments.
 - Media capability tests cover `media.control`: manifest risk classification, allowlisted key mapping, unknown-action rejection before keypress, key-presser failure handling, runtime dispatch/audit, CLI invocation, and policy rejection of missing/unknown arguments -- all via an injected fake key presser, since automated verification must not send live keyboard input. The real `pyautogui`-based path was found missing from the project's declared dependencies (added to `requirements/base.txt`), then verified once, live: the mute key toggled on and immediately off, through both the raw function and the actual CLI, confirming no crash and a correctly self-reversing result.
 
@@ -35,7 +36,7 @@ Verified locally on Windows with Python 3.12.10 using `scripts\verify.ps1`:
 
 - Ruff: passed
 - mypy: passed for 31 source files
-- pytest: 118 passed
+- pytest: 126 passed
 - Coverage: 92%
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
