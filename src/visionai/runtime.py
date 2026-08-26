@@ -12,6 +12,12 @@ from visionai.capabilities.applications import (
     default_launcher,
     make_app_open_handler,
 )
+from visionai.capabilities.browser import (
+    BrowserOpener,
+    browser_handlers,
+    browser_manifests,
+    default_browser_opener,
+)
 from visionai.capabilities.meta import meta_handlers, meta_manifests
 from visionai.capabilities.system_info import system_info_handlers, system_info_manifests
 from visionai.observability import InMemoryAuditSink
@@ -27,21 +33,31 @@ class Runtime:
     dispatcher: SerializedDispatcher
 
 
-def build_runtime(*, launcher: Launcher = default_launcher) -> Runtime:
+def build_runtime(
+    *,
+    launcher: Launcher = default_launcher,
+    browser_opener: BrowserOpener = default_browser_opener,
+) -> Runtime:
     """Build the local runtime with the currently trusted built-in capabilities.
 
-    `launcher` is injectable so tests can verify app.open dispatch end to
-    end through the real policy and dispatcher path without spawning a
-    real process.
+    `launcher` and `browser_opener` are injectable so tests can verify
+    dispatch end to end through the real policy and dispatcher path
+    without spawning a real process or browser.
     """
 
-    manifests = (*system_info_manifests(), app_open_manifest(), *meta_manifests())
+    manifests = (
+        *system_info_manifests(),
+        app_open_manifest(),
+        *browser_manifests(),
+        *meta_manifests(),
+    )
     registry = CapabilityRegistry(manifests)
     audit = InMemoryAuditSink()
     policy = PolicyEngine(registry, FixedWindowRateLimiter())
     handlers = {
         **system_info_handlers(lambda: datetime.now().astimezone()),
         "app.open": make_app_open_handler(launcher),
+        **browser_handlers(browser_opener),
         **meta_handlers(registry),
     }
     dispatcher = SerializedDispatcher(

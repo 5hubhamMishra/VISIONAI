@@ -31,6 +31,20 @@ def test_app_runs_system_capabilities(monkeypatch, capsys) -> None:
     assert "app.open:" in output
 
 
+def test_app_runs_browser_search(monkeypatch) -> None:
+    opened: list[str] = []
+    monkeypatch.setattr("sys.argv", ["visionai", "browser.search", "--query", "hello world"])
+    monkeypatch.setattr(
+        "visionai.capabilities.browser.webbrowser.open",
+        lambda url: not opened.append(url),
+    )
+
+    exit_code = app.main()
+
+    assert exit_code == 0
+    assert opened == ["https://www.google.com/search?q=hello+world"]
+
+
 def test_app_rejects_unallowlisted_app_open_without_launching_anything(monkeypatch, capsys) -> None:
     """Safe to run for real: rejected before default_launcher is ever called."""
     monkeypatch.setattr("sys.argv", ["visionai", "app.open", "--app", "powershell"])

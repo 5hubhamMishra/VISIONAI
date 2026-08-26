@@ -5,6 +5,18 @@ from visionai.capabilities.applications import (
     app_open_manifest,
     make_app_open_handler,
 )
+from visionai.capabilities.browser import (
+    ALLOWED_BROWSER_HOSTS,
+    ALLOWED_SITES,
+    browser_handlers,
+    browser_manifests,
+    browser_open_manifest,
+    browser_search_manifest,
+    default_browser_opener,
+    default_browser_policy,
+    make_browser_open_handler,
+    make_browser_search_handler,
+)
 from visionai.capabilities.dispatcher import CapabilityHandler, SerializedDispatcher
 from visionai.capabilities.manifest import (
     CapabilityManifest,
@@ -36,6 +48,8 @@ from visionai.capabilities.system_info import (
 
 __all__ = [
     "ALLOWED_APPLICATIONS",
+    "ALLOWED_BROWSER_HOSTS",
+    "ALLOWED_SITES",
     "CapabilityHandler",
     "CapabilityManifest",
     "CapabilityRegistry",
@@ -44,6 +58,14 @@ __all__ = [
     "ParameterType",
     "SerializedDispatcher",
     "app_open_manifest",
+    "browser_handlers",
+    "browser_manifests",
+    "browser_open_manifest",
+    "browser_search_manifest",
+    "default_browser_opener",
+    "default_browser_policy",
+    "make_browser_open_handler",
+    "make_browser_search_handler",
     "make_app_open_handler",
     "make_system_battery_handler",
     "make_system_capabilities_handler",

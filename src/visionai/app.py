@@ -24,11 +24,15 @@ def main() -> int:
             "system.capabilities",
             "system.help",
             "app.open",
+            "browser.open",
+            "browser.search",
         ),
         default="system.time",
     )
     parser.add_argument("--format", default=None)
     parser.add_argument("--app", default=None, help="Application to open (app.open only).")
+    parser.add_argument("--site", default=None, help="Website to open (browser.open only).")
+    parser.add_argument("--query", default=None, help="Search query (browser.search only).")
     args = parser.parse_args()
 
     runtime = build_runtime()
@@ -37,6 +41,10 @@ def main() -> int:
         arguments["format"] = args.format
     if args.app is not None:
         arguments["app"] = args.app
+    if args.site is not None:
+        arguments["site"] = args.site
+    if args.query is not None:
+        arguments["query"] = args.query
 
     manifest = runtime.registry.get(args.capability)
     request = ActionRequest(
