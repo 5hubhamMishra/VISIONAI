@@ -38,15 +38,11 @@ Phase 0 tests cover core contracts and invariants:
 
 ## Verified Results
 
-Latest focused verification after the confirmation-dialog slice:
-
-- `pytest tests\unit\test_confirmation.py tests\unit\test_dispatcher.py tests\unit\test_policy.py tests\unit\test_runtime.py tests\unit\test_event_orchestrator.py tests\unit\test_main_window.py`: 49 passed
-
 Verified locally on Windows with Python 3.12.10 using `scripts\verify.ps1`:
 
 - Ruff: passed
 - mypy: passed for 36 source files
-- pytest: 158 passed
+- pytest: 172 passed
 - Coverage: 94%
 - Bandit: passed
 - pip-audit: no known vulnerabilities found

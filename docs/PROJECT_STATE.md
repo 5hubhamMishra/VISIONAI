@@ -72,7 +72,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## Implemented but Not Fully Verified
 
-- The latest confirmation-dialog slice has focused tests passing, but the full `scripts\verify.ps1` suite has not been rerun after that slice because the elevated full-suite run previously hit the platform usage-limit gate. The previous full-suite result is recorded below.
+- None outstanding at this time.
 
 ## In Progress
 
@@ -129,16 +129,10 @@ cd visionai
 
 ## Last Verification Result
 
-Latest focused verification after confirmation-dialog changes:
-
-- `pytest tests\unit\test_confirmation.py tests\unit\test_dispatcher.py tests\unit\test_policy.py tests\unit\test_runtime.py tests\unit\test_event_orchestrator.py tests\unit\test_main_window.py`: 49 passed
-
-Most recent full local verification before that final precheck slice:
-
 - Python: 3.12.10
 - Ruff: passed
 - mypy: passed for 36 source files
-- pytest: 158 passed, 94% coverage (headless, via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
+- pytest: 172 passed, 94% coverage (headless, via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 
