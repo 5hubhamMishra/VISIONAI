@@ -31,7 +31,9 @@ from visionai.core.event_bus import EventBus
 from visionai.core.state import StateMachine
 from visionai.observability import InMemoryAuditSink
 from visionai.orchestration import EventOrchestrator, TextCommandPlanner
-from visionai.policy import ConfirmationService, FixedWindowRateLimiter, PolicyEngine
+from visionai.orchestration.event_orchestrator import PolicyContextFactory
+from visionai.platform.lock_state import LockStateAdapter, WindowsLockStateAdapter
+from visionai.policy import ConfirmationService, FixedWindowRateLimiter, PolicyContext, PolicyEngine
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +46,7 @@ class Runtime:
     operations: OperationController
     planner: TextCommandPlanner
     confirmation: ConfirmationService
+    policy_context_factory: PolicyContextFactory
     input_bus: EventBus
     output_bus: EventBus
     orchestrator: EventOrchestrator
@@ -57,6 +60,7 @@ def build_runtime(
     key_presser: KeyPresser = default_key_presser,
     operation_controller: OperationController | None = None,
     confirmation: ConfirmationService | None = None,
+    lock_state: LockStateAdapter | None = None,
     input_bus: EventBus | None = None,
     output_bus: EventBus | None = None,
     state_machine: StateMachine | None = None,
@@ -67,6 +71,15 @@ def build_runtime(
     tests can verify dispatch end to end through the real policy and
     dispatcher path without spawning a real process, browser, or media
     keypress.
+
+    `lock_state` defaults to the real `WindowsLockStateAdapter`, checked
+    fresh on every dispatch via `policy_context_factory` -- both the CLI
+    (`app.py`) and the UI/orchestrator build their `PolicyContext` through
+    this one shared factory, so locked-screen mutation blocking is
+    actually live in both, not just exercised by isolated policy tests.
+    Permission grants are not wired to a persistent store yet, so
+    `granted_capabilities` stays empty; any `permission_required`
+    capability is correctly denied until that follow-up lands.
     """
 
     manifests = (
@@ -80,6 +93,7 @@ def build_runtime(
     operations = operation_controller or OperationController()
     state = state_machine or StateMachine()
     confirmations = confirmation or ConfirmationService()
+    lock = lock_state or WindowsLockStateAdapter()
     audit = InMemoryAuditSink()
     policy = PolicyEngine(registry, FixedWindowRateLimiter())
     handlers = {
@@ -96,6 +110,10 @@ def build_runtime(
         handlers=handlers,
     )
     planner = TextCommandPlanner(registry)
+
+    def policy_context_factory() -> PolicyContext:
+        return PolicyContext(locked_screen=lock.is_locked())
+
     inputs = input_bus or EventBus(max_size=100)
     outputs = output_bus or EventBus(max_size=100)
     orchestrator = EventOrchestrator(
@@ -106,6 +124,7 @@ def build_runtime(
         operations=operations,
         confirmation=confirmations,
         state_machine=state,
+        policy_context_factory=policy_context_factory,
     )
     return Runtime(
         registry=registry,
@@ -114,6 +133,7 @@ def build_runtime(
         operations=operations,
         planner=planner,
         confirmation=confirmations,
+        policy_context_factory=policy_context_factory,
         input_bus=inputs,
         output_bus=outputs,
         orchestrator=orchestrator,

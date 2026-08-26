@@ -1,4 +1,5 @@
 from visionai import app
+from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.runtime import build_runtime
 
 
@@ -88,6 +89,22 @@ def test_app_runs_media_control_with_injected_key_presser(monkeypatch) -> None:
 
     assert exit_code == 0
     assert pressed == ["volumemute"]
+
+
+def test_app_blocks_mutating_capability_while_screen_is_locked(monkeypatch, capsys) -> None:
+    """Proves the CLI dispatch path shares the runtime's live lock-state check,
+    not a bare PolicyContext() independent of it."""
+    monkeypatch.setattr("sys.argv", ["visionai", "app.open", "--app", "notepad"])
+    monkeypatch.setattr(
+        "visionai.app.build_runtime",
+        lambda: build_runtime(lock_state=StaticLockStateAdapter(locked=True)),
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "locked" in output
 
 
 def test_app_rejects_unallowlisted_app_open_without_launching_anything(monkeypatch, capsys) -> None:

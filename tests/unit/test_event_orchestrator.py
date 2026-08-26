@@ -19,6 +19,7 @@ from visionai.core.events import (
 from visionai.core.state import AppState, StateMachine
 from visionai.observability import InMemoryAuditSink
 from visionai.orchestration.event_orchestrator import EventOrchestrator
+from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.policy import ConfirmationService, FixedWindowRateLimiter, PolicyContext, PolicyEngine
 from visionai.runtime import build_runtime
 
@@ -295,6 +296,24 @@ async def test_orchestrator_plans_and_dispatches_final_transcript() -> None:
     assert launched == ["notepad.exe"]
     assert runtime.state_machine.state is AppState.IDLE
     assert runtime.operations.has_active_operation is False
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_denies_mutating_command_while_screen_is_locked() -> None:
+    launched: list[str] = []
+    runtime = build_runtime(
+        launcher=launched.append, lock_state=StaticLockStateAdapter(locked=True)
+    )
+    event = TranscriptEvent(text="open notepad", confidence=0.95, language="en", is_final=True)
+
+    await runtime.orchestrator.process_event(event)
+    outputs = await _drain_available(runtime.output_bus)
+
+    result = next(o for o in outputs if isinstance(o, ActionResult))
+    assert result.success is False
+    assert "locked" in result.message
+    assert launched == []
+    assert runtime.state_machine.state is AppState.IDLE
 
 
 @pytest.mark.asyncio

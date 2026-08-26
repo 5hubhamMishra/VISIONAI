@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 
 from visionai.core.events import ActionRequest
-from visionai.policy import PolicyContext
 from visionai.runtime import build_runtime
 
 
@@ -45,7 +44,7 @@ def main() -> int:
         if not plan.steps:
             print(plan.summary)
             return 1
-        result = runtime.dispatcher.dispatch(plan.steps[0], PolicyContext())
+        result = runtime.dispatcher.dispatch(plan.steps[0], runtime.policy_context_factory())
         print(result.message)
         if not result.success:
             return 1
@@ -69,7 +68,7 @@ def main() -> int:
         arguments=arguments,
         risk_level=manifest.risk_level,
     )
-    result = runtime.dispatcher.dispatch(request, PolicyContext())
+    result = runtime.dispatcher.dispatch(request, runtime.policy_context_factory())
     print(result.message)
     if not result.success:
         return 1
