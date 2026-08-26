@@ -1,0 +1,84 @@
+"""Persistent user-editable settings overrides.
+
+Mirrors `visionai.policy.permissions.JsonPermissionStore`'s atomic-write
+JSON pattern. Deliberately covers only the fields safe to change at
+runtime without restart/migration risk (log level, onboarding-seen);
+`log_dir`/`data_dir` remain environment-only in `Settings`.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+from typing import cast, get_args
+
+from visionai.config.settings import LogLevel, get_settings
+from visionai.core.errors import StorageError
+
+_VALID_LOG_LEVELS = frozenset(get_args(LogLevel))
+
+
+class UserSettingsStore:
+    """Stores user-editable settings overrides in a small JSON file."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    def get_log_level(self) -> LogLevel | None:
+        value = self._read().get("log_level")
+        if value not in _VALID_LOG_LEVELS:
+            return None
+        return cast(LogLevel, value)
+
+    def set_log_level(self, level: LogLevel) -> None:
+        data = self._read()
+        data["log_level"] = level
+        self._write(data)
+
+    def has_seen_onboarding(self) -> bool:
+        return self._read().get("onboarding_seen") is True
+
+    def mark_onboarding_seen(self) -> None:
+        data = self._read()
+        data["onboarding_seen"] = True
+        self._write(data)
+
+    def _read(self) -> dict[str, object]:
+        if not self._path.exists():
+            return {}
+        try:
+            raw = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise StorageError("settings store could not be read") from exc
+        if not isinstance(raw, dict):
+            raise StorageError("settings store root must be an object")
+        return raw
+
+    def _write(self, data: dict[str, object]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=self._path.parent,
+                delete=False,
+            ) as temp:
+                json.dump(data, temp, indent=2, sort_keys=True)
+                temp.write("\n")
+                temp_path = Path(temp.name)
+            temp_path.replace(self._path)
+        except OSError as exc:
+            raise StorageError("settings store could not be written") from exc
+
+
+def effective_log_level(store: UserSettingsStore) -> LogLevel:
+    """Return the override log level if set, else the environment default."""
+
+    return store.get_log_level() or get_settings().log_level
+
+
+def default_user_settings_store() -> UserSettingsStore:
+    """Build the default store, colocated with the permission store."""
+
+    return UserSettingsStore(get_settings().data_dir / "settings.json")

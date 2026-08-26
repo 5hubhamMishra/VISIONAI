@@ -18,6 +18,7 @@ from visionai.capabilities.manifest import (
     ParameterSpec,
     ParameterType,
 )
+from visionai.core.cancellation import CancellationToken
 from visionai.core.errors import UrlValidationError
 from visionai.core.events import ActionRequest, ActionResult, RiskLevel
 from visionai.policy.url_validation import UrlPolicy
@@ -118,7 +119,7 @@ def make_browser_open_handler(
 
     policy = policy or default_browser_policy()
 
-    def handle(request: ActionRequest) -> ActionResult:
+    def handle(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
         requested = str(request.arguments.get("site", "")).strip().lower()
         raw_url = ALLOWED_SITES.get(requested)
         if raw_url is None:
@@ -154,7 +155,7 @@ def make_browser_search_handler(
 
     policy = policy or default_browser_policy()
 
-    def handle(request: ActionRequest) -> ActionResult:
+    def handle(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
         query = str(request.arguments.get("query", ""))
         try:
             url = policy.build_search_url(query)

@@ -11,13 +11,15 @@ from visionai.capabilities.meta import (
     system_help_manifest,
 )
 from visionai.capabilities.system_info import system_info_manifests
-from visionai.core.cancellation import OperationController
+from visionai.core.cancellation import CancellationToken, OperationController
 from visionai.core.events import ActionRequest, AuditEvent, RiskLevel
 from visionai.observability import InMemoryAuditSink
 from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.policy import PolicyContext
 from visionai.policy.permissions import JsonPermissionStore
 from visionai.runtime import build_runtime
+
+_TOKEN = CancellationToken()
 
 
 def test_meta_manifests_register_as_read_only() -> None:
@@ -44,7 +46,7 @@ def test_capabilities_handler_lists_registered_manifests_sorted_by_id() -> None:
     handler = make_system_capabilities_handler(registry)
 
     result = handler(
-        ActionRequest(capability_id="system.capabilities", risk_level=RiskLevel.READ_ONLY)
+        ActionRequest(capability_id="system.capabilities", risk_level=RiskLevel.READ_ONLY), _TOKEN
     )
 
     assert result.success is True
@@ -59,7 +61,7 @@ def test_capabilities_handler_reports_empty_registry() -> None:
     handler = make_system_capabilities_handler(registry)
 
     result = handler(
-        ActionRequest(capability_id="system.capabilities", risk_level=RiskLevel.READ_ONLY)
+        ActionRequest(capability_id="system.capabilities", risk_level=RiskLevel.READ_ONLY), _TOKEN
     )
 
     assert result.message == "No capabilities are registered."
@@ -69,7 +71,9 @@ def test_help_handler_reports_the_current_capability_count() -> None:
     registry = CapabilityRegistry(system_info_manifests())
     handler = make_system_help_handler(registry)
 
-    result = handler(ActionRequest(capability_id="system.help", risk_level=RiskLevel.READ_ONLY))
+    result = handler(
+        ActionRequest(capability_id="system.help", risk_level=RiskLevel.READ_ONLY), _TOKEN
+    )
 
     assert result.success is True
     assert str(len(system_info_manifests())) in result.message
@@ -100,7 +104,9 @@ def test_stop_handler_reports_when_no_operation_is_running() -> None:
     controller = OperationController()
     handler = make_system_stop_handler(controller)
 
-    result = handler(ActionRequest(capability_id="system.stop", risk_level=RiskLevel.READ_ONLY))
+    result = handler(
+        ActionRequest(capability_id="system.stop", risk_level=RiskLevel.READ_ONLY), _TOKEN
+    )
 
     assert result.success is True
     assert result.message == "No operation is currently running."
@@ -111,7 +117,9 @@ def test_stop_handler_cancels_active_operation() -> None:
     token = controller.begin_operation()
     handler = make_system_stop_handler(controller)
 
-    result = handler(ActionRequest(capability_id="system.stop", risk_level=RiskLevel.READ_ONLY))
+    result = handler(
+        ActionRequest(capability_id="system.stop", risk_level=RiskLevel.READ_ONLY), _TOKEN
+    )
 
     assert result.success is True
     assert result.message == "Stop requested."
@@ -136,7 +144,8 @@ def test_clear_history_handler_clears_the_audit_sink() -> None:
     handler = make_system_clear_history_handler(audit)
 
     result = handler(
-        ActionRequest(capability_id="system.clear_history", risk_level=RiskLevel.SENSITIVE)
+        ActionRequest(capability_id="system.clear_history", risk_level=RiskLevel.SENSITIVE),
+        _TOKEN,
     )
 
     assert result.success is True

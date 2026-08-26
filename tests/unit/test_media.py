@@ -5,9 +5,12 @@ from visionai.capabilities.media import (
     media_control_manifest,
     media_manifests,
 )
+from visionai.core.cancellation import CancellationToken
 from visionai.core.events import ActionRequest, RiskLevel
 from visionai.policy import PolicyContext
 from visionai.runtime import build_runtime
+
+_TOKEN = CancellationToken()
 
 
 def _media_request(action: str | None = None, **extra: str) -> ActionRequest:
@@ -40,7 +43,7 @@ def test_handler_presses_the_allowlisted_key_for_a_known_action() -> None:
     pressed: list[str] = []
     handler = make_media_control_handler(key_presser=pressed.append)
 
-    result = handler(_media_request("  Volume_Up  "))
+    result = handler(_media_request("  Volume_Up  "), _TOKEN)
 
     assert result.success is True
     assert pressed == [ALLOWED_MEDIA_ACTIONS["volume_up"]]
@@ -50,7 +53,7 @@ def test_handler_rejects_unknown_action_without_pressing_anything() -> None:
     pressed: list[str] = []
     handler = make_media_control_handler(key_presser=pressed.append)
 
-    result = handler(_media_request("launch_shell"))
+    result = handler(_media_request("launch_shell"), _TOKEN)
 
     assert result.success is False
     assert "not an allowlisted media action" in result.message
@@ -63,7 +66,7 @@ def test_handler_reports_key_presser_failure_without_raising() -> None:
 
     handler = make_media_control_handler(key_presser=failing_key_presser)
 
-    result = handler(_media_request("mute"))
+    result = handler(_media_request("mute"), _TOKEN)
 
     assert result.success is False
     assert "Could not control media" in result.message

@@ -44,8 +44,8 @@ Phase 0 tests cover core contracts and invariants:
 Verified locally on Windows with Python 3.12.10 using `scripts\verify.ps1`:
 
 - Ruff: passed
-- mypy: passed for 36 source files
-- pytest: 201 passed
+- mypy: passed for 37 source files
+- pytest: 208 passed
 - Coverage: 93%
 - Bandit: passed
 - pip-audit: no known vulnerabilities found

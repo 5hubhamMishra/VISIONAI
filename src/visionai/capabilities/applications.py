@@ -25,6 +25,7 @@ from visionai.capabilities.manifest import (
     ParameterSpec,
     ParameterType,
 )
+from visionai.core.cancellation import CancellationToken
 from visionai.core.events import ActionRequest, ActionResult, RiskLevel
 
 ALLOWED_APPLICATIONS: Mapping[str, str] = {
@@ -67,7 +68,7 @@ def app_open_manifest() -> CapabilityManifest:
 def make_app_open_handler(launcher: Launcher = default_launcher) -> CapabilityHandler:
     """Create a handler that launches one allowlisted application."""
 
-    def handle(request: ActionRequest) -> ActionResult:
+    def handle(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
         requested = str(request.arguments.get("app", ""))
         executable = ALLOWED_APPLICATIONS.get(requested.strip().lower())
         if executable is None:

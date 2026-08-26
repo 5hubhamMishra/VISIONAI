@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import argparse
 
+from visionai.config import default_user_settings_store, effective_log_level
 from visionai.core.events import ActionRequest
+from visionai.observability import configure_logging
 from visionai.runtime import build_runtime
 
 
 def main() -> int:
     """Run one registered capability through the full policy and dispatcher path."""
+
+    configure_logging(effective_log_level(default_user_settings_store()))
 
     parser = argparse.ArgumentParser(prog="visionai")
     parser.add_argument(

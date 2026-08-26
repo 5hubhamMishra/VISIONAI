@@ -10,9 +10,12 @@ from visionai.capabilities.system_info import (
     make_system_time_handler,
     system_info_manifests,
 )
+from visionai.core.cancellation import CancellationToken
 from visionai.core.events import ActionRequest, RiskLevel
 from visionai.policy import PolicyContext
 from visionai.runtime import build_runtime
+
+_TOKEN = CancellationToken()
 
 
 def _fixed_clock() -> datetime:
@@ -32,9 +35,9 @@ def test_system_time_handler_formats_supported_outputs() -> None:
     handler = make_system_time_handler(_fixed_clock)
     base = {"capability_id": "system.time", "risk_level": RiskLevel.READ_ONLY}
 
-    result_24h = handler(ActionRequest(**base, arguments={"format": "24h"}))
-    result_12h = handler(ActionRequest(**base, arguments={"format": "12h"}))
-    result_iso = handler(ActionRequest(**base, arguments={"format": "iso"}))
+    result_24h = handler(ActionRequest(**base, arguments={"format": "24h"}), _TOKEN)
+    result_12h = handler(ActionRequest(**base, arguments={"format": "12h"}), _TOKEN)
+    result_iso = handler(ActionRequest(**base, arguments={"format": "iso"}), _TOKEN)
 
     assert result_24h.message == "It is 09:07:05."
     assert result_12h.message == "It is 09:07:05 AM."
@@ -45,9 +48,9 @@ def test_system_date_handler_formats_supported_outputs() -> None:
     handler = make_system_date_handler(_fixed_clock)
     base = {"capability_id": "system.date", "risk_level": RiskLevel.READ_ONLY}
 
-    result_long = handler(ActionRequest(**base, arguments={"format": "long"}))
-    result_short = handler(ActionRequest(**base, arguments={"format": "short"}))
-    result_iso = handler(ActionRequest(**base, arguments={"format": "iso"}))
+    result_long = handler(ActionRequest(**base, arguments={"format": "long"}), _TOKEN)
+    result_short = handler(ActionRequest(**base, arguments={"format": "short"}), _TOKEN)
+    result_iso = handler(ActionRequest(**base, arguments={"format": "iso"}), _TOKEN)
 
     assert result_long.message == "Today is Wednesday, August 26, 2026."
     assert result_short.message == "Today is 2026-08-26."
@@ -60,14 +63,16 @@ def test_system_info_handlers_reject_unsupported_formats_without_side_effect() -
             capability_id="system.time",
             risk_level=RiskLevel.READ_ONLY,
             arguments={"format": "epoch"},
-        )
+        ),
+        _TOKEN,
     )
     date_result = make_system_date_handler(_fixed_clock)(
         ActionRequest(
             capability_id="system.date",
             risk_level=RiskLevel.READ_ONLY,
             arguments={"format": "julian"},
-        )
+        ),
+        _TOKEN,
     )
 
     assert time_result.success is False
@@ -79,7 +84,9 @@ def test_system_info_handlers_reject_unsupported_formats_without_side_effect() -
 def test_system_battery_handler_reports_no_battery() -> None:
     handler = make_system_battery_handler(lambda: BatteryStatus(percent=None, plugged_in=None))
 
-    result = handler(ActionRequest(capability_id="system.battery", risk_level=RiskLevel.READ_ONLY))
+    result = handler(
+        ActionRequest(capability_id="system.battery", risk_level=RiskLevel.READ_ONLY), _TOKEN
+    )
 
     assert result.success is True
     assert result.message == "No battery detected."
@@ -90,7 +97,9 @@ def test_system_battery_handler_reports_charge_and_power_source() -> None:
         lambda: BatteryStatus(percent=87.4, plugged_in=True)
     )
 
-    result = handler(ActionRequest(capability_id="system.battery", risk_level=RiskLevel.READ_ONLY))
+    result = handler(
+        ActionRequest(capability_id="system.battery", risk_level=RiskLevel.READ_ONLY), _TOKEN
+    )
 
     assert result.success is True
     assert result.message == "Battery is at 87% and plugged in."
@@ -101,7 +110,9 @@ def test_system_battery_handler_reports_on_battery_power() -> None:
         lambda: BatteryStatus(percent=42.0, plugged_in=False)
     )
 
-    result = handler(ActionRequest(capability_id="system.battery", risk_level=RiskLevel.READ_ONLY))
+    result = handler(
+        ActionRequest(capability_id="system.battery", risk_level=RiskLevel.READ_ONLY), _TOKEN
+    )
 
     assert result.message == "Battery is at 42% and on battery power."
 
@@ -111,7 +122,9 @@ def test_system_health_handler_reports_cpu_and_memory() -> None:
         lambda: HealthSnapshot(cpu_percent=12.3, memory_percent=55.6)
     )
 
-    result = handler(ActionRequest(capability_id="system.health", risk_level=RiskLevel.READ_ONLY))
+    result = handler(
+        ActionRequest(capability_id="system.health", risk_level=RiskLevel.READ_ONLY), _TOKEN
+    )
 
     assert result.success is True
     assert result.message == "CPU is at 12% and memory is at 56%."

@@ -41,13 +41,15 @@ visionai --text "what time is it"
 visionai-ui
 ```
 
-Opens a minimal window: a command input, a Run button, a Stop button, Diagnostics and Settings buttons, a result area, an audit history list, and a tray icon. Type any of the same commands shown above (e.g. `open notepad`, `what time is it`) and press Enter or click Run. This is not the full application window described for later phases -- there is no onboarding or editable settings UI yet -- but every command it runs goes through the same `TextCommandPlanner`, policy engine, and dispatcher as the console, so nothing typed into the window can do anything the console commands above cannot already do.
+Opens a minimal window: a command input, a Run button, a Stop button, Diagnostics and Settings buttons, a result area, an audit history list, and a tray icon. Type any of the same commands shown above (e.g. `open notepad`, `what time is it`) and press Enter or click Run. This is not the full application window described for later phases, but every command it runs goes through the same `TextCommandPlanner`, policy engine, and dispatcher as the console, so nothing typed into the window can do anything the console commands above cannot already do.
+
+The first time the window opens, a one-time welcome dialog explains the safety model (read-only actions run immediately, sensitive actions ask for permission once, actions with side effects ask for confirmation each time). It does not appear again after that.
 
 The Stop button requests cooperative cancellation and stays clickable even while a command is running, unlike the command input and Run button. Since the registered commands currently complete quickly, clicking it while nothing is running just reports that no operation is active.
 
 The Diagnostics button shows a read-only status summary: app/library versions, registered capability count, tray availability, current state, and which input subsystems are still disconnected.
 
-The Settings button shows a read-only summary of the currently loaded settings, including log level and data/log paths. It does not change configuration, grant permissions, or enable raw audio/camera retention.
+The Settings button lets you change the log level (`DEBUG`/`INFO`/`WARNING`/`ERROR`) from a fixed dropdown; the change is saved locally and applied immediately, no restart needed. `log_dir`/`data_dir` remain environment-only (see `.env.example`) since changing a storage path at runtime isn't supported. Settings cannot grant permissions or enable raw audio/camera retention.
 
 If a command requires confirmation, the window asks before executing it. Choosing No cancels the pending request; choosing Yes sends the bound confirmation back through the orchestrator and dispatcher. If a command also or instead requires permission, the window asks to grant that first ("Grant permission") -- granting can still be followed by a separate confirmation prompt if the same command needs both. `clear history` is the first built-in command that exercises both prompts.
 

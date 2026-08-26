@@ -79,7 +79,7 @@ def _build_sensitive_orchestrator() -> tuple[EventOrchestrator, EventBus, list[A
     registry = CapabilityRegistry([_sensitive_manifest()])
     calls: list[ActionRequest] = []
 
-    def handler(request: ActionRequest) -> ActionResult:
+    def handler(request: ActionRequest, cancellation) -> ActionResult:
         calls.append(request)
         return ActionResult(request_id=request.id, success=True, message="done")
 
@@ -111,7 +111,7 @@ def _build_permission_orchestrator(
     calls: list[ActionRequest] = []
     permissions = JsonPermissionStore(tmp_path / "permissions.json")
 
-    def handler(request: ActionRequest) -> ActionResult:
+    def handler(request: ActionRequest, cancellation) -> ActionResult:
         calls.append(request)
         return ActionResult(request_id=request.id, success=True, message="done")
 
@@ -338,7 +338,7 @@ async def test_orchestrator_surfaces_a_risk_level_mismatch_as_an_error_not_a_cra
     registry = CapabilityRegistry([_sensitive_manifest()])
     calls: list[ActionRequest] = []
 
-    def handler(request: ActionRequest) -> ActionResult:
+    def handler(request: ActionRequest, cancellation) -> ActionResult:
         calls.append(request)
         return ActionResult(request_id=request.id, success=True, message="done")
 
@@ -555,3 +555,66 @@ async def test_orchestrator_clears_history_through_the_real_capability(tmp_path:
     assert len(runtime.audit.list()) == 1
     assert runtime.audit.list()[0].summary == "Audit history cleared."
     assert runtime.state_machine.state is AppState.IDLE
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_hands_the_handler_the_exact_token_operations_tracks() -> None:
+    """`_execute` must pass its own `begin_operation()` token through to the
+    handler, not a decoupled one dispatch() invents -- otherwise cancelling
+    the tracked operation (e.g. the Stop button, mid-run) would have no way
+    to reach a handler that polls its token."""
+
+    manifest = CapabilityManifest(
+        id="test.read_only",
+        description="A synthetic read-only capability for cancellation-token wiring tests.",
+        risk_level=RiskLevel.READ_ONLY,
+        rate_limit_per_minute=10,
+        timeout_seconds=3,
+        idempotency=IdempotencyMode.IDEMPOTENT,
+        audit_category="test.read_only",
+        handler_id="test.read_only",
+    )
+    registry = CapabilityRegistry([manifest])
+    operations = OperationController()
+    observed_cancelled_state: list[bool] = []
+
+    def handler(request: ActionRequest, cancellation) -> ActionResult:
+        # Simulates Stop being pressed while this handler is running: if
+        # `cancellation` were not the same token `operations` tracks, this
+        # would have no effect and the assertion below would fail.
+        operations.cancel_active_operation()
+        observed_cancelled_state.append(cancellation.is_cancelled)
+        return ActionResult(request_id=request.id, success=True, message="done")
+
+    dispatcher = SerializedDispatcher(
+        registry=registry,
+        policy=PolicyEngine(registry, FixedWindowRateLimiter()),
+        audit=InMemoryAuditSink(),
+        handlers={"test.read_only": handler},
+    )
+
+    class _ReadOnlyPlanner:
+        def plan(self, text: str) -> tuple[Intent, ActionPlan]:
+            request = ActionRequest(capability_id="test.read_only", risk_level=RiskLevel.READ_ONLY)
+            intent = Intent(name="test.read_only", confidence=1.0, source_text=text)
+            return intent, ActionPlan(steps=(request,), summary="Run the read-only thing.")
+
+    output_bus = EventBus(max_size=10)
+    orchestrator = EventOrchestrator(
+        input_bus=EventBus(max_size=10),
+        output_bus=output_bus,
+        planner=_ReadOnlyPlanner(),
+        dispatcher=dispatcher,
+        operations=operations,
+        confirmation=ConfirmationService(),
+        policy_context_factory=PolicyContext,
+    )
+    event = TranscriptEvent(text="run it", confidence=1.0, language="en", is_final=True)
+
+    await orchestrator.process_event(event)
+
+    assert observed_cancelled_state == [True]
+    assert operations.has_active_operation is False
+    result = (await _drain_available(output_bus))[-1]
+    assert isinstance(result, ActionResult)
+    assert result.success is True

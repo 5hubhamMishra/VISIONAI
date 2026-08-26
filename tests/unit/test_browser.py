@@ -7,9 +7,12 @@ from visionai.capabilities.browser import (
     make_browser_open_handler,
     make_browser_search_handler,
 )
+from visionai.core.cancellation import CancellationToken
 from visionai.core.events import ActionRequest, RiskLevel
 from visionai.policy import PolicyContext, UrlPolicy
 from visionai.runtime import build_runtime
+
+_TOKEN = CancellationToken()
 
 
 def _browser_open_request(site: str | None = None, **extra: str) -> ActionRequest:
@@ -45,7 +48,7 @@ def test_browser_open_handler_opens_normalized_allowlisted_site() -> None:
     opened: list[str] = []
     handler = make_browser_open_handler(opener=lambda url: not opened.append(url))
 
-    result = handler(_browser_open_request("  GitHub  "))
+    result = handler(_browser_open_request("  GitHub  "), _TOKEN)
 
     assert result.success is True
     assert opened == ["https://github.com/"]
@@ -55,7 +58,7 @@ def test_browser_open_handler_rejects_unknown_site_without_opening() -> None:
     opened: list[str] = []
     handler = make_browser_open_handler(opener=lambda url: not opened.append(url))
 
-    result = handler(_browser_open_request("evil"))
+    result = handler(_browser_open_request("evil"), _TOKEN)
 
     assert result.success is False
     assert "not an allowlisted website" in result.message
@@ -69,7 +72,7 @@ def test_browser_open_handler_blocks_policy_failure_before_opening() -> None:
         policy=UrlPolicy(allowed_hosts=frozenset({"example.com"})),
     )
 
-    result = handler(_browser_open_request("github"))
+    result = handler(_browser_open_request("github"), _TOKEN)
 
     assert result.success is False
     assert "Blocked website" in result.message
@@ -80,7 +83,7 @@ def test_browser_search_handler_builds_encoded_allowlisted_search_url() -> None:
     opened: list[str] = []
     handler = make_browser_search_handler(opener=lambda url: not opened.append(url))
 
-    result = handler(_browser_search_request("jarvis & vision ai"))
+    result = handler(_browser_search_request("jarvis & vision ai"), _TOKEN)
 
     assert result.success is True
     assert opened == ["https://www.google.com/search?q=jarvis+%26+vision+ai"]
@@ -90,7 +93,7 @@ def test_browser_search_handler_rejects_empty_query_without_opening() -> None:
     opened: list[str] = []
     handler = make_browser_search_handler(opener=lambda url: not opened.append(url))
 
-    result = handler(_browser_search_request("  "))
+    result = handler(_browser_search_request("  "), _TOKEN)
 
     assert result.success is False
     assert "search query is empty" in result.message
@@ -101,7 +104,7 @@ def test_browser_search_handler_rejects_control_characters_without_opening() -> 
     opened: list[str] = []
     handler = make_browser_search_handler(opener=lambda url: not opened.append(url))
 
-    result = handler(_browser_search_request("hello\nworld"))
+    result = handler(_browser_search_request("hello\nworld"), _TOKEN)
 
     assert result.success is False
     assert "control characters" in result.message

@@ -7,6 +7,7 @@ from threading import Lock
 from typing import TYPE_CHECKING
 
 from visionai.capabilities.registry import CapabilityRegistry
+from visionai.core.cancellation import CancellationToken
 from visionai.core.errors import DispatchError
 from visionai.core.events import ActionRequest, ActionResult, AuditEvent
 from visionai.observability.audit import InMemoryAuditSink
@@ -14,7 +15,10 @@ from visionai.observability.audit import InMemoryAuditSink
 if TYPE_CHECKING:
     from visionai.policy.engine import PolicyContext, PolicyDecision, PolicyEngine
 
-CapabilityHandler = Callable[[ActionRequest], ActionResult]
+# The token is always real, never None -- callers that have no operation to
+# track (e.g. the CLI's direct dispatch) get a fresh, never-cancelled one
+# from dispatch() below, so a handler never needs a None-check to poll it.
+CapabilityHandler = Callable[[ActionRequest, CancellationToken], ActionResult]
 
 
 class SerializedDispatcher:
@@ -52,7 +56,13 @@ class SerializedDispatcher:
 
         return self._policy.evaluate(request, context, consume_rate_limit=False)
 
-    def dispatch(self, request: ActionRequest, context: PolicyContext) -> ActionResult:
+    def dispatch(
+        self,
+        request: ActionRequest,
+        context: PolicyContext,
+        *,
+        cancellation: CancellationToken | None = None,
+    ) -> ActionResult:
         # Looked up from the registry, not request.risk_level: the caller
         # supplies that field, so trusting it for audit severity would let a
         # malicious or buggy request understate its true risk in the log.
@@ -74,8 +84,21 @@ class SerializedDispatcher:
         if handler is None:
             raise DispatchError(f"handler is not registered: {manifest.handler_id}")
 
+        token = cancellation or CancellationToken()
         with self._lock:
-            result = handler(request)
+            # Catches cancellation that landed while this request was
+            # queued behind the lock -- a request cancelled before its
+            # handler ever runs should never take effect. A handler that
+            # is itself long-running receives the same token to poll
+            # partway through, once one exists.
+            if token.is_cancelled:
+                result = ActionResult(
+                    request_id=request.id,
+                    success=False,
+                    message="Operation was cancelled before it started.",
+                )
+            else:
+                result = handler(request, token)
 
         self._audit.record(
             AuditEvent(

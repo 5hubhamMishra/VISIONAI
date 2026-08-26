@@ -14,7 +14,7 @@ from __future__ import annotations
 from visionai.capabilities.dispatcher import CapabilityHandler
 from visionai.capabilities.manifest import CapabilityManifest, IdempotencyMode
 from visionai.capabilities.registry import CapabilityRegistry
-from visionai.core.cancellation import OperationController
+from visionai.core.cancellation import CancellationToken, OperationController
 from visionai.core.events import ActionRequest, ActionResult, RiskLevel
 from visionai.observability import InMemoryAuditSink
 
@@ -101,7 +101,7 @@ def meta_manifests() -> tuple[CapabilityManifest, ...]:
 def make_system_stop_handler(controller: OperationController) -> CapabilityHandler:
     """Create a handler that requests cooperative cancellation."""
 
-    def handle(request: ActionRequest) -> ActionResult:
+    def handle(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
         if controller.cancel_active_operation():
             message = "Stop requested."
         else:
@@ -114,7 +114,7 @@ def make_system_stop_handler(controller: OperationController) -> CapabilityHandl
 def make_system_capabilities_handler(registry: CapabilityRegistry) -> CapabilityHandler:
     """Create a handler that lists every capability registered in `registry`."""
 
-    def handle(request: ActionRequest) -> ActionResult:
+    def handle(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
         manifests = sorted(registry.list(), key=lambda manifest: manifest.id)
         if not manifests:
             return ActionResult(
@@ -130,7 +130,7 @@ def make_system_capabilities_handler(registry: CapabilityRegistry) -> Capability
 def make_system_help_handler(registry: CapabilityRegistry) -> CapabilityHandler:
     """Create a handler that summarizes current functionality."""
 
-    def handle(request: ActionRequest) -> ActionResult:
+    def handle(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
         count = len(registry.list())
         message = (
             f"VisionAI is in early development with {count} capabilities registered. "
@@ -152,7 +152,7 @@ def make_system_clear_history_handler(audit: InMemoryAuditSink) -> CapabilityHan
     history does not erase evidence that a clear happened.
     """
 
-    def handle(request: ActionRequest) -> ActionResult:
+    def handle(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
         audit.clear()
         return ActionResult(request_id=request.id, success=True, message="Audit history cleared.")
 

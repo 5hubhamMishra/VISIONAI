@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QWidge
 
 from visionai.capabilities import CapabilityManifest, CapabilityRegistry, IdempotencyMode
 from visionai.capabilities.dispatcher import SerializedDispatcher
+from visionai.config.user_settings import UserSettingsStore
 from visionai.core.cancellation import OperationController
 from visionai.core.event_bus import EventBus
 from visionai.core.events import (
@@ -27,13 +28,14 @@ from visionai.policy import (
     PolicyEngine,
 )
 from visionai.runtime import build_runtime
-from visionai.ui.main_window import MainWindow
+from visionai.ui.main_window import MainWindow, _SettingsDialog
 
 
 def _wait_for_command_complete(window: MainWindow, qtbot: Any) -> None:
-    # `_is_worker_running()` reflects real worker lifecycle regardless of
-    # whether Run, Stop, or a confirmation follow-up started the worker.
-    qtbot.waitUntil(lambda: not window._is_worker_running(), timeout=5000)
+    qtbot.waitUntil(
+        lambda: not window._is_worker_running() and window._run_button.isEnabled(),
+        timeout=5000,
+    )
 
 
 def _sensitive_manifest() -> CapabilityManifest:
@@ -72,7 +74,7 @@ def _build_sensitive_runtime(
     if granted:
         permissions.grant("test.sensitive")
 
-    def handler(request: ActionRequest) -> ActionResult:
+    def handler(request: ActionRequest, cancellation: Any) -> ActionResult:
         calls.append(request)
         return ActionResult(request_id=request.id, success=True, message="Sensitive action done.")
 
@@ -179,7 +181,7 @@ def test_main_window_confirms_sensitive_action_before_execution(
     qtbot.mouseClick(window._run_button, Qt.MouseButton.LeftButton)
     _wait_for_command_complete(window, qtbot)
 
-    assert len(calls) == 1
+    assert len(calls) == 1, window._output.toPlainText()
     assert window._output.toPlainText() == "Sensitive action done."
     assert window._status_label.text() == "IDLE"
     assert window._history.count() == 1
@@ -220,7 +222,7 @@ def test_main_window_permission_prompt_then_confirmation_executes(
     _wait_for_command_complete(window, qtbot)
 
     assert runtime.permissions.is_granted("test.sensitive") is True
-    assert len(calls) == 1
+    assert len(calls) == 1, window._output.toPlainText()
     assert window._output.toPlainText() == "Sensitive action done."
     assert window._status_label.text() == "IDLE"
     assert window._history.count() == 1
@@ -365,9 +367,10 @@ def test_main_window_diagnostics_button_opens_a_dialog(qtbot: Any, monkeypatch: 
     assert "VisionAI:" in shown[0][1]
 
 
-def test_main_window_settings_text_reports_current_read_only_settings(qtbot: Any) -> None:
+def test_main_window_settings_text_reports_current_settings(qtbot: Any, tmp_path: Any) -> None:
     runtime = build_runtime()
-    window = MainWindow(runtime)
+    store = UserSettingsStore(tmp_path / "settings.json")
+    window = MainWindow(runtime, settings_store=store)
     qtbot.addWidget(window)
 
     text = window._settings_text()
@@ -377,14 +380,22 @@ def test_main_window_settings_text_reports_current_read_only_settings(qtbot: Any
     assert "Data directory: .visionai" in text
     assert "Raw audio retention: disabled" in text
     assert "Raw camera retention: disabled" in text
-    assert "Settings editing: not enabled yet" in text
+    assert "Settings editing: log level only" in text
 
 
-def test_main_window_settings_button_opens_a_dialog(qtbot: Any, monkeypatch: Any) -> None:
+def test_main_window_settings_button_saves_a_chosen_log_level(
+    qtbot: Any, monkeypatch: Any, tmp_path: Any
+) -> None:
     runtime = build_runtime()
-    window = MainWindow(runtime)
+    store = UserSettingsStore(tmp_path / "settings.json")
+    window = MainWindow(runtime, settings_store=store)
     qtbot.addWidget(window)
 
+    monkeypatch.setattr(window, "_ask_new_log_level", lambda current: "DEBUG")
+    configured: list[str] = []
+    monkeypatch.setattr(
+        "visionai.ui.main_window.configure_logging", lambda level: configured.append(level)
+    )
     shown: list[tuple[str, str]] = []
     monkeypatch.setattr(
         QMessageBox,
@@ -394,9 +405,60 @@ def test_main_window_settings_button_opens_a_dialog(qtbot: Any, monkeypatch: Any
 
     qtbot.mouseClick(window._settings_button, Qt.MouseButton.LeftButton)
 
+    assert store.get_log_level() == "DEBUG"
+    assert configured == ["DEBUG"]
+    assert shown == [("Settings", "Log level set to DEBUG. Applied immediately.")]
+
+
+def test_main_window_settings_button_does_nothing_when_dialog_is_cancelled(
+    qtbot: Any, monkeypatch: Any, tmp_path: Any
+) -> None:
+    runtime = build_runtime()
+    store = UserSettingsStore(tmp_path / "settings.json")
+    window = MainWindow(runtime, settings_store=store)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(window, "_ask_new_log_level", lambda current: None)
+    shown: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda parent, title, text: shown.append((title, text)),
+    )
+
+    qtbot.mouseClick(window._settings_button, Qt.MouseButton.LeftButton)
+
+    assert store.get_log_level() is None
+    assert shown == []
+
+
+def test_settings_dialog_preselects_the_current_log_level(qtbot: Any) -> None:
+    dialog = _SettingsDialog("WARNING")
+    qtbot.addWidget(dialog)
+
+    assert dialog._log_level_combo.count() == 4
+    assert dialog.selected_log_level() == "WARNING"
+
+
+def test_main_window_shows_onboarding_once(qtbot: Any, monkeypatch: Any, tmp_path: Any) -> None:
+    runtime = build_runtime()
+    store = UserSettingsStore(tmp_path / "settings.json")
+    window = MainWindow(runtime, settings_store=store)
+    qtbot.addWidget(window)
+
+    shown: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda parent, title, text: shown.append((title, text)),
+    )
+
+    window.maybe_show_onboarding()
+    window.maybe_show_onboarding()
+
     assert len(shown) == 1
-    assert shown[0][0] == "Settings"
-    assert "Log level:" in shown[0][1]
+    assert shown[0][0] == "Welcome to VisionAI"
+    assert store.has_seen_onboarding() is True
 
 
 def test_main_window_tab_order_reaches_every_control_without_a_trap(qtbot: Any) -> None:

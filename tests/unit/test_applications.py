@@ -6,11 +6,14 @@ from visionai.capabilities.applications import (
     app_open_manifest,
     make_app_open_handler,
 )
+from visionai.core.cancellation import CancellationToken
 from visionai.core.errors import DispatchError
 from visionai.core.events import ActionRequest, RiskLevel
 from visionai.observability import InMemoryAuditSink
 from visionai.policy import FixedWindowRateLimiter, PolicyContext, PolicyEngine
 from visionai.runtime import build_runtime
+
+_TOKEN = CancellationToken()
 
 
 def _app_open_request(app: str | None = None, **extra: str) -> ActionRequest:
@@ -34,7 +37,7 @@ def test_handler_launches_the_allowlisted_executable_for_a_known_app() -> None:
     launched: list[str] = []
     handler = make_app_open_handler(launcher=launched.append)
 
-    result = handler(_app_open_request("notepad"))
+    result = handler(_app_open_request("notepad"), _TOKEN)
 
     assert result.success is True
     assert launched == [ALLOWED_APPLICATIONS["notepad"]]
@@ -44,7 +47,7 @@ def test_handler_is_case_and_whitespace_insensitive_for_known_apps() -> None:
     launched: list[str] = []
     handler = make_app_open_handler(launcher=launched.append)
 
-    handler(_app_open_request("  Calculator  "))
+    handler(_app_open_request("  Calculator  "), _TOKEN)
 
     assert launched == [ALLOWED_APPLICATIONS["calculator"]]
 
@@ -53,7 +56,7 @@ def test_handler_rejects_an_unallowlisted_app_without_launching_anything() -> No
     launched: list[str] = []
     handler = make_app_open_handler(launcher=launched.append)
 
-    result = handler(_app_open_request("cmd"))
+    result = handler(_app_open_request("cmd"), _TOKEN)
 
     assert result.success is False
     assert "not an allowlisted application" in result.message
@@ -66,7 +69,7 @@ def test_handler_reports_failure_without_raising_when_launch_fails() -> None:
 
     handler = make_app_open_handler(launcher=failing_launcher)
 
-    result = handler(_app_open_request("notepad"))
+    result = handler(_app_open_request("notepad"), _TOKEN)
 
     assert result.success is False
     assert "Could not open notepad" in result.message

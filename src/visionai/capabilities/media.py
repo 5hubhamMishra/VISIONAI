@@ -18,6 +18,7 @@ from visionai.capabilities.manifest import (
     ParameterSpec,
     ParameterType,
 )
+from visionai.core.cancellation import CancellationToken
 from visionai.core.events import ActionRequest, ActionResult, RiskLevel
 
 ALLOWED_MEDIA_ACTIONS: Mapping[str, str] = {
@@ -75,7 +76,7 @@ def make_media_control_handler(
 ) -> CapabilityHandler:
     """Create a handler that sends one allowlisted media key."""
 
-    def handle(request: ActionRequest) -> ActionResult:
+    def handle(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
         requested = str(request.arguments.get("action", "")).strip().lower()
         key = ALLOWED_MEDIA_ACTIONS.get(requested)
         if key is None:

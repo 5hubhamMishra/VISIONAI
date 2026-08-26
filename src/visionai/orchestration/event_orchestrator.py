@@ -227,7 +227,7 @@ class EventOrchestrator:
             if request.capability_id != "system.stop":
                 token = self._operations.begin_operation()
             self._state.transition(AppState.EXECUTING, reason=request.capability_id)
-            result = self._dispatcher.dispatch(request, context)
+            result = self._dispatcher.dispatch(request, context, cancellation=token)
             await self._publish(result)
             self._state.transition(AppState.RESPONDING, reason="action result")
         except VisionAIError as exc:
@@ -236,6 +236,8 @@ class EventOrchestrator:
         finally:
             if token is not None:
                 self._operations.finish_operation(token)
+            if self._state.state is AppState.EXECUTING:
+                self._try_transition(AppState.ERROR, reason="execution interrupted")
             self._state.cancel(reason="turn complete")
 
     def _transition_to_interpreting(self) -> None:

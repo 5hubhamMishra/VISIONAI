@@ -8,6 +8,7 @@ from visionai.capabilities import (
     ParameterType,
     SerializedDispatcher,
 )
+from visionai.core.cancellation import CancellationToken
 from visionai.core.errors import DispatchError
 from visionai.core.events import ActionRequest, ActionResult, RiskLevel
 from visionai.observability import InMemoryAuditSink
@@ -42,7 +43,7 @@ def test_dispatcher_executes_registered_handler_and_audits_result() -> None:
         policy=PolicyEngine(registry),
         audit=audit,
         handlers={
-            "system.time": lambda request: ActionResult(
+            "system.time": lambda request, cancellation: ActionResult(
                 request_id=request.id,
                 success=True,
                 message="It is 10:00.",
@@ -66,7 +67,7 @@ def test_dispatcher_returns_policy_denial_without_second_handler_call() -> None:
     audit = InMemoryAuditSink()
     calls = 0
 
-    def handler(request: ActionRequest) -> ActionResult:
+    def handler(request: ActionRequest, cancellation) -> ActionResult:
         nonlocal calls
         calls += 1
         return ActionResult(request_id=request.id, success=True, message="ok")
@@ -94,7 +95,7 @@ def test_dispatcher_evaluate_checks_policy_without_executing_or_consuming_rate_l
     audit = InMemoryAuditSink()
     calls = 0
 
-    def handler(request: ActionRequest) -> ActionResult:
+    def handler(request: ActionRequest, cancellation) -> ActionResult:
         nonlocal calls
         calls += 1
         return ActionResult(request_id=request.id, success=True, message="ok")
@@ -141,7 +142,7 @@ def test_dispatcher_audits_denials_with_the_manifests_risk_level_not_the_request
         registry=registry,
         policy=PolicyEngine(registry),
         audit=audit,
-        handlers={"clipboard.read": lambda request: ActionResult(
+        handlers={"clipboard.read": lambda request, cancellation: ActionResult(
             request_id=request.id, success=True, message="ok"
         )},
     )
@@ -153,6 +154,38 @@ def test_dispatcher_audits_denials_with_the_manifests_risk_level_not_the_request
 
     assert result.success is False
     assert audit.list()[-1].risk_level == RiskLevel.SENSITIVE
+
+
+def test_dispatcher_skips_the_handler_when_the_token_is_already_cancelled() -> None:
+    """A request cancelled before its handler ever runs must have no effect --
+    e.g. Stop raced ahead of a request still queued behind the serialized
+    dispatcher's lock."""
+
+    registry = CapabilityRegistry([_manifest()])
+    audit = InMemoryAuditSink()
+    calls = 0
+
+    def handler(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
+        nonlocal calls
+        calls += 1
+        return ActionResult(request_id=request.id, success=True, message="ok")
+
+    dispatcher = SerializedDispatcher(
+        registry=registry,
+        policy=PolicyEngine(registry),
+        audit=audit,
+        handlers={"system.time": handler},
+    )
+    request = ActionRequest(capability_id="system.time", risk_level=RiskLevel.READ_ONLY)
+    token = CancellationToken()
+    token.cancel()
+
+    result = dispatcher.dispatch(request, PolicyContext(), cancellation=token)
+
+    assert calls == 0
+    assert result.success is False
+    assert result.message == "Operation was cancelled before it started."
+    assert audit.list()[-1].summary == "Operation was cancelled before it started."
 
 
 def test_dispatcher_rejects_missing_handler_after_policy_allows() -> None:

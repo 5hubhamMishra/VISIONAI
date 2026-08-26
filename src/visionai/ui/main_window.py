@@ -1,27 +1,32 @@
 """Minimal desktop main window: a thin front end over the safe runtime.
 
-This is the first Phase 2 slice, not the full main window described in
-Section 14 of the master prompt (no onboarding or editable settings yet).
-It exists to prove the UI can drive the already-tested
-orchestrator/state machine/dispatcher path safely, not to be a finished
-product. Every typed command is turned into a final TranscriptEvent and
-handed to the same `EventOrchestrator` the CLI and automated tests use --
-this window adds no new planning or execution logic of its own. The tray
-icon (show/hide, quit), diagnostics view, and read-only settings view are
-the exceptions: they are pure window-lifecycle/read-only-introspection
-controls with no runtime authority.
+This is the Phase 2 slice, not the full main window described in Section 14
+of the master prompt. It exists to prove the UI can drive the
+already-tested orchestrator/state machine/dispatcher path safely, not to
+be a finished product. Every typed command is turned into a final
+TranscriptEvent and handed to the same `EventOrchestrator` the CLI and
+automated tests use -- this window adds no new planning or execution logic
+of its own. The tray icon (show/hide, quit), diagnostics view, settings
+(log level only), and the one-time onboarding dialog are the exceptions:
+they are pure window-lifecycle/read-only-introspection/local-preference
+controls with no path into policy, permissions, or dispatch.
 """
 
 from __future__ import annotations
 
 import asyncio
 import sys
+import traceback
 from typing import TYPE_CHECKING
 
 import PySide6
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -38,7 +43,9 @@ from PySide6.QtWidgets import (
 )
 
 import visionai
-from visionai.config import get_settings
+from visionai.config import default_user_settings_store, effective_log_level, get_settings
+from visionai.config.settings import LogLevel
+from visionai.config.user_settings import UserSettingsStore
 from visionai.core.events import (
     ActionPlan,
     ActionResult,
@@ -48,7 +55,21 @@ from visionai.core.events import (
     PermissionRequest,
     TranscriptEvent,
 )
+from visionai.observability import configure_logging
 from visionai.runtime import Runtime, build_runtime
+
+_LOG_LEVELS: tuple[LogLevel, ...] = ("DEBUG", "INFO", "WARNING", "ERROR")
+
+_ONBOARDING_TEXT = (
+    "VisionAI is a local desktop assistant. Every command you type is checked "
+    "by the same safety policy the console uses before anything runs:\n\n"
+    "- Read-only actions (time, battery, capability list) run immediately.\n"
+    "- Sensitive actions ask you to grant permission once.\n"
+    "- Actions with side effects ask you to confirm each time, showing exactly "
+    "what will happen.\n\n"
+    "Use Stop to cancel a running action, Diagnostics to check runtime status, "
+    "and Settings to change the log level. This dialog only shows once."
+)
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QCloseEvent
@@ -86,7 +107,7 @@ class _RuntimeWorker(QObject):
             else:
                 outputs = []
         except Exception as exc:  # pragma: no cover - defensive GUI boundary
-            self.failed.emit(str(exc))
+            self.failed.emit("".join(traceback.format_exception(exc)))
             return
         self.finished.emit(outputs)
 
@@ -118,12 +139,53 @@ async def _drain_runtime_outputs(runtime: Runtime) -> list[EventBase]:
     return outputs
 
 
+class _SettingsDialog(QDialog):
+    """Editable settings dialog: log level only, via a closed-choice combo box.
+
+    A combo box restricted to `_LOG_LEVELS` needs no input validation of its
+    own -- the widget cannot produce a value outside the valid set.
+    """
+
+    def __init__(self, current: LogLevel, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+
+        self._log_level_combo = QComboBox()
+        self._log_level_combo.setAccessibleName("Log level")
+        self._log_level_combo.addItems(_LOG_LEVELS)
+        self._log_level_combo.setCurrentIndex(_LOG_LEVELS.index(current))
+
+        form = QFormLayout()
+        form.addRow("Log level:", self._log_level_combo)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout()
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+        self.setLayout(layout)
+
+    def selected_log_level(self) -> LogLevel:
+        return _LOG_LEVELS[self._log_level_combo.currentIndex()]
+
+
 class MainWindow(QMainWindow):
     """Type a command, run it through the real runtime, see the result."""
 
-    def __init__(self, runtime: Runtime, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        runtime: Runtime,
+        parent: QWidget | None = None,
+        *,
+        settings_store: UserSettingsStore | None = None,
+    ) -> None:
         super().__init__(parent)
         self._runtime = runtime
+        self._settings_store = settings_store or default_user_settings_store()
         self._worker_thread: QThread | None = None
         self._worker: _RuntimeWorker | None = None
         self.setWindowTitle("VisionAI")
@@ -239,24 +301,61 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Diagnostics", self._diagnostics_text())
 
     def show_settings(self) -> None:
-        """Show current settings without changing them."""
+        """Show current settings; the log level can be changed here.
 
-        QMessageBox.information(self, "Settings", self._settings_text())
+        Only the log level is editable. `log_dir`/`data_dir` are
+        environment-only (see `visionai.config.settings`) since changing a
+        storage path at runtime would need a migration step this dialog
+        does not perform.
+        """
+
+        current = effective_log_level(self._settings_store)
+        chosen = self._ask_new_log_level(current)
+        if chosen is None or chosen == current:
+            return
+
+        self._settings_store.set_log_level(chosen)
+        configure_logging(chosen)
+        QMessageBox.information(
+            self, "Settings", f"Log level set to {chosen}. Applied immediately."
+        )
+
+    def _ask_new_log_level(self, current: LogLevel) -> LogLevel | None:
+        """Show the editable settings dialog. Returns the chosen level, or
+        None if the dialog was cancelled or nothing changed."""
+
+        dialog = _SettingsDialog(current, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        return dialog.selected_log_level()
 
     def _settings_text(self) -> str:
-        """Build the read-only settings summary."""
+        """Build the settings summary shown before editing."""
 
         settings = get_settings()
         lines = [
-            f"Log level: {settings.log_level}",
+            f"Log level: {effective_log_level(self._settings_store)}",
             f"Log directory: {settings.log_dir}",
             f"Data directory: {settings.data_dir}",
             "Raw audio retention: disabled",
             "Raw camera retention: disabled",
             "Permissions: managed by policy store, not this dialog",
-            "Settings editing: not enabled yet",
+            "Settings editing: log level only",
         ]
         return "\n".join(lines)
+
+    def maybe_show_onboarding(self) -> None:
+        """Show the one-time welcome dialog, if it has not been seen yet.
+
+        Called explicitly by `main()` after the window is shown, not from
+        `__init__`: a modal dialog fired during construction would block
+        every test that builds a `MainWindow` without expecting one.
+        """
+
+        if self._settings_store.has_seen_onboarding():
+            return
+        QMessageBox.information(self, "Welcome to VisionAI", _ONBOARDING_TEXT)
+        self._settings_store.mark_onboarding_seen()
 
     def _diagnostics_text(self) -> str:
         """Build the diagnostics summary. Read-only introspection only.
@@ -333,7 +432,7 @@ class MainWindow(QMainWindow):
         thread.start()
 
     def _is_worker_running(self) -> bool:
-        return self._worker_thread is not None and self._worker_thread.isRunning()
+        return self._worker_thread is not None
 
     def _clear_worker(self) -> None:
         self._worker_thread = None
@@ -434,9 +533,11 @@ class MainWindow(QMainWindow):
 def main() -> int:
     """Launch the desktop UI against a freshly built runtime."""
 
+    configure_logging(effective_log_level(default_user_settings_store()))
     app = QApplication(sys.argv)
     window = MainWindow(build_runtime())
     window.show()
+    window.maybe_show_onboarding()
     return app.exec()
 
 

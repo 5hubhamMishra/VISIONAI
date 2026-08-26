@@ -15,6 +15,7 @@ from visionai.capabilities.manifest import (
     ParameterSpec,
     ParameterType,
 )
+from visionai.core.cancellation import CancellationToken
 from visionai.core.events import ActionRequest, ActionResult, RiskLevel
 
 Clock = Callable[[], datetime]
@@ -151,7 +152,7 @@ def system_info_manifests() -> tuple[CapabilityManifest, ...]:
 def make_system_time_handler(clock: Clock) -> CapabilityHandler:
     """Create a handler that formats the current local time."""
 
-    def handle(request: ActionRequest) -> ActionResult:
+    def handle(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
         output_format = str(request.arguments.get("format", "24h"))
         now = clock()
         if output_format == "24h":
@@ -174,7 +175,7 @@ def make_system_time_handler(clock: Clock) -> CapabilityHandler:
 def make_system_date_handler(clock: Clock) -> CapabilityHandler:
     """Create a handler that formats the current local date."""
 
-    def handle(request: ActionRequest) -> ActionResult:
+    def handle(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
         output_format = str(request.arguments.get("format", "long"))
         now = clock()
         if output_format == "long":
@@ -197,7 +198,7 @@ def make_system_date_handler(clock: Clock) -> CapabilityHandler:
 def make_system_battery_handler(battery_probe: BatteryProbe) -> CapabilityHandler:
     """Create a handler that reports current battery status."""
 
-    def handle(request: ActionRequest) -> ActionResult:
+    def handle(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
         status = battery_probe()
         if status.percent is None:
             message = "No battery detected."
@@ -212,7 +213,7 @@ def make_system_battery_handler(battery_probe: BatteryProbe) -> CapabilityHandle
 def make_system_health_handler(health_probe: HealthProbe) -> CapabilityHandler:
     """Create a handler that reports current CPU and memory utilisation."""
 
-    def handle(request: ActionRequest) -> ActionResult:
+    def handle(request: ActionRequest, cancellation: CancellationToken) -> ActionResult:
         snapshot = health_probe()
         message = (
             f"CPU is at {snapshot.cpu_percent:.0f}% "
