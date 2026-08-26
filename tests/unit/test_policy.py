@@ -115,8 +115,10 @@ def test_policy_requires_permission_and_confirmation_for_sensitive_requests() ->
 
     assert no_permission.allowed is False
     assert no_permission.reason == "permission has not been granted"
+    assert no_permission.requires_permission is True
     assert no_confirmation.allowed is False
     assert no_confirmation.requires_confirmation is True
+    assert no_confirmation.requires_permission is False
     assert allowed.allowed is True
 
 

@@ -308,6 +308,40 @@ def test_main_window_diagnostics_button_opens_a_dialog(qtbot: Any, monkeypatch: 
     assert "VisionAI:" in shown[0][1]
 
 
+def test_main_window_settings_text_reports_current_read_only_settings(qtbot: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    text = window._settings_text()
+
+    assert "Log level: INFO" in text
+    assert "Log directory: logs" in text
+    assert "Data directory: .visionai" in text
+    assert "Raw audio retention: disabled" in text
+    assert "Raw camera retention: disabled" in text
+    assert "Settings editing: not enabled yet" in text
+
+
+def test_main_window_settings_button_opens_a_dialog(qtbot: Any, monkeypatch: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    shown: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda parent, title, text: shown.append((title, text)),
+    )
+
+    qtbot.mouseClick(window._settings_button, Qt.MouseButton.LeftButton)
+
+    assert len(shown) == 1
+    assert shown[0][0] == "Settings"
+    assert "Log level:" in shown[0][1]
+
+
 def test_main_window_tab_order_reaches_every_control_without_a_trap(qtbot: Any) -> None:
     runtime = build_runtime()
     window = MainWindow(runtime)
@@ -321,6 +355,7 @@ def test_main_window_tab_order_reaches_every_control_without_a_trap(qtbot: Any) 
         window._run_button,
         window._stop_button,
         window._diagnostics_button,
+        window._settings_button,
         window._output,
         window._history,
         window._command_input,
@@ -340,6 +375,7 @@ def test_main_window_tab_order_reverses_cleanly_with_shift_tab(qtbot: Any) -> No
     expected_reverse_order = [
         window._history,
         window._output,
+        window._settings_button,
         window._diagnostics_button,
         window._stop_button,
         window._run_button,

@@ -1,6 +1,7 @@
 from visionai.core.events import ActionRequest, RiskLevel
 from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.policy import ConfirmationService
+from visionai.policy.permissions import JsonPermissionStore
 from visionai.runtime import build_runtime
 
 
@@ -55,6 +56,33 @@ def test_runtime_still_allows_read_only_capability_while_screen_is_locked() -> N
     result = runtime.dispatcher.dispatch(request, runtime.policy_context_factory())
 
     assert result.success is True
+
+
+def test_runtime_exposes_injected_permission_store(tmp_path) -> None:
+    permissions = JsonPermissionStore(tmp_path / "permissions.json")
+
+    runtime = build_runtime(permission_store=permissions)
+
+    assert runtime.permissions is permissions
+
+
+def test_runtime_policy_context_factory_reflects_granted_permissions_fresh(tmp_path) -> None:
+    """A grant made after build_runtime() is still picked up with no extra step.
+
+    Mirrors the lock-state freshness test: `policy_context_factory` reads
+    `permissions.granted_capabilities()` on every call rather than
+    snapshotting it once, so `runtime.permissions.grant(...)` takes effect
+    on the very next dispatch.
+    """
+
+    permissions = JsonPermissionStore(tmp_path / "permissions.json")
+    runtime = build_runtime(permission_store=permissions)
+
+    assert "clipboard.read" not in runtime.policy_context_factory().granted_capabilities
+
+    permissions.grant("clipboard.read")
+
+    assert "clipboard.read" in runtime.policy_context_factory().granted_capabilities
 
 
 def test_runtime_allows_mutating_capability_while_screen_is_unlocked() -> None:

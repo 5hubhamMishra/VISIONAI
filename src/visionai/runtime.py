@@ -26,6 +26,7 @@ from visionai.capabilities.media import (
 )
 from visionai.capabilities.meta import meta_handlers, meta_manifests
 from visionai.capabilities.system_info import system_info_handlers, system_info_manifests
+from visionai.config.settings import get_settings
 from visionai.core.cancellation import OperationController
 from visionai.core.event_bus import EventBus
 from visionai.core.state import StateMachine
@@ -34,6 +35,7 @@ from visionai.orchestration import EventOrchestrator, TextCommandPlanner
 from visionai.orchestration.event_orchestrator import PolicyContextFactory
 from visionai.platform.lock_state import LockStateAdapter, WindowsLockStateAdapter
 from visionai.policy import ConfirmationService, FixedWindowRateLimiter, PolicyContext, PolicyEngine
+from visionai.policy.permissions import JsonPermissionStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +48,7 @@ class Runtime:
     operations: OperationController
     planner: TextCommandPlanner
     confirmation: ConfirmationService
+    permissions: JsonPermissionStore
     policy_context_factory: PolicyContextFactory
     input_bus: EventBus
     output_bus: EventBus
@@ -61,6 +64,7 @@ def build_runtime(
     operation_controller: OperationController | None = None,
     confirmation: ConfirmationService | None = None,
     lock_state: LockStateAdapter | None = None,
+    permission_store: JsonPermissionStore | None = None,
     input_bus: EventBus | None = None,
     output_bus: EventBus | None = None,
     state_machine: StateMachine | None = None,
@@ -72,14 +76,17 @@ def build_runtime(
     dispatcher path without spawning a real process, browser, or media
     keypress.
 
-    `lock_state` defaults to the real `WindowsLockStateAdapter`, checked
-    fresh on every dispatch via `policy_context_factory` -- both the CLI
-    (`app.py`) and the UI/orchestrator build their `PolicyContext` through
-    this one shared factory, so locked-screen mutation blocking is
+    `lock_state` defaults to the real `WindowsLockStateAdapter`, and
+    `permission_store` defaults to a `JsonPermissionStore` under
+    `get_settings().data_dir`; both are checked fresh on every dispatch
+    via `policy_context_factory`. Both the CLI (`app.py`) and the
+    UI/orchestrator build their `PolicyContext` through this one shared
+    factory, so locked-screen mutation blocking and permission grants are
     actually live in both, not just exercised by isolated policy tests.
-    Permission grants are not wired to a persistent store yet, so
-    `granted_capabilities` stays empty; any `permission_required`
-    capability is correctly denied until that follow-up lands.
+    Granting a permission (`runtime.permissions.grant(capability_id)`)
+    takes effect on the very next dispatch, with no separate "apply the
+    grant" step, since the factory re-reads the store each call rather
+    than snapshotting it once.
     """
 
     manifests = (
@@ -94,6 +101,9 @@ def build_runtime(
     state = state_machine or StateMachine()
     confirmations = confirmation or ConfirmationService()
     lock = lock_state or WindowsLockStateAdapter()
+    permissions = permission_store or JsonPermissionStore(
+        get_settings().data_dir / "permissions.json"
+    )
     audit = InMemoryAuditSink()
     policy = PolicyEngine(registry, FixedWindowRateLimiter())
     handlers = {
@@ -112,7 +122,10 @@ def build_runtime(
     planner = TextCommandPlanner(registry)
 
     def policy_context_factory() -> PolicyContext:
-        return PolicyContext(locked_screen=lock.is_locked())
+        return PolicyContext(
+            locked_screen=lock.is_locked(),
+            granted_capabilities=permissions.granted_capabilities(),
+        )
 
     inputs = input_bus or EventBus(max_size=100)
     outputs = output_bus or EventBus(max_size=100)
@@ -133,6 +146,7 @@ def build_runtime(
         operations=operations,
         planner=planner,
         confirmation=confirmations,
+        permissions=permissions,
         policy_context_factory=policy_context_factory,
         input_bus=inputs,
         output_bus=outputs,

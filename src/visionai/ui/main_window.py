@@ -1,15 +1,15 @@
 """Minimal desktop main window: a thin front end over the safe runtime.
 
 This is the first Phase 2 slice, not the full main window described in
-Section 14 of the master prompt (no settings or onboarding yet). It
-exists to prove the UI can drive the already-tested
+Section 14 of the master prompt (no onboarding or editable settings yet).
+It exists to prove the UI can drive the already-tested
 orchestrator/state machine/dispatcher path safely, not to be a finished
 product. Every typed command is turned into a final TranscriptEvent and
 handed to the same `EventOrchestrator` the CLI and automated tests use --
 this window adds no new planning or execution logic of its own. The tray
-icon (show/hide, quit) and the diagnostics view are the exceptions: they
-are pure window-lifecycle/read-only-introspection controls with no
-runtime authority.
+icon (show/hide, quit), diagnostics view, and read-only settings view are
+the exceptions: they are pure window-lifecycle/read-only-introspection
+controls with no runtime authority.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 )
 
 import visionai
+from visionai.config import get_settings
 from visionai.core.events import (
     ActionPlan,
     ActionResult,
@@ -130,6 +131,8 @@ class MainWindow(QMainWindow):
         self._stop_button.setToolTip("Request cooperative cancellation of the current operation")
         self._diagnostics_button = QPushButton("Diagnostics")
         self._diagnostics_button.setAccessibleName("Show diagnostics")
+        self._settings_button = QPushButton("Settings")
+        self._settings_button.setAccessibleName("Show settings")
 
         self._output = QTextEdit()
         self._output.setReadOnly(True)
@@ -144,6 +147,7 @@ class MainWindow(QMainWindow):
         input_row.addWidget(self._run_button)
         input_row.addWidget(self._stop_button)
         input_row.addWidget(self._diagnostics_button)
+        input_row.addWidget(self._settings_button)
 
         result_label = QLabel("Result:")
         result_label.setBuddy(self._output)
@@ -166,6 +170,7 @@ class MainWindow(QMainWindow):
         self._command_input.returnPressed.connect(self.run_current_command)
         self._stop_button.clicked.connect(self.stop_current_operation)
         self._diagnostics_button.clicked.connect(self.show_diagnostics)
+        self._settings_button.clicked.connect(self.show_settings)
         self._refresh_history()
         self._command_input.setFocus()
 
@@ -220,6 +225,26 @@ class MainWindow(QMainWindow):
         """Show the diagnostics view (Section 6/14's required UI component)."""
 
         QMessageBox.information(self, "Diagnostics", self._diagnostics_text())
+
+    def show_settings(self) -> None:
+        """Show current settings without changing them."""
+
+        QMessageBox.information(self, "Settings", self._settings_text())
+
+    def _settings_text(self) -> str:
+        """Build the read-only settings summary."""
+
+        settings = get_settings()
+        lines = [
+            f"Log level: {settings.log_level}",
+            f"Log directory: {settings.log_dir}",
+            f"Data directory: {settings.data_dir}",
+            "Raw audio retention: disabled",
+            "Raw camera retention: disabled",
+            "Permissions: managed by policy store, not this dialog",
+            "Settings editing: not enabled yet",
+        ]
+        return "\n".join(lines)
 
     def _diagnostics_text(self) -> str:
         """Build the diagnostics summary. Read-only introspection only.

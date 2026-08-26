@@ -48,6 +48,7 @@ class PolicyDecision:
     allowed: bool
     reason: str
     requires_confirmation: bool = False
+    requires_permission: bool = False
 
 
 class PolicyEngine:
@@ -79,7 +80,11 @@ class PolicyEngine:
         if context.locked_screen and manifest.risk_level > RiskLevel.READ_ONLY:
             return PolicyDecision(False, "mutating actions are blocked while the screen is locked")
         if manifest.permission_required and manifest.id not in context.granted_capabilities:
-            return PolicyDecision(False, "permission has not been granted")
+            return PolicyDecision(
+                False,
+                "permission has not been granted",
+                requires_permission=True,
+            )
         needs_confirmation = (
             manifest.confirmation_required or manifest.risk_level >= RiskLevel.SENSITIVE
         )

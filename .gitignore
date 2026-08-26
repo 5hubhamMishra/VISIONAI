@@ -21,6 +21,9 @@ env/
 *.log
 logs/
 
+# Local persistent app state (permission grants, etc.)
+.visionai/
+
 # Testing and coverage
 .pytest_cache/
 .coverage
