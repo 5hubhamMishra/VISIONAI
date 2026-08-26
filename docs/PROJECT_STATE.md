@@ -56,6 +56,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Fixed the log redaction control (Section 15 "log redaction"): it did not work at all as wired. `RedactionFilter` was attached to the *root* logger via `Logger.addFilter`, but a filter on a logger only gates that logger's own calls -- it is never consulted for records from named child loggers (the only kind `get_logger()` returns) reaching the same handlers by propagating up the hierarchy, so redaction silently never ran for any real application logger. Separately, even when attached correctly, redacting `record.msg` and `record.args` independently before %-substitution could leave a placeholder in `msg` with no matching arg (e.g. a secret passed the idiomatic way, `logger.info("api_key=%s", key)`, has no "key=" prefix in `args` alone to match against), which either failed to redact the secret or crashed message rendering with `TypeError: not all arguments converted during string formatting`. Verified both failure modes live before fixing. Fix: attach the filter to each handler instead of the root logger, and redact the fully substituted message (`record.getMessage()`) rather than msg/args separately, then clear `args` so no further substitution is attempted.
 - Migrated the first `../jarvis` prototype behavior into the trusted runtime, per the user's decision and `docs/MIGRATION_QUARANTINE.md`'s required steps: `app.open`, a Risk 1 (Reversible) capability that opens one allowlisted desktop application (`notepad`, `calculator`, `paint`) by its exact executable name with `shell=False`. Deliberately excludes anything from the old prototype's broader app list that is itself a general-purpose command surface (`cmd`, `powershell`, Task Manager), since those would reintroduce the arbitrary-execution risk this capability exists to avoid. Verified live end to end through the actual CLI and dispatcher: the denial path (`cmd` rejected) and the real launch path (Notepad actually opened as a live process, confirmed via `Get-Process`, then closed).
 - Migrated browser/search behavior into the trusted runtime as reversible capabilities: `browser.open` opens one fixed allowlisted site, and `browser.search` opens an encoded Google search URL. Both validate through `UrlPolicy` before the opener is called, both are injectable for tests, and neither accepts arbitrary URLs.
+- Migrated media behavior into the trusted runtime as `media.control`, a Risk 1 (Reversible) capability that accepts only fixed media actions (`play_pause`, `next`, `previous`, `volume_up`, `volume_down`, `mute`) and maps them to allowlisted media keys through an injectable key presser. Its real `default_key_presser` calls `pyautogui`, which was not declared as a project dependency -- every test injects a fake key presser, so `media.control` would have failed at runtime with "pyautogui is not installed" on a standard `pip install -r requirements/dev.txt`, undetected by the test suite. Added `pyautogui` to `requirements/base.txt`/`pyproject.toml`, then verified the real path live: toggled the mute key on and immediately off through both the raw function and the actual CLI (`visionai media.control --media-action mute` twice in a row), restoring the original state -- deliberately not testing `volume_up`/`volume_down`/`play_pause` for real, since those aren't cleanly self-reversing the way a mute toggle is.
 - Added the two remaining Section 13 initial safe capabilities that don't require an orchestrator: `system.capabilities` (lists every registered capability by ID and description) and `system.help` (summarizes current functionality and the registered count). Both are pure registry introspection, Risk 0 (Read-only). "Stop current operation" is still deferred -- there is no orchestrator or in-flight operation yet for it to stop.
 - Locally quarantined the old `../jarvis` prototype execution path in this workspace: app parsing now rejects injection-shaped text instead of partially matching it, unknown app/site names no longer fall back to raw spoken text, app launch uses `subprocess.Popen([cmd], shell=False)`, command-surface apps are blocked, web opens are host/scheme allowlisted, search query encoding uses `quote_plus`, mutating system commands are hard-blocked, and touched debug prints are ASCII-safe on the Windows console. These source edits are outside the `visionai/` Git repository and therefore are not pushed to `5hubhamMishra/VISIONAI`; this document records the local hardening step.
 
@@ -65,12 +66,12 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## In Progress
 
-- Incremental migration from the previous JARVIS prototype: `app.open`, `browser.open`, and `browser.search` migrated; voice, gesture, media control, and LLM behaviors remain unmigrated and untrusted.
+- Incremental migration from the previous JARVIS prototype: `app.open`, `browser.open`, `browser.search`, and `media.control` migrated; voice, gesture, and LLM behaviors remain unmigrated and untrusted.
 
 ## Approved Next Tasks
 
 1. Decide whether to disable or quarantine unsafe direct execution paths in the old `../jarvis` prototype itself (distinct from the new package, which never imports from it).
-2. Decide which prototype feature to migrate next (media control, voice input, LLM response planning, or something else).
+2. Decide which prototype feature to migrate next (voice input, gesture input, LLM response planning, or something else).
 3. Add "stop current operation" once a real orchestrator/state machine wiring exists for it to interrupt.
 
 ## Known Defects
@@ -98,6 +99,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - `system.help` and `system.capabilities` are read-only registry introspection only.
 - `app.open` launches by exact executable name with `shell=False`, never a shell string; its allowlist (`notepad`, `calculator`, `paint`) deliberately excludes any general-purpose command surface (shell, terminal, task manager).
 - `browser.open` and `browser.search` validate through `UrlPolicy` and allowlisted HTTPS hosts before the browser opener is called.
+- `media.control` only maps allowlisted action names to fixed media keys and remains behind manifest, policy, dispatcher, rate-limit, and audit controls.
 - The old `../jarvis` prototype must remain outside the trusted runtime even after local quarantine; only `visionai/` capabilities registered by manifest are trusted.
 
 ## Required Decisions
@@ -116,8 +118,8 @@ cd visionai
 
 - Python: 3.12.10
 - Ruff: passed
-- mypy: passed for 30 source files
-- pytest: 110 passed, 92% coverage
+- mypy: passed for 31 source files
+- pytest: 118 passed, 92% coverage
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

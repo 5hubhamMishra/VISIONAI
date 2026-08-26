@@ -26,6 +26,7 @@ def main() -> int:
             "app.open",
             "browser.open",
             "browser.search",
+            "media.control",
         ),
         default="system.time",
     )
@@ -33,6 +34,7 @@ def main() -> int:
     parser.add_argument("--app", default=None, help="Application to open (app.open only).")
     parser.add_argument("--site", default=None, help="Website to open (browser.open only).")
     parser.add_argument("--query", default=None, help="Search query (browser.search only).")
+    parser.add_argument("--media-action", default=None, help="Media action (media.control only).")
     args = parser.parse_args()
 
     runtime = build_runtime()
@@ -45,6 +47,8 @@ def main() -> int:
         arguments["site"] = args.site
     if args.query is not None:
         arguments["query"] = args.query
+    if args.media_action is not None:
+        arguments["action"] = args.media_action
 
     manifest = runtime.registry.get(args.capability)
     request = ActionRequest(

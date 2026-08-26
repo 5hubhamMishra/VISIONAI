@@ -1,4 +1,5 @@
 from visionai import app
+from visionai.runtime import build_runtime
 
 
 def test_app_runs_default_time_capability(monkeypatch, capsys) -> None:
@@ -43,6 +44,20 @@ def test_app_runs_browser_search(monkeypatch) -> None:
 
     assert exit_code == 0
     assert opened == ["https://www.google.com/search?q=hello+world"]
+
+
+def test_app_runs_media_control_with_injected_key_presser(monkeypatch) -> None:
+    pressed: list[str] = []
+    monkeypatch.setattr("sys.argv", ["visionai", "media.control", "--media-action", "mute"])
+    monkeypatch.setattr(
+        "visionai.app.build_runtime",
+        lambda: build_runtime(key_presser=pressed.append),
+    )
+
+    exit_code = app.main()
+
+    assert exit_code == 0
+    assert pressed == ["volumemute"]
 
 
 def test_app_rejects_unallowlisted_app_open_without_launching_anything(monkeypatch, capsys) -> None:

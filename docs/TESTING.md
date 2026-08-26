@@ -27,14 +27,15 @@ Phase 0 tests cover core contracts and invariants:
 - `app.open` tests cover manifest risk classification, an injected fake launcher for the success/case-insensitivity/OS-error paths (so no real process spawns), policy rejection of unknown/missing arguments and rate-limit exhaustion, and two things verified with the *real* `default_launcher`: the denial path for an unallowlisted app (safe, since nothing launches), and a genuine end-to-end run through the CLI that actually opened Notepad as a live process (confirmed via `Get-Process`) before it was closed.
 - `system.capabilities`/`system.help` tests cover manifest risk classification, listing sorted by ID, the empty-registry case, and end to end through `build_runtime()` -- including that the listing correctly includes itself.
 - Browser capability tests cover `browser.open` and `browser.search`: allowlisted site normalization, unknown-site rejection, URL policy failure before opener execution, encoded search queries, empty/control-character query rejection, runtime dispatch/audit, CLI invocation, and policy rejection of missing/unknown arguments.
+- Media capability tests cover `media.control`: manifest risk classification, allowlisted key mapping, unknown-action rejection before keypress, key-presser failure handling, runtime dispatch/audit, CLI invocation, and policy rejection of missing/unknown arguments.
 
 ## Verified Results
 
 Verified locally on Windows with Python 3.12.10 using `scripts\verify.ps1`:
 
 - Ruff: passed
-- mypy: passed for 30 source files
-- pytest: 110 passed
+- mypy: passed for 31 source files
+- pytest: 118 passed
 - Coverage: 92%
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
