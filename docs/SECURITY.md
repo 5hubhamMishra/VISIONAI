@@ -23,7 +23,7 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 - Lock-state policy input is isolated behind an adapter boundary. The Windows wrapper checks whether the interactive desktop can be opened (`OpenInputDesktop`), which fails while the workstation is locked or a secure desktop such as a UAC prompt is active, and treats any check failure or unreachable desktop as locked.
 - `app.open` opens one allowlisted desktop application by its exact executable name with `shell=False` -- never a shell string, never user-supplied text. The allowlist (`notepad`, `calculator`, `paint`) deliberately excludes anything that is itself a general-purpose command surface (a shell, a terminal, Task Manager), since exposing one of those would let an "open an app" capability be used to reach arbitrary further execution.
 - `browser.open` and `browser.search` are reversible browser capabilities. They do not accept arbitrary URLs: site names map to a fixed allowlist, search queries are encoded by `UrlPolicy`, only HTTPS allowlisted hosts are permitted, and the browser opener is called only after policy normalization succeeds.
-- `media.control` accepts only fixed media actions (`play_pause`, `next`, `previous`, `volume_up`, `volume_down`, `mute`) and maps them to allowlisted media keys; tests inject the key presser so verification never sends live keyboard input.
+- `media.control` accepts only fixed media actions (`play_pause`, `next`, `previous`, `volume_up`, `volume_down`, `mute`) and maps them to allowlisted media keys; tests inject the key presser so automated verification never sends live keyboard input. The real `pyautogui`-based key presser is dependency-declared but not exercised by automated verification.
 
 ## Remaining Risks
 

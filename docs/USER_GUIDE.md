@@ -1,6 +1,6 @@
 # User Guide
 
-VisionAI is not ready for end-user operation yet. It does not accept voice or gesture input, and does not execute browser, file, shutdown, or media actions.
+VisionAI is not ready for end-user operation yet. It does not accept voice or gesture input, and does not execute file, shutdown, or any other system-mutating actions beyond the specific commands below.
 
 The only working functionality is a console entry point that runs one policy-gated capability at a time:
 
