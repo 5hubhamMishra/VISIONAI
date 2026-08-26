@@ -33,9 +33,12 @@ dev = [
 ui = [
     "PySide6>=6.7,<7",
 ]
-# Populated in later phases as audio and vision subsystems are
-# implemented and their exact dependencies are verified.
-voice = []
+voice = [
+    "sounddevice>=0.5,<1",
+    "numpy>=2.0,<3",
+]
+# Populated in a later phase once the vision subsystem's exact
+# dependencies are verified.
 vision = []
 
 [project.scripts]

@@ -1,5 +1,6 @@
 -r base.txt
 -r ui.txt
+-r voice.txt
 pytest==9.0.3
 pytest-asyncio==1.4.0
 pytest-cov==5.0.0

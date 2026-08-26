@@ -5,7 +5,10 @@
 # UI (Phase 2) is now implemented -- see requirements/ui.txt for PySide6.
 
 # --- Voice (Phase 3) ---
-# sounddevice==0.4.*
+# Device selection/capture (sounddevice, numpy) now implemented -- see
+# requirements/voice.txt and visionai.platform.microphone. STT/TTS remain
+# out of scope: InputAdapter/PushToTalkRunner take an injected transcriber
+# rather than bundling a specific engine.
 # faster-whisper==1.0.*      # Whisper-compatible local STT
 # pyttsx3==2.90              # offline TTS
 
