@@ -116,6 +116,37 @@ class InputAdapter:
         )
 
 
+@dataclass(slots=True)
+class PushToTalkRunner:
+    """Run one push-to-talk capture through the injected STT boundary."""
+
+    input_adapter: InputAdapter
+    transcribe_once: Callable[[], str]
+    confidence: float = 1.0
+    language: str = "en"
+    _pressed: bool = False
+
+    def press(self) -> bool:
+        """Start a push-to-talk capture; return False if already pressed."""
+
+        if self._pressed:
+            return False
+        self._pressed = True
+        return True
+
+    async def release(self) -> TranscriptEvent | None:
+        """Finish the capture and publish exactly one final transcript."""
+
+        if not self._pressed:
+            return None
+        self._pressed = False
+        return await self.input_adapter.publish_voice_capture(
+            self.transcribe_once,
+            confidence=self.confidence,
+            language=self.language,
+        )
+
+
 class EventOrchestrator:
     """Consume input events and publish planned/dispatch results."""
 

@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from visionai.core.events import ActionRequest, ActionResult, GestureEvent, Intent, RiskLevel
+from visionai.orchestration import PushToTalkRunner
 from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.policy import ConfirmationService
 from visionai.policy.permissions import JsonPermissionStore
@@ -141,6 +142,26 @@ async def test_runtime_input_adapter_voice_capture_uses_injected_transcriber() -
     assert event.text == "open notepad"
     assert event.is_final is True
     assert launched == ["notepad.exe"]
+
+
+@pytest.mark.asyncio
+async def test_push_to_talk_runner_publishes_once_on_release() -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    runner = PushToTalkRunner(runtime.input_adapter, lambda: "open notepad", confidence=0.91)
+
+    assert await runner.release() is None
+    assert runner.press() is True
+    assert runner.press() is False
+    event = await runner.release()
+    runtime.input_bus.close()
+    await runtime.orchestrator.run_until_closed()
+
+    assert event is not None
+    assert event.text == "open notepad"
+    assert event.is_final is True
+    assert launched == ["notepad.exe"]
+    assert await runner.release() is None
 
 
 @pytest.mark.asyncio
