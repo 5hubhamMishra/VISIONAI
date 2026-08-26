@@ -45,6 +45,7 @@ from visionai.core.events import (
     ConfirmationRequest,
     ErrorEvent,
     EventBase,
+    PermissionRequest,
     TranscriptEvent,
 )
 from visionai.runtime import Runtime, build_runtime
@@ -65,16 +66,20 @@ class _RuntimeWorker(QObject):
         runtime: Runtime,
         text: str | None = None,
         confirmation: ConfirmationRequest | None = None,
+        permission: PermissionRequest | None = None,
     ) -> None:
         super().__init__()
         self._runtime = runtime
         self._text = text
         self._confirmation = confirmation
+        self._permission = permission
 
     @Slot()
     def run(self) -> None:
         try:
-            if self._confirmation is not None:
+            if self._permission is not None:
+                outputs = asyncio.run(_grant_runtime_permission(self._runtime, self._permission))
+            elif self._confirmation is not None:
                 outputs = asyncio.run(_confirm_runtime_request(self._runtime, self._confirmation))
             elif self._text is not None:
                 outputs = asyncio.run(_process_runtime_text(self._runtime, self._text))
@@ -96,6 +101,13 @@ async def _confirm_runtime_request(
     runtime: Runtime, confirmation: ConfirmationRequest
 ) -> list[EventBase]:
     await runtime.orchestrator.confirm(confirmation.id)
+    return await _drain_runtime_outputs(runtime)
+
+
+async def _grant_runtime_permission(
+    runtime: Runtime, permission: PermissionRequest
+) -> list[EventBase]:
+    await runtime.orchestrator.grant_permission(permission.id)
     return await _drain_runtime_outputs(runtime)
 
 
@@ -302,9 +314,12 @@ class MainWindow(QMainWindow):
         *,
         text: str | None = None,
         confirmation: ConfirmationRequest | None = None,
+        permission: PermissionRequest | None = None,
     ) -> None:
         thread = QThread(self)
-        worker = _RuntimeWorker(runtime=self._runtime, text=text, confirmation=confirmation)
+        worker = _RuntimeWorker(
+            runtime=self._runtime, text=text, confirmation=confirmation, permission=permission
+        )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(self._on_worker_finished)
@@ -330,6 +345,12 @@ class MainWindow(QMainWindow):
         confirmation_result = self._handle_confirmation(outputs)
         if confirmation_result is not None:
             outputs = confirmation_result
+            if self._is_worker_running():
+                return
+
+        permission_result = self._handle_permission(outputs)
+        if permission_result is not None:
+            outputs = permission_result
             if self._is_worker_running():
                 return
 
@@ -361,11 +382,33 @@ class MainWindow(QMainWindow):
         self._runtime.orchestrator.cancel_pending_confirmation(confirmation.id)
         return [ActionPlan(steps=(), summary="Action cancelled.")]
 
+    def _handle_permission(self, outputs: list[EventBase]) -> list[EventBase] | None:
+        permission = next((o for o in outputs if isinstance(o, PermissionRequest)), None)
+        if permission is None:
+            return None
+
+        if self._ask_permission(permission):
+            self._start_worker(permission=permission)
+            return []
+
+        self._runtime.orchestrator.cancel_pending_permission(permission.id)
+        return [ActionPlan(steps=(), summary="Permission not granted.")]
+
     def _ask_confirmation(self, confirmation: ConfirmationRequest) -> bool:
         answer = QMessageBox.question(
             self,
             "Confirm action",
             confirmation.action_summary,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def _ask_permission(self, permission: PermissionRequest) -> bool:
+        answer = QMessageBox.question(
+            self,
+            "Grant permission",
+            f"Allow {permission.capability_id}?\n\n{permission.action_summary}",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

@@ -1,3 +1,4 @@
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -13,6 +14,7 @@ from visionai.core.events import (
     ConfirmationRequest,
     ErrorEvent,
     Intent,
+    PermissionRequest,
     RiskLevel,
     TranscriptEvent,
 )
@@ -20,7 +22,13 @@ from visionai.core.state import AppState, StateMachine
 from visionai.observability import InMemoryAuditSink
 from visionai.orchestration.event_orchestrator import EventOrchestrator
 from visionai.platform.lock_state import StaticLockStateAdapter
-from visionai.policy import ConfirmationService, FixedWindowRateLimiter, PolicyContext, PolicyEngine
+from visionai.policy import (
+    ConfirmationService,
+    FixedWindowRateLimiter,
+    JsonPermissionStore,
+    PolicyContext,
+    PolicyEngine,
+)
 from visionai.runtime import build_runtime
 
 
@@ -95,6 +103,39 @@ def _build_sensitive_orchestrator() -> tuple[EventOrchestrator, EventBus, list[A
     return orchestrator, output_bus, calls
 
 
+def _build_permission_orchestrator(
+    tmp_path: Path,
+) -> tuple[EventOrchestrator, EventBus, list[ActionRequest], JsonPermissionStore]:
+    registry = CapabilityRegistry([_sensitive_manifest()])
+    calls: list[ActionRequest] = []
+    permissions = JsonPermissionStore(tmp_path / "permissions.json")
+
+    def handler(request: ActionRequest) -> ActionResult:
+        calls.append(request)
+        return ActionResult(request_id=request.id, success=True, message="done")
+
+    dispatcher = SerializedDispatcher(
+        registry=registry,
+        policy=PolicyEngine(registry, FixedWindowRateLimiter()),
+        audit=InMemoryAuditSink(),
+        handlers={"test.sensitive": handler},
+    )
+    output_bus = EventBus(max_size=10)
+    orchestrator = EventOrchestrator(
+        input_bus=EventBus(max_size=10),
+        output_bus=output_bus,
+        planner=_FixedPlanner(summary="Do the sensitive thing."),
+        dispatcher=dispatcher,
+        operations=OperationController(),
+        confirmation=ConfirmationService(),
+        permission_store=permissions,
+        policy_context_factory=lambda: PolicyContext(
+            granted_capabilities=permissions.granted_capabilities()
+        ),
+    )
+    return orchestrator, output_bus, calls, permissions
+
+
 @pytest.mark.asyncio
 async def test_orchestrator_requests_confirmation_for_a_sensitive_capability() -> None:
     orchestrator, output_bus, calls = _build_sensitive_orchestrator()
@@ -110,6 +151,93 @@ async def test_orchestrator_requests_confirmation_for_a_sensitive_capability() -
     assert confirmation.action_summary == "Do the sensitive thing."
     assert orchestrator.state_machine.state is AppState.AWAITING_CONFIRMATION
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_requests_permission_before_confirmation(tmp_path: Path) -> None:
+    orchestrator, output_bus, calls, permissions = _build_permission_orchestrator(tmp_path)
+    event = TranscriptEvent(
+        text="do the sensitive thing", confidence=1.0, language="en", is_final=True
+    )
+
+    await orchestrator.process_event(event)
+    outputs = await _drain_available(output_bus)
+
+    assert [type(output) for output in outputs] == [Intent, ActionPlan, PermissionRequest]
+    permission = outputs[2]
+    assert permission.capability_id == "test.sensitive"
+    assert permission.action_summary == "Do the sensitive thing."
+    assert orchestrator.state_machine.state is AppState.AWAITING_PERMISSION
+    assert permissions.granted_capabilities() == frozenset()
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_grant_permission_then_requests_confirmation(tmp_path: Path) -> None:
+    orchestrator, output_bus, calls, permissions = _build_permission_orchestrator(tmp_path)
+    event = TranscriptEvent(
+        text="do the sensitive thing", confidence=1.0, language="en", is_final=True
+    )
+    await orchestrator.process_event(event)
+    permission = (await _drain_available(output_bus))[2]
+
+    await orchestrator.grant_permission(permission.id)
+    outputs = await _drain_available(output_bus)
+
+    assert permissions.is_granted("test.sensitive") is True
+    assert calls == []
+    assert len(outputs) == 1
+    assert isinstance(outputs[0], ConfirmationRequest)
+    assert orchestrator.state_machine.state is AppState.AWAITING_CONFIRMATION
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_cancel_permission_prevents_grant_and_execution(
+    tmp_path: Path,
+) -> None:
+    orchestrator, output_bus, calls, permissions = _build_permission_orchestrator(tmp_path)
+    event = TranscriptEvent(
+        text="do the sensitive thing", confidence=1.0, language="en", is_final=True
+    )
+    await orchestrator.process_event(event)
+    permission = (await _drain_available(output_bus))[2]
+
+    removed = orchestrator.cancel_pending_permission(permission.id)
+    await orchestrator.grant_permission(permission.id)
+    replay_outputs = await _drain_available(output_bus)
+
+    assert removed is True
+    assert permissions.is_granted("test.sensitive") is False
+    assert calls == []
+    assert isinstance(replay_outputs[0], ErrorEvent)
+    assert "missing or already used" in replay_outputs[0].message
+    assert orchestrator.state_machine.state is AppState.IDLE
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_new_command_supersedes_a_pending_permission(
+    tmp_path: Path,
+) -> None:
+    orchestrator, output_bus, calls, permissions = _build_permission_orchestrator(tmp_path)
+    event = TranscriptEvent(
+        text="do the sensitive thing", confidence=1.0, language="en", is_final=True
+    )
+
+    await orchestrator.process_event(event)
+    first_permission = (await _drain_available(output_bus))[2]
+    assert orchestrator.state_machine.state is AppState.AWAITING_PERMISSION
+
+    await orchestrator.process_event(event)
+    outputs = await _drain_available(output_bus)
+    await orchestrator.grant_permission(first_permission.id)
+    stale_outputs = await _drain_available(output_bus)
+
+    assert calls == []
+    assert permissions.is_granted("test.sensitive") is False
+    assert isinstance(outputs[-1], PermissionRequest)
+    assert isinstance(stale_outputs[-1], ErrorEvent)
+    assert "missing or already used" in stale_outputs[-1].message
+    assert orchestrator.state_machine.state is AppState.AWAITING_PERMISSION
 
 
 @pytest.mark.asyncio

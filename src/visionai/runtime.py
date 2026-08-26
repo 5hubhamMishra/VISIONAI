@@ -136,6 +136,7 @@ def build_runtime(
         dispatcher=dispatcher,
         operations=operations,
         confirmation=confirmations,
+        permission_store=permissions,
         state_machine=state,
         policy_context_factory=policy_context_factory,
     )

@@ -149,6 +149,15 @@ class ConfirmationRequest(EventBase):
         return self
 
 
+class PermissionRequest(EventBase):
+    """A pending request to grant a capability permission."""
+
+    request_id: UUID
+    capability_id: Slug
+    action_summary: SafeText
+    risk_level: RiskLevel
+
+
 class PermissionDecision(EventBase):
     """A recorded grant or denial of a capability for the current user."""
 

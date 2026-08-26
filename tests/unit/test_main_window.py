@@ -19,7 +19,13 @@ from visionai.core.events import (
 from visionai.core.state import StateMachine
 from visionai.observability import InMemoryAuditSink
 from visionai.orchestration.event_orchestrator import EventOrchestrator
-from visionai.policy import ConfirmationService, FixedWindowRateLimiter, PolicyContext, PolicyEngine
+from visionai.policy import (
+    ConfirmationService,
+    FixedWindowRateLimiter,
+    JsonPermissionStore,
+    PolicyContext,
+    PolicyEngine,
+)
 from visionai.runtime import build_runtime
 from visionai.ui.main_window import MainWindow
 
@@ -54,9 +60,17 @@ class _FixedPlanner:
         )
 
 
-def _build_sensitive_runtime(calls: list[ActionRequest]) -> Any:
+def _build_sensitive_runtime(
+    calls: list[ActionRequest],
+    tmp_path: Any,
+    *,
+    granted: bool = True,
+) -> Any:
     registry = CapabilityRegistry([_sensitive_manifest()])
     audit = InMemoryAuditSink()
+    permissions = JsonPermissionStore(tmp_path / "permissions.json")
+    if granted:
+        permissions.grant("test.sensitive")
 
     def handler(request: ActionRequest) -> ActionResult:
         calls.append(request)
@@ -77,9 +91,10 @@ def _build_sensitive_runtime(calls: list[ActionRequest]) -> Any:
         dispatcher=dispatcher,
         operations=OperationController(),
         confirmation=ConfirmationService(),
+        permission_store=permissions,
         state_machine=state,
         policy_context_factory=lambda: PolicyContext(
-            granted_capabilities=frozenset({"test.sensitive"})
+            granted_capabilities=permissions.granted_capabilities()
         ),
     )
     return SimpleNamespace(
@@ -87,6 +102,7 @@ def _build_sensitive_runtime(calls: list[ActionRequest]) -> Any:
         operations=OperationController(),
         output_bus=output_bus,
         orchestrator=orchestrator,
+        permissions=permissions,
         registry=registry,
         state_machine=state,
     )
@@ -151,10 +167,10 @@ def test_main_window_runs_command_through_runtime(qtbot: Any) -> None:
 
 
 def test_main_window_confirms_sensitive_action_before_execution(
-    qtbot: Any, monkeypatch: Any
+    qtbot: Any, monkeypatch: Any, tmp_path: Any
 ) -> None:
     calls: list[ActionRequest] = []
-    runtime = _build_sensitive_runtime(calls)
+    runtime = _build_sensitive_runtime(calls, tmp_path)
     window = MainWindow(runtime)
     qtbot.addWidget(window)
     monkeypatch.setattr(window, "_ask_confirmation", lambda confirmation: True)
@@ -171,10 +187,10 @@ def test_main_window_confirms_sensitive_action_before_execution(
 
 
 def test_main_window_declining_confirmation_prevents_execution(
-    qtbot: Any, monkeypatch: Any
+    qtbot: Any, monkeypatch: Any, tmp_path: Any
 ) -> None:
     calls: list[ActionRequest] = []
-    runtime = _build_sensitive_runtime(calls)
+    runtime = _build_sensitive_runtime(calls, tmp_path)
     window = MainWindow(runtime)
     qtbot.addWidget(window)
     monkeypatch.setattr(window, "_ask_confirmation", lambda confirmation: False)
@@ -185,6 +201,47 @@ def test_main_window_declining_confirmation_prevents_execution(
 
     assert calls == []
     assert window._output.toPlainText() == "Action cancelled."
+    assert window._status_label.text() == "IDLE"
+    assert window._history.count() == 0
+
+
+def test_main_window_permission_prompt_then_confirmation_executes(
+    qtbot: Any, monkeypatch: Any, tmp_path: Any
+) -> None:
+    calls: list[ActionRequest] = []
+    runtime = _build_sensitive_runtime(calls, tmp_path, granted=False)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window, "_ask_permission", lambda permission: True)
+    monkeypatch.setattr(window, "_ask_confirmation", lambda confirmation: True)
+
+    window._command_input.setText("do the sensitive thing")
+    qtbot.mouseClick(window._run_button, Qt.MouseButton.LeftButton)
+    _wait_for_command_complete(window, qtbot)
+
+    assert runtime.permissions.is_granted("test.sensitive") is True
+    assert len(calls) == 1
+    assert window._output.toPlainText() == "Sensitive action done."
+    assert window._status_label.text() == "IDLE"
+    assert window._history.count() == 1
+
+
+def test_main_window_declining_permission_prevents_grant_and_execution(
+    qtbot: Any, monkeypatch: Any, tmp_path: Any
+) -> None:
+    calls: list[ActionRequest] = []
+    runtime = _build_sensitive_runtime(calls, tmp_path, granted=False)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window, "_ask_permission", lambda permission: False)
+
+    window._command_input.setText("do the sensitive thing")
+    qtbot.mouseClick(window._run_button, Qt.MouseButton.LeftButton)
+    _wait_for_command_complete(window, qtbot)
+
+    assert runtime.permissions.is_granted("test.sensitive") is False
+    assert calls == []
+    assert window._output.toPlainText() == "Permission not granted."
     assert window._status_label.text() == "IDLE"
     assert window._history.count() == 0
 

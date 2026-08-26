@@ -46,7 +46,7 @@ The Diagnostics button shows a read-only status summary: app/library versions, r
 
 The Settings button shows a read-only summary of the currently loaded settings, including log level and data/log paths. It does not change configuration, grant permissions, or enable raw audio/camera retention.
 
-If a future command requires confirmation, the window asks before executing it. Choosing No cancels the pending request; choosing Yes sends the bound confirmation back through the orchestrator and dispatcher. No registered command currently requires this prompt yet, but the UI path is in place.
+If a future command requires confirmation, the window asks before executing it. Choosing No cancels the pending request; choosing Yes sends the bound confirmation back through the orchestrator and dispatcher. If a command also or instead requires permission, the window asks to grant that first ("Grant permission") -- granting can still be followed by a separate confirmation prompt if the same command needs both. No registered command currently requires either prompt yet, but both UI paths are in place.
 
 The window also has a system tray icon (a placeholder icon for now, not final branding). Left-clicking it shows or hides the window; right-clicking opens a menu with "Show VisionAI" and "Quit". Closing the window (the title bar's close button) minimizes it to the tray instead of exiting, so VisionAI keeps running in the background -- use the tray menu's "Quit" to actually exit.
 

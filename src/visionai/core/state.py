@@ -21,6 +21,7 @@ class AppState(Enum):
     TRANSCRIBING = auto()
     INTERPRETING = auto()
     AWAITING_CLARIFICATION = auto()
+    AWAITING_PERMISSION = auto()
     AWAITING_CONFIRMATION = auto()
     EXECUTING = auto()
     RESPONDING = auto()
@@ -40,6 +41,7 @@ _TRANSITIONS: dict[AppState, frozenset[AppState]] = {
     AppState.INTERPRETING: frozenset(
         {
             AppState.AWAITING_CLARIFICATION,
+            AppState.AWAITING_PERMISSION,
             AppState.AWAITING_CONFIRMATION,
             AppState.EXECUTING,
             AppState.RESPONDING,
@@ -50,6 +52,15 @@ _TRANSITIONS: dict[AppState, frozenset[AppState]] = {
     ),
     AppState.AWAITING_CLARIFICATION: frozenset(
         {AppState.INTERPRETING, AppState.IDLE, AppState.ERROR, AppState.STOPPED}
+    ),
+    AppState.AWAITING_PERMISSION: frozenset(
+        {
+            AppState.AWAITING_CONFIRMATION,
+            AppState.EXECUTING,
+            AppState.IDLE,
+            AppState.ERROR,
+            AppState.STOPPED,
+        }
     ),
     AppState.AWAITING_CONFIRMATION: frozenset(
         {AppState.EXECUTING, AppState.IDLE, AppState.ERROR, AppState.STOPPED}

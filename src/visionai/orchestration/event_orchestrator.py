@@ -17,10 +17,17 @@ from visionai.capabilities.dispatcher import SerializedDispatcher
 from visionai.core.cancellation import OperationController
 from visionai.core.errors import EventBusClosed, StateTransitionError, VisionAIError
 from visionai.core.event_bus import EventBus
-from visionai.core.events import ActionRequest, ErrorEvent, EventBase, TranscriptEvent
+from visionai.core.events import (
+    ActionRequest,
+    ErrorEvent,
+    EventBase,
+    PermissionRequest,
+    TranscriptEvent,
+)
 from visionai.core.state import AppState, StateMachine
 from visionai.orchestration.text_planner import TextCommandPlanner
 from visionai.policy import ConfirmationService, PolicyContext
+from visionai.policy.permissions import JsonPermissionStore
 
 PolicyContextFactory = Callable[[], PolicyContext]
 
@@ -37,6 +44,7 @@ class EventOrchestrator:
         dispatcher: SerializedDispatcher,
         operations: OperationController,
         confirmation: ConfirmationService,
+        permission_store: JsonPermissionStore | None = None,
         state_machine: StateMachine | None = None,
         policy_context_factory: PolicyContextFactory = PolicyContext,
     ) -> None:
@@ -46,9 +54,11 @@ class EventOrchestrator:
         self._dispatcher = dispatcher
         self._operations = operations
         self._confirmation = confirmation
+        self._permission_store = permission_store
         self._state = state_machine or StateMachine()
         self._policy_context_factory = policy_context_factory
         self._pending_confirmations: dict[UUID, ActionRequest] = {}
+        self._pending_permissions: dict[UUID, tuple[ActionRequest, str]] = {}
 
     @property
     def state_machine(self) -> StateMachine:
@@ -112,9 +122,49 @@ class EventOrchestrator:
             self._state.cancel(reason="confirmation cancelled")
         return removed
 
+    async def grant_permission(self, permission_id: UUID) -> None:
+        """Grant a pending permission and continue policy-gated execution."""
+
+        pending = self._pending_permissions.pop(permission_id, None)
+        if pending is None:
+            await self._publish_error("permission request is missing or already used")
+            return
+        if self._permission_store is None:
+            await self._publish_error("permission store is not configured")
+            self._try_transition(AppState.ERROR, reason="permission store missing")
+            self._state.cancel(reason="permission rejected")
+            return
+
+        request, action_summary = pending
+        self._permission_store.grant(request.capability_id)
+        context = self._policy_context_factory()
+        decision = self._dispatcher.evaluate(request, context)
+        if decision.requires_permission:
+            await self._publish_error("permission grant was not applied")
+            self._try_transition(AppState.ERROR, reason="permission grant failed")
+            self._state.cancel(reason="permission rejected")
+            return
+        if decision.requires_confirmation:
+            await self._request_confirmation(request, action_summary)
+            return
+
+        await self._execute(request, context)
+
+    def cancel_pending_permission(self, permission_id: UUID) -> bool:
+        """Discard a pending permission request without granting or executing."""
+
+        removed = self._pending_permissions.pop(permission_id, None) is not None
+        if removed and self._state.state is AppState.AWAITING_PERMISSION:
+            self._state.cancel(reason="permission cancelled")
+        return removed
+
     def _discard_all_pending_confirmations(self) -> None:
         for confirmation_id in tuple(self._pending_confirmations):
             self.cancel_pending_confirmation(confirmation_id)
+
+    def _discard_all_pending_permissions(self) -> None:
+        for permission_id in tuple(self._pending_permissions):
+            self.cancel_pending_permission(permission_id)
 
     async def _process_transcript(self, event: TranscriptEvent) -> None:
         if not event.is_final:
@@ -133,6 +183,9 @@ class EventOrchestrator:
             request = plan.steps[0]
             context = self._policy_context_factory()
             decision = self._dispatcher.evaluate(request, context)
+            if decision.requires_permission:
+                await self._request_permission(request, plan.summary)
+                return
             if decision.requires_confirmation:
                 await self._request_confirmation(request, plan.summary)
                 return
@@ -142,11 +195,25 @@ class EventOrchestrator:
             await self._publish_error(str(exc))
             self._try_transition(AppState.ERROR, reason=type(exc).__name__)
         finally:
-            # A pending confirmation must survive this turn -- everything
-            # else always returns to IDLE, matching the pre-confirmation
-            # behavior where every turn was atomic.
-            if self._state.state is not AppState.AWAITING_CONFIRMATION:
+            # Pending prompts must survive this turn -- everything else
+            # always returns to IDLE, matching the pre-prompt behavior
+            # where every turn was atomic.
+            if self._state.state not in {
+                AppState.AWAITING_PERMISSION,
+                AppState.AWAITING_CONFIRMATION,
+            }:
                 self._state.cancel(reason="turn complete")
+
+    async def _request_permission(self, request: ActionRequest, action_summary: str) -> None:
+        permission = PermissionRequest(
+            request_id=request.id,
+            capability_id=request.capability_id,
+            action_summary=action_summary,
+            risk_level=request.risk_level,
+        )
+        self._pending_permissions[permission.id] = (request, action_summary)
+        self._state.transition(AppState.AWAITING_PERMISSION, reason=request.capability_id)
+        await self._publish(permission)
 
     async def _request_confirmation(self, request: ActionRequest, action_summary: str) -> None:
         confirmation = self._confirmation.create(request, action_summary=action_summary)
@@ -172,9 +239,11 @@ class EventOrchestrator:
             self._state.cancel(reason="turn complete")
 
     def _transition_to_interpreting(self) -> None:
-        if self._state.state is AppState.AWAITING_CONFIRMATION:
+        if self._state.state in {AppState.AWAITING_PERMISSION, AppState.AWAITING_CONFIRMATION}:
+            self._discard_all_pending_permissions()
             self._discard_all_pending_confirmations()
-            self._state.cancel(reason="superseded by a new command")
+            if self._state.state in {AppState.AWAITING_PERMISSION, AppState.AWAITING_CONFIRMATION}:
+                self._state.cancel(reason="superseded by a new command")
         if self._state.state is AppState.IDLE:
             self._state.transition(AppState.LISTENING, reason="transcript event")
         if self._state.state is AppState.LISTENING:
