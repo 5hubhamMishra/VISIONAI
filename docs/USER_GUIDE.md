@@ -2,7 +2,9 @@
 
 VisionAI is not ready for end-user operation yet. It does not accept voice or gesture input, and does not execute file, shutdown, or any other system-mutating actions beyond the specific commands below.
 
-The only working functionality is a console entry point that runs one policy-gated capability at a time:
+There are two ways to run a command today: a console entry point, and a minimal desktop window (the first Phase 2 UI slice). Both drive the exact same policy-gated capabilities -- neither has any execution authority the other lacks.
+
+The console entry point runs one policy-gated capability at a time:
 
 ```bash
 visionai system.time
@@ -29,5 +31,13 @@ visionai --text "what time is it"
 `media.control` accepts `play_pause`, `next`, `previous`, `volume_up`, `volume_down`, or `mute`.
 
 `system.stop` requests cooperative cancellation of the current operation. Until voice, vision, and long-running orchestration are wired in, it usually reports that no operation is running.
+
+## Desktop window
+
+```bash
+visionai-ui
+```
+
+Opens a minimal window: a command input, a Run button, a result area, and an audit history list. Type any of the same commands shown above (e.g. `open notepad`, `what time is it`) and press Enter or click Run. This is not the full application window described for later phases -- there is no tray icon, settings, onboarding, or diagnostics yet -- but every command it runs goes through the same `TextCommandPlanner`, policy engine, and dispatcher as the console, so nothing typed into the window can do anything the console commands above cannot already do.
 
 Use the previous prototype only as untrusted reference material during migration.

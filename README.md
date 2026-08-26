@@ -12,7 +12,8 @@ runtime. Voice and gesture input are not connected yet, but the console entry
 point can run policy-gated capabilities for system information, capability
 help/listing, cooperative stop requests, opening one allowlisted desktop app,
 and opening allowlisted browser/search destinations, plus allowlisted media
-controls. See
+controls. A minimal desktop window (`visionai-ui`, the first Phase 2 UI
+slice) can run the same commands through the same policy-gated path. See
 [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) for the current phase, verified
 functionality, and next steps.
 

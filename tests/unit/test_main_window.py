@@ -1,0 +1,50 @@
+from typing import Any
+
+from PySide6.QtCore import Qt
+
+from visionai.runtime import build_runtime
+from visionai.ui.main_window import MainWindow
+
+
+def test_main_window_runs_command_through_runtime(qtbot: Any) -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    window.show()
+    window._command_input.setText("open notepad")
+    qtbot.mouseClick(window._run_button, Qt.MouseButton.LeftButton)
+
+    assert launched == ["notepad.exe"]
+    assert window._output.toPlainText() == "Opening notepad."
+    assert window._status_label.text() == "IDLE"
+    assert window._history.count() == 1
+    assert "[app.launch] Opening notepad." in window._history.item(0).text()
+    assert window._command_input.text() == ""
+    assert window._command_input.isEnabled() is True
+    assert window._run_button.isEnabled() is True
+
+
+def test_main_window_renders_non_executable_text(qtbot: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    window._command_input.setText("please do the risky vague thing")
+    qtbot.keyClick(window._command_input, Qt.Key.Key_Return)
+
+    assert window._output.toPlainText() == "No executable action selected."
+    assert window._history.count() == 0
+
+
+def test_main_window_ignores_empty_input(qtbot: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    window._command_input.setText("   ")
+    qtbot.mouseClick(window._run_button, Qt.MouseButton.LeftButton)
+
+    assert window._output.toPlainText() == ""
+    assert window._history.count() == 0

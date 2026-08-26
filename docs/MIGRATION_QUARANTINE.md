@@ -21,8 +21,11 @@ The previous `../jarvis` prototype is reference material only. It must not be tr
 
 ## Current Status
 
-One old prototype behavior has been migrated into the trusted `visionai` runtime, following all six steps above:
+Several old prototype behaviors have been migrated into the trusted `visionai` runtime, following all six steps above:
 
 - **`app.open`** (open an allowlisted desktop application), migrated from `../jarvis/actions/executor.py`'s app-launch logic as reference material only. The old code used `subprocess.Popen(cmd, shell=True)` against a broad app list that included a shell (`cmd`, `powershell`), a terminal, and Task Manager. The new capability deliberately excludes anything that is itself a general-purpose command surface, uses exact executable names with `shell=False`, and is Risk 1 (Reversible) per Section 9 of the master prompt -- see `src/visionai/capabilities/applications.py`.
+- **`browser.open` / `browser.search`** (allowlisted browsing and encoded search), migrated from the prototype's web/search behavior. The trusted implementation accepts fixed site names or search query text only, validates through `UrlPolicy`, and uses injected openers in tests.
+- **`media.control`** (allowlisted media keys), migrated from the prototype's media-key behavior. The trusted implementation accepts fixed action names only and uses an injected key presser in tests.
+- **`TextCommandPlanner`** (typed text planning), migrated from the prototype intent-parser idea as a deterministic, deny-by-default planner. It emits executable requests only for reviewed phrases and registered capabilities.
 
-No other old prototype capability (voice, gesture, media control, browser, LLM) has been migrated.
+Voice input, gesture input, and LLM response planning have not been migrated.

@@ -1,9 +1,8 @@
 # Dependencies for subsystems not yet implemented (Phase 3+).
 # Pin exact versions and verify licence/maintenance status before enabling
 # each block, per docs/DECISIONS/.
-
-# --- UI (Phase 2) ---
-# PySide6==6.7.*
+#
+# UI (Phase 2) is now implemented -- see requirements/ui.txt for PySide6.
 
 # --- Voice (Phase 3) ---
 # sounddevice==0.4.*

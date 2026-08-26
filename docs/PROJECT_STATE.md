@@ -2,8 +2,9 @@
 
 ## Current Phase
 
-Phase 1 safety foundation locally verified; Phase 4 capability migration is
-underway through narrow, policy-gated slices.
+Phase 1 safety foundation locally verified; Phase 4 capability migration
+complete for all four of Section 13's initial safe capabilities; Phase 2
+desktop UI started (user decision) with a first minimal main-window slice.
 
 ## Last Verified Commit
 
@@ -61,6 +62,8 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Added the remaining Section 13 stop command as `system.stop`, backed by `OperationController`. It requests cooperative cancellation of the currently tracked operation, reports when nothing is active, and does not kill threads or processes directly.
 - Locally quarantined the old `../jarvis` prototype execution path in this workspace: app parsing now rejects injection-shaped text instead of partially matching it, unknown app/site names no longer fall back to raw spoken text, app launch uses `subprocess.Popen([cmd], shell=False)`, command-surface apps are blocked, web opens are host/scheme allowlisted, search query encoding uses `quote_plus`, mutating system commands are hard-blocked, and touched debug prints are ASCII-safe on the Windows console. These source edits are outside the `visionai/` Git repository and therefore are not pushed to `5hubhamMishra/VISIONAI`; this document records the local hardening step.
 - Added `visionai.orchestration.TextCommandPlanner` (Section 12's deterministic parser, text-only -- no voice, no LLM) and wired it into the CLI as `visionai --text "<command>"`. Matches a small set of reviewed phrases and allowlisted slot values (app names, site names, media actions) into a typed `Intent` + `ActionPlan`; anything else becomes non-executable conversation data. The planner is explicitly not the security boundary -- any `ActionRequest` it emits still passes through the same policy engine and dispatcher as a directly-invoked capability. Found and fixed a real bug via test execution (not just review): `_empty_plan()` passed the raw, unsanitized original text straight into `Intent`'s `SafeText` fields, so any input correctly rejected as non-executable but still containing a control character (e.g. `"open notepad\x00"`, or a search query with an embedded NUL byte) crashed the planner outright with a pydantic `ValidationError` instead of returning the intended graceful non-executable response. The rejection decision itself was already correct and made against the raw text; only the informational `Intent` object needed sanitizing, since it carries no executable authority. Added a second regression test for the app-name case beyond the one that first caught it.
+- Added `visionai.orchestration.EventOrchestrator`, wiring a bounded input `EventBus`, `TextCommandPlanner`, `SerializedDispatcher`, `OperationController`, and the real `StateMachine` into one event-driven pipeline. A typed text command is framed as an instant, already-final `TranscriptEvent` and walked through the *unmodified* transition graph (IDLE -> LISTENING -> TRANSCRIBING -> INTERPRETING, one step at a time) rather than adding a new IDLE -> INTERPRETING edge -- this also means the same code path will handle real voice transcripts later with no changes. Catches `VisionAIError` specifically (never a broad `except Exception`), publishes an `ErrorEvent` instead of propagating, and always returns to IDLE in a `finally` block regardless of outcome. `system.stop` is deliberately excluded from starting its own tracked operation, avoiding a self-referential "stop cancels itself" case.
+- Started Phase 2 (desktop UI) per the user's decision: `visionai.ui.main_window.MainWindow`, a minimal PySide6 window (command input, run button, result display, audit-backed history) that adds no planning or execution logic of its own -- every typed command becomes a `TranscriptEvent` handed to the same `EventOrchestrator` the CLI uses. Verified PySide6 6.11.2 (latest, LGPL, actively maintained, Python 3.12/Windows supported) actually imports and constructs widgets on this machine before adopting it. Tested headless with `pytest-qt` and Qt's offscreen platform plugin; `tests/conftest.py` sets `QT_QPA_PLATFORM=offscreen` automatically so this works in CI (a headless Windows runner) with no code changes to the CI workflow itself. This is the first slice only -- no tray, settings, onboarding, diagnostics, or accessibility audit yet; do not describe Phase 2 as complete.
 
 ## Implemented but Not Fully Verified
 
@@ -70,12 +73,13 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 - Incremental migration from the previous JARVIS prototype: `app.open`, `browser.open`, `browser.search`, and `media.control` migrated; voice, gesture, and LLM behaviors remain unmigrated and untrusted.
 - Deterministic text planning (`TextCommandPlanner`) now covers typed-text commands for every registered capability; voice/gesture input still has no adapter to feed it.
+- Phase 2 desktop UI: a minimal main window exists and is tested; tray, settings, onboarding, diagnostics, and confirmation UI are not built yet.
 
 ## Approved Next Tasks
 
-1. Decide whether to disable or quarantine unsafe direct execution paths in the old `../jarvis` prototype itself (distinct from the new package, which never imports from it).
-2. Decide on the next major phase: Phase 2 (desktop UI, needs PySide6) or Phase 3 (voice, needs an STT/TTS stack) -- both are large, new-heavy-dependency efforts that warrant explicit sign-off rather than another narrow autonomous slice.
-3. Wire voice/gesture/orchestrator work to `OperationController` so `system.stop` can interrupt real long-running operations.
+1. Continue Phase 2: tray icon, settings, onboarding, diagnostics, and a real confirmation dialog for Risk 2+ capabilities (none are registered yet, but the UI should be ready before one is).
+2. Run a real WCAG 2.2 AA pass on `MainWindow` (tab order, contrast, screen-reader labels beyond `setAccessibleName`) before claiming any accessibility compliance -- none has been verified yet, only basic keyboard operability and accessible names.
+3. Wire voice/gesture input to `EventOrchestrator` (already event-driven and StateMachine-integrated, so no orchestrator changes should be needed -- only a new adapter that publishes real `TranscriptEvent`/`GestureEvent`s) so `system.stop` can interrupt real long-running operations.
 
 ## Known Defects
 
@@ -108,8 +112,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## Required Decisions
 
-- Decide whether the old `../jarvis` prototype itself needs its unsafe execution paths disabled/quarantined, given it is not imported by and has no effect on the new `visionai` package.
-- Decide the next major phase: desktop UI (Phase 2) or voice input (Phase 3). All four of Section 13's initial safe capabilities and a deterministic text planner are now implemented; the remaining scope requires new heavy dependencies (PySide6, or an STT/TTS stack) that should be chosen deliberately rather than picked up as another small increment.
+- None outstanding. (Resolved: `../jarvis` was locally quarantined; the next major phase was decided as Phase 2, desktop UI.)
 
 ## Verification Commands
 
@@ -122,8 +125,8 @@ cd visionai
 
 - Python: 3.12.10
 - Ruff: passed
-- mypy: passed for 33 source files
-- pytest: 138 passed, 93% coverage
+- mypy: passed for 36 source files
+- pytest: 148 passed, 94% coverage (headless, via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

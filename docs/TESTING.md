@@ -30,15 +30,17 @@ Phase 0 tests cover core contracts and invariants:
 - Browser capability tests cover `browser.open` and `browser.search`: allowlisted site normalization, unknown-site rejection, URL policy failure before opener execution, encoded search queries, empty/control-character query rejection, runtime dispatch/audit, CLI invocation, and policy rejection of missing/unknown arguments.
 - Media capability tests cover `media.control`: manifest risk classification, allowlisted key mapping, unknown-action rejection before keypress, key-presser failure handling, runtime dispatch/audit, CLI invocation, and policy rejection of missing/unknown arguments -- all via an injected fake key presser, since automated verification must not send live keyboard input. Separately, `pyautogui` (initially missing from declared dependencies) was manually verified live once: mute toggled on then off via both the raw function and the CLI. This did happen -- do not re-flip this line back to "not live-tested" without re-running the check.
 - Text planner tests cover direct phrase mapping (help/stop/time/date/battery/health), allowlisted app/site/media slot extraction, free-text search query passthrough, and -- critically -- that unrecognized text and injection-shaped text ("open calc & powershell", matching the exact `../jarvis` vulnerability shape) produce no executable step. Also covers a real bug found by running these tests, not just reviewing the code: a control character in text that gets correctly rejected (e.g. `"open notepad\x00"`) used to crash the planner with a pydantic `ValidationError` instead of returning the intended non-executable response, because the rejection fallback passed the raw, unsanitized text into a `SafeText`-constrained field. Fixed by sanitizing only the informational `Intent` object in that fallback, which carries no executable authority; the rejection decision itself was already made correctly beforehand.
+- `EventOrchestrator` tests cover: partial (non-final) transcripts producing no output and no state change; a final transcript planning and dispatching end to end (`Intent` -> `ActionPlan` -> `ActionResult`, with the state machine returned to `IDLE` and no operation left active); unrecognized text producing only `Intent`/`ActionPlan` with an empty step list and no audit entry; `stop` dispatching without starting a new tracked operation; `run_until_closed()` draining a real input bus end to end until it closes; a closed output bus not crashing the orchestrator; and a domain error (forcing an invalid starting state) producing an `ErrorEvent` rather than propagating, with the state machine still returned to `IDLE` in the `finally` block.
+- `MainWindow` tests cover, headless via `pytest-qt` with `QT_QPA_PLATFORM=offscreen` (set automatically by `tests/conftest.py`): a full command run through the real runtime (button click), verifying the launcher fake is invoked, the result text, status label, and audit history list all update, and the input is re-enabled and cleared afterward; a non-executable command entered via Enter key (`Qt.Key.Key_Return`) rendering "No executable action selected." with no history entry added; and empty/whitespace-only input being ignored entirely (no output, no history).
 
 ## Verified Results
 
 Verified locally on Windows with Python 3.12.10 using `scripts\verify.ps1`:
 
 - Ruff: passed
-- mypy: passed for 33 source files
-- pytest: 138 passed
-- Coverage: 93%
+- mypy: passed for 36 source files
+- pytest: 148 passed
+- Coverage: 94%
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

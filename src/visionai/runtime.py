@@ -27,8 +27,10 @@ from visionai.capabilities.media import (
 from visionai.capabilities.meta import meta_handlers, meta_manifests
 from visionai.capabilities.system_info import system_info_handlers, system_info_manifests
 from visionai.core.cancellation import OperationController
+from visionai.core.event_bus import EventBus
+from visionai.core.state import StateMachine
 from visionai.observability import InMemoryAuditSink
-from visionai.orchestration import TextCommandPlanner
+from visionai.orchestration import EventOrchestrator, TextCommandPlanner
 from visionai.policy import FixedWindowRateLimiter, PolicyEngine
 
 
@@ -41,6 +43,10 @@ class Runtime:
     dispatcher: SerializedDispatcher
     operations: OperationController
     planner: TextCommandPlanner
+    input_bus: EventBus
+    output_bus: EventBus
+    orchestrator: EventOrchestrator
+    state_machine: StateMachine
 
 
 def build_runtime(
@@ -49,6 +55,9 @@ def build_runtime(
     browser_opener: BrowserOpener = default_browser_opener,
     key_presser: KeyPresser = default_key_presser,
     operation_controller: OperationController | None = None,
+    input_bus: EventBus | None = None,
+    output_bus: EventBus | None = None,
+    state_machine: StateMachine | None = None,
 ) -> Runtime:
     """Build the local runtime with the currently trusted built-in capabilities.
 
@@ -67,6 +76,7 @@ def build_runtime(
     )
     registry = CapabilityRegistry(manifests)
     operations = operation_controller or OperationController()
+    state = state_machine or StateMachine()
     audit = InMemoryAuditSink()
     policy = PolicyEngine(registry, FixedWindowRateLimiter())
     handlers = {
@@ -83,10 +93,24 @@ def build_runtime(
         handlers=handlers,
     )
     planner = TextCommandPlanner(registry)
+    inputs = input_bus or EventBus(max_size=100)
+    outputs = output_bus or EventBus(max_size=100)
+    orchestrator = EventOrchestrator(
+        input_bus=inputs,
+        output_bus=outputs,
+        planner=planner,
+        dispatcher=dispatcher,
+        operations=operations,
+        state_machine=state,
+    )
     return Runtime(
         registry=registry,
         audit=audit,
         dispatcher=dispatcher,
         operations=operations,
         planner=planner,
+        input_bus=inputs,
+        output_bus=outputs,
+        orchestrator=orchestrator,
+        state_machine=state,
     )
