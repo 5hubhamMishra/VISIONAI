@@ -51,6 +51,7 @@ Phase 1 Safety foundation locally verified.
 - Fixed an audit-integrity gap in `SerializedDispatcher`: denied requests were audited using the caller-supplied `request.risk_level` instead of the registered capability's actual `manifest.risk_level`, so a request could understate its true severity in the audit log for denied attempts. Denials are now audited with the manifest's risk level, matching the already-correct behavior for successful executions.
 - Fixed a thread-safety gap in `FixedWindowRateLimiter`: its per-key window state was mutated with no lock, unlike every other shared-mutable-state class in this codebase (`InMemoryAuditSink`, `JsonlAuditSink`). `SerializedDispatcher` only serializes handler execution, not policy evaluation, so once multiple recognition threads (voice, gesture) dispatch concurrently this had a real TOCTOU race that could let the limit be exceeded. Added a lock and a concurrency regression test (100 threads racing via a barrier) that verifies the limit holds exactly.
 - Fixed a deadlock in `EventBus.close()`: it signalled closure by pushing a `None` sentinel onto the same bounded queue via `put_nowait`, silently dropped (`suppress(QueueFull)`) if the queue was already at capacity -- leaving any consumer blocked in `next_event()` waiting forever, since `publish()` now rejects new events but no close signal ever reached the queue. Reproduced the exact hang (2s timeout, confirmed) before fixing. The close signal now travels over a separate `asyncio.Event`, which can never be lost regardless of queue fullness; `next_event()`/`subscribe()` still drain any already-queued events before raising `EventBusClosed`.
+- Fixed a thread-safety gap in `StateMachine` itself: `transition()`/`cancel()`/`on_transition()` had no lock, so concurrent callers (voice thread, gesture thread) could all observe the same starting state and all succeed, corrupting `history`'s from/to invariant -- exactly the uncontrolled shared-state problem this class exists to replace. Reproduced deterministically (50 threads racing via a barrier with `sys.setswitchinterval` tightened; 4/5 trials showed multiple simultaneous "successful" transitions to the same target before the fix, 0/10 after). Listeners are still notified outside the lock so a callback cannot deadlock or block other threads.
 
 ## Implemented but Not Fully Verified
 
@@ -104,7 +105,7 @@ cd visionai
 - Python: 3.12.10
 - Ruff: passed
 - mypy: passed for 27 source files
-- pytest: 74 passed, 90% coverage
+- pytest: 75 passed, 90% coverage
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

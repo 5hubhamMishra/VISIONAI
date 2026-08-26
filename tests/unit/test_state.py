@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 
 from visionai.core.errors import StateTransitionError
@@ -19,3 +21,44 @@ def test_state_machine_rejects_unapproved_jump() -> None:
 
     with pytest.raises(StateTransitionError):
         machine.transition(AppState.EXECUTING)
+
+
+def test_state_machine_serializes_concurrent_transitions() -> None:
+    """Regression: only one of many racing transitions may succeed.
+
+    Voice and gesture recognition run on separate threads and both drive
+    this state machine, so it must not reintroduce the uncontrolled shared
+    state the old prototype used instead of a real state machine. Without
+    a lock, multiple threads can all observe the same starting state and
+    all successfully transition, corrupting history (multiple entries
+    claiming the same from_state, one of which is stale).
+    """
+    machine = StateMachine()
+    machine.transition(AppState.LISTENING)
+    machine.transition(AppState.TRANSCRIBING)
+    machine.transition(AppState.INTERPRETING)
+
+    thread_count = 50
+    barrier = threading.Barrier(thread_count)
+    successes: list[bool] = []
+    successes_lock = threading.Lock()
+
+    def worker() -> None:
+        barrier.wait()
+        try:
+            machine.transition(AppState.RESPONDING)
+        except StateTransitionError:
+            return
+        with successes_lock:
+            successes.append(True)
+
+    threads = [threading.Thread(target=worker) for _ in range(thread_count)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(successes) == 1
+    assert machine.state == AppState.RESPONDING
+    for earlier, later in zip(machine.history, machine.history[1:], strict=False):
+        assert later.from_state == earlier.to_state

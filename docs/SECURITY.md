@@ -7,6 +7,7 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 ## Phase 0 Controls
 
 - Deny-by-default foundation: no executable capabilities are registered yet.
+- The application state machine is safe under concurrent access from multiple recognition threads (voice, gesture): transitions are serialized so only one of several racing callers can ever succeed, and the audit trail cannot be corrupted by interleaved transitions.
 - Typed contracts reject control characters, oversized text, invalid confidence values, and malformed mappings.
 - Event bus is bounded to provide backpressure; closing it is guaranteed to be observed by consumers (via a separate close signal) even if the bounded queue is full at that moment, after draining any already-queued events.
 - Raw media retention defaults to disabled.

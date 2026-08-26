@@ -9,6 +9,7 @@ doing. Transitions are explicit and validated; anything not listed in
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from threading import Lock
 from time import monotonic
 
 from visionai.core.errors import StateTransitionError
@@ -78,27 +79,39 @@ class Transition:
 
 @dataclass
 class StateMachine:
-    """Owns the current `AppState` and enforces valid transitions."""
+    """Owns the current `AppState` and enforces valid transitions.
+
+    Guarded by a lock: this is the single authority multiple recognition
+    threads (voice, gesture) transition through concurrently, replacing
+    the uncontrolled shared boolean flags an unsynchronized version of
+    this class would otherwise reintroduce.
+    """
 
     state: AppState = AppState.IDLE
     history: list[Transition] = field(default_factory=list)
     _listeners: list[Callable[[Transition], None]] = field(default_factory=list)
+    _lock: Lock = field(default_factory=Lock, repr=False, compare=False)
 
     def can_transition(self, to_state: AppState) -> bool:
         return to_state in _TRANSITIONS[self.state]
 
     def transition(self, to_state: AppState, *, reason: str | None = None) -> Transition:
         """Move to `to_state`, raising `StateTransitionError` if disallowed."""
-        if not self.can_transition(to_state):
-            raise StateTransitionError(
-                f"Cannot transition from {self.state.name} to {to_state.name}"
+        with self._lock:
+            if not self.can_transition(to_state):
+                raise StateTransitionError(
+                    f"Cannot transition from {self.state.name} to {to_state.name}"
+                )
+            record = Transition(
+                from_state=self.state, to_state=to_state, timestamp=monotonic(), reason=reason
             )
-        record = Transition(
-            from_state=self.state, to_state=to_state, timestamp=monotonic(), reason=reason
-        )
-        self.state = to_state
-        self.history.append(record)
-        for listener in self._listeners:
+            self.state = to_state
+            self.history.append(record)
+            listeners = list(self._listeners)
+        # Notified outside the lock so a listener calling back into this
+        # state machine cannot deadlock, and so listeners never block
+        # other threads from transitioning.
+        for listener in listeners:
             listener(record)
         return record
 
@@ -108,10 +121,12 @@ class StateMachine:
         Returns None (a no-op) if already IDLE or STOPPED, since there is
         nothing in progress to cancel.
         """
-        if self.state not in CANCELLABLE_STATES:
-            return None
+        with self._lock:
+            if self.state not in CANCELLABLE_STATES:
+                return None
         return self.transition(AppState.IDLE, reason=reason)
 
     def on_transition(self, listener: Callable[[Transition], None]) -> None:
         """Register a callback invoked after every successful transition."""
-        self._listeners.append(listener)
+        with self._lock:
+            self._listeners.append(listener)
