@@ -11,6 +11,7 @@ from visionai.core.events import (
     ActionPlan,
     ActionRequest,
     ActionResult,
+    AuditEvent,
     ConfirmationRequest,
     ErrorEvent,
     Intent,
@@ -517,3 +518,40 @@ async def test_orchestrator_publishes_error_event_for_domain_error() -> None:
     outputs = await _drain_available(runtime.output_bus)
 
     assert any(isinstance(output, ErrorEvent) for output in outputs)
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_clears_history_through_the_real_capability(tmp_path: Path) -> None:
+    """End to end with `system.clear_history` itself, not a synthetic stand-in.
+
+    Every other permission/confirmation test in this file uses a synthetic
+    capability because no production capability required both gates until
+    `system.clear_history` was added. This proves the full chain -- prompt,
+    grant, prompt again, confirm, execute -- works for something real.
+    """
+
+    permissions = JsonPermissionStore(tmp_path / "permissions.json")
+    runtime = build_runtime(permission_store=permissions)
+    runtime.audit.record(AuditEvent(category="test", actor="system", summary="old entry"))
+    event = TranscriptEvent(text="clear history", confidence=1.0, language="en", is_final=True)
+
+    await runtime.orchestrator.process_event(event)
+    permission = (await _drain_available(runtime.output_bus))[-1]
+    assert isinstance(permission, PermissionRequest)
+    assert permission.capability_id == "system.clear_history"
+
+    await runtime.orchestrator.grant_permission(permission.id)
+    confirmation = (await _drain_available(runtime.output_bus))[-1]
+    assert isinstance(confirmation, ConfirmationRequest)
+    assert permissions.is_granted("system.clear_history") is True
+
+    await runtime.orchestrator.confirm(confirmation.id)
+    outputs = await _drain_available(runtime.output_bus)
+
+    result = outputs[-1]
+    assert isinstance(result, ActionResult)
+    assert result.success is True
+    assert result.message == "Audit history cleared."
+    assert len(runtime.audit.list()) == 1
+    assert runtime.audit.list()[0].summary == "Audit history cleared."
+    assert runtime.state_machine.state is AppState.IDLE

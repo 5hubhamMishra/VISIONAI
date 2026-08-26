@@ -30,3 +30,22 @@ def test_jsonl_audit_sink_rejects_malformed_lines(tmp_path) -> None:
 
     with pytest.raises(StorageError):
         JsonlAuditSink(path).list()
+
+
+def test_jsonl_audit_sink_clear_removes_existing_events(tmp_path) -> None:
+    path = tmp_path / "audit.jsonl"
+    sink = JsonlAuditSink(path)
+    sink.record(AuditEvent(category="policy", actor="system", summary="entry"))
+
+    sink.clear()
+
+    assert sink.list() == ()
+    assert path.exists() is False
+
+
+def test_jsonl_audit_sink_clear_is_a_noop_when_no_file_exists(tmp_path) -> None:
+    sink = JsonlAuditSink(tmp_path / "audit.jsonl")
+
+    sink.clear()
+
+    assert sink.list() == ()

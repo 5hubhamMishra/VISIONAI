@@ -111,7 +111,7 @@ def build_runtime(
         "app.open": make_app_open_handler(launcher),
         **browser_handlers(browser_opener),
         **media_handlers(key_presser),
-        **meta_handlers(registry, operations),
+        **meta_handlers(registry, operations, audit),
     }
     dispatcher = SerializedDispatcher(
         registry=registry,

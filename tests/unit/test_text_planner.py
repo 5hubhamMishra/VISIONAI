@@ -17,6 +17,7 @@ def test_planner_maps_direct_system_commands() -> None:
     assert _planned_step("system health").capability_id == "system.health"
     assert _planned_step("help").capability_id == "system.help"
     assert _planned_step("list capabilities").capability_id == "system.capabilities"
+    assert _planned_step("clear history").capability_id == "system.clear_history"
     assert _planned_step("stop").capability_id == "system.stop"
 
 

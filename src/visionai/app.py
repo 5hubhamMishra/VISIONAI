@@ -21,6 +21,7 @@ def main() -> int:
             "system.battery",
             "system.health",
             "system.capabilities",
+            "system.clear_history",
             "system.help",
             "system.stop",
             "app.open",

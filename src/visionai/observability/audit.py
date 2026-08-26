@@ -25,6 +25,10 @@ class InMemoryAuditSink:
         with self._lock:
             return tuple(self._events)
 
+    def clear(self) -> None:
+        with self._lock:
+            self._events.clear()
+
 
 class JsonlAuditSink:
     """Appends audit events to durable JSON Lines storage."""
@@ -55,3 +59,10 @@ class JsonlAuditSink:
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise StorageError("audit log could not be read") from exc
         return tuple(events)
+
+    def clear(self) -> None:
+        with self._lock:
+            try:
+                self._path.unlink(missing_ok=True)
+            except OSError as exc:
+                raise StorageError("audit log could not be cleared") from exc

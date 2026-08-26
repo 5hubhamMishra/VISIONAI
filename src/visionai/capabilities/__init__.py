@@ -35,11 +35,13 @@ from visionai.capabilities.media import (
 )
 from visionai.capabilities.meta import (
     make_system_capabilities_handler,
+    make_system_clear_history_handler,
     make_system_help_handler,
     make_system_stop_handler,
     meta_handlers,
     meta_manifests,
     system_capabilities_manifest,
+    system_clear_history_manifest,
     system_help_manifest,
     system_stop_manifest,
 )
@@ -84,6 +86,7 @@ __all__ = [
     "make_media_control_handler",
     "make_system_battery_handler",
     "make_system_capabilities_handler",
+    "make_system_clear_history_handler",
     "make_system_date_handler",
     "make_system_health_handler",
     "make_system_help_handler",
@@ -96,6 +99,7 @@ __all__ = [
     "meta_manifests",
     "system_battery_manifest",
     "system_capabilities_manifest",
+    "system_clear_history_manifest",
     "system_date_manifest",
     "system_health_manifest",
     "system_help_manifest",
