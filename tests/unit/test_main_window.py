@@ -1,6 +1,8 @@
 from typing import Any
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QCloseEvent
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from visionai.runtime import build_runtime
 from visionai.ui.main_window import MainWindow
@@ -102,6 +104,87 @@ def test_main_window_tab_order_reverses_cleanly_with_shift_tab(qtbot: Any) -> No
     for widget in expected_reverse_order:
         qtbot.keyClick(window.focusWidget(), Qt.Key.Key_Backtab)
         assert window.focusWidget() is widget
+
+
+def test_main_window_tray_menu_has_show_and_quit_actions(qtbot: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    assert [action.text() for action in window._tray_menu.actions()] == [
+        "Show VisionAI",
+        "Quit",
+    ]
+
+
+def test_main_window_tray_show_action_shows_and_raises_hidden_window(qtbot: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window.hide()
+
+    window._show_action.trigger()
+
+    assert window.isVisible() is True
+
+
+def test_main_window_tray_quit_action_quits_the_application(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    quit_calls: list[bool] = []
+    monkeypatch.setattr(QApplication, "quit", lambda self: quit_calls.append(True))
+
+    window._quit_action.trigger()
+
+    assert quit_calls == [True]
+
+
+def test_main_window_tray_trigger_toggles_visibility(qtbot: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window.show()
+
+    window._on_tray_activated(QSystemTrayIcon.ActivationReason.Trigger)
+    assert window.isVisible() is False
+
+    window._on_tray_activated(QSystemTrayIcon.ActivationReason.Trigger)
+    assert window.isVisible() is True
+
+
+def test_main_window_close_minimizes_to_tray_when_available(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", staticmethod(lambda: True))
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window.show()
+
+    event = QCloseEvent()
+    window.closeEvent(event)
+
+    assert event.isAccepted() is False
+    assert window.isVisible() is False
+
+
+def test_main_window_close_exits_normally_when_tray_unavailable(qtbot: Any) -> None:
+    # QSystemTrayIcon.isSystemTrayAvailable() is False under the offscreen
+    # platform this test suite runs under, so this exercises the real
+    # fallback rather than a mocked one -- see tests/conftest.py.
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window.show()
+
+    event = QCloseEvent()
+    window.closeEvent(event)
+
+    assert event.isAccepted() is True
 
 
 def test_main_window_ignores_empty_input(qtbot: Any) -> None:

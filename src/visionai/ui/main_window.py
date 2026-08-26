@@ -1,18 +1,21 @@
 """Minimal desktop main window: a thin front end over the safe runtime.
 
 This is the first Phase 2 slice, not the full main window described in
-Section 14 of the master prompt (no tray, settings, onboarding, or
-diagnostics yet). It exists to prove the UI can drive the already-tested
+Section 14 of the master prompt (no settings, onboarding, or diagnostics
+yet). It exists to prove the UI can drive the already-tested
 orchestrator/state machine/dispatcher path safely, not to be a finished
 product. Every typed command is turned into a final TranscriptEvent and
 handed to the same `EventOrchestrator` the CLI and automated tests use --
-this window adds no new planning or execution logic of its own.
+this window adds no new planning or execution logic of its own. The tray
+icon (show/hide, quit) is the one exception: it is pure window-lifecycle
+control with no runtime authority.
 """
 
 from __future__ import annotations
 
 import asyncio
 import sys
+from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -21,7 +24,10 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QMainWindow,
+    QMenu,
     QPushButton,
+    QStyle,
+    QSystemTrayIcon,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -29,6 +35,9 @@ from PySide6.QtWidgets import (
 
 from visionai.core.events import ActionPlan, ActionResult, ErrorEvent, EventBase, TranscriptEvent
 from visionai.runtime import Runtime, build_runtime
+
+if TYPE_CHECKING:
+    from PySide6.QtGui import QCloseEvent
 
 
 class MainWindow(QMainWindow):
@@ -88,6 +97,53 @@ class MainWindow(QMainWindow):
         self._stop_button.clicked.connect(self.stop_current_operation)
         self._refresh_history()
         self._command_input.setFocus()
+
+        # Placeholder icon: no branded VisionAI icon asset exists yet (Phase 8
+        # release work). Using a standard style icon rather than fabricating one.
+        icon = self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
+        self._tray_menu = QMenu()
+        self._show_action = self._tray_menu.addAction("Show VisionAI")
+        self._show_action.triggered.connect(self._show_and_raise)
+        self._quit_action = self._tray_menu.addAction("Quit")
+        self._quit_action.triggered.connect(self._quit_application)
+        self._tray_icon = QSystemTrayIcon(icon, self)
+        self._tray_icon.setToolTip("VisionAI")
+        self._tray_icon.setContextMenu(self._tray_menu)
+        self._tray_icon.activated.connect(self._on_tray_activated)
+        self._tray_icon.show()
+
+    def _show_and_raise(self) -> None:
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _quit_application(self) -> None:
+        """Fully exit, bypassing the minimize-to-tray closeEvent behavior."""
+
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            if self.isVisible():
+                self.hide()
+            else:
+                self._show_and_raise()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Minimize to tray instead of quitting, if a tray is actually available.
+
+        Never traps the user: if no system tray exists to un-hide the window
+        from (e.g. some minimal window managers, or this headless test
+        platform), the window closes normally instead.
+        """
+
+        if QSystemTrayIcon.isSystemTrayAvailable():
+            event.ignore()
+            self.hide()
+        else:
+            event.accept()
 
     def stop_current_operation(self) -> None:
         """Request cooperative cancellation, independent of the Run/input state."""
