@@ -11,3 +11,6 @@
 - Added CI workflow, local verification scripts, and migration quarantine documentation.
 - Initialized Git repository on `main` and added Python environment repair documentation.
 - Installed Python 3.12.10, created `.venv312`, updated vulnerable dependency pins, and verified the local suite.
+- Added the first real, dispatcher-wired capabilities: `system.time`, `system.date`, `system.battery`, `system.health`, all read-only.
+- Pushed the repository to https://github.com/5hubhamMishra/VISIONAI; hosted CI is live and has passed on every commit so far.
+- Found and fixed seven defects surfaced by a full security/correctness review of the safety-critical modules, each with a regression test: `UrlPolicy` failed open on an empty host allowlist; `WindowsLockStateAdapter` never actually detected lock state (it checked session membership, not lock status); `SerializedDispatcher` audited denials using the caller-supplied risk level instead of the manifest's; `FixedWindowRateLimiter` and `StateMachine` both mutated shared state with no lock, reproducible as real races under concurrent access; `EventBus.close()` could deadlock a consumer if the queue was full at close time; and log redaction did not work at all as wired (attached to the wrong logger) and could crash message rendering even when fixed to attach correctly.
