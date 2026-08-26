@@ -50,3 +50,12 @@ from the documented state instead of re-inspecting the whole workspace.
 - Date/time: 2026-08-27
 - User request: push completed steps to `https://github.com/5hubhamMishra/VISIONAI` so progress is easy to track.
 - Result: from this point forward, each completed verified slice should be committed and pushed to `origin/main` before moving to the next slice.
+
+## 2026-08-27 Input Adapter Slice
+
+- Date/time: 2026-08-27
+- User request: continue to the next project step.
+- Files changed: `src/visionai/orchestration/event_orchestrator.py`, `src/visionai/orchestration/__init__.py`, `src/visionai/runtime.py`, `tests/unit/test_runtime.py`, `docs/ARCHITECTURE.md`, `docs/PROJECT_STATE.md`, `docs/TESTING.md`, `docs/WORK_LOG.md`.
+- Commands/tests run: elevated `.venv312\Scripts\python.exe -m pytest tests\unit\test_runtime.py -q` passed with `10 passed`; elevated `.\scripts\verify.ps1` passed with Ruff, mypy for 37 source files, `213 passed`, 93% coverage, Bandit passed, and `pip-audit` reporting no known vulnerabilities.
+- Result: added `InputAdapter` in the existing orchestrator module, exposed it on `Runtime`, verified already-recognized transcript text reaches the real orchestrator/planner/dispatcher path, verified already policy-approved gestures queue as typed `GestureEvent`s, and verified invalid transcript text is rejected before publishing.
+- Next task: add the smallest real Phase 3 voice boundary feeding `InputAdapter.publish_transcript()`; keep raw audio out of stored events by default.

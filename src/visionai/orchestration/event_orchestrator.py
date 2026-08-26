@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from typing import Literal
 from uuid import UUID
 
 from visionai.capabilities.dispatcher import SerializedDispatcher
@@ -21,6 +22,7 @@ from visionai.core.events import (
     ActionRequest,
     ErrorEvent,
     EventBase,
+    GestureEvent,
     PermissionRequest,
     TranscriptEvent,
 )
@@ -30,6 +32,47 @@ from visionai.policy import ConfirmationService, PolicyContext
 from visionai.policy.permissions import JsonPermissionStore
 
 PolicyContextFactory = Callable[[], PolicyContext]
+
+
+@dataclass(frozen=True, slots=True)
+class InputAdapter:
+    """Publishes already-recognized voice/gesture input to the runtime bus."""
+
+    input_bus: EventBus
+
+    async def publish_transcript(
+        self,
+        text: str,
+        *,
+        confidence: float,
+        language: str = "en",
+        is_final: bool = True,
+    ) -> TranscriptEvent:
+        event = TranscriptEvent(
+            text=text,
+            confidence=confidence,
+            language=language,
+            is_final=is_final,
+        )
+        await self.input_bus.publish(event)
+        return event
+
+    async def publish_gesture(
+        self,
+        gesture_id: str,
+        *,
+        hand: Literal["left", "right"],
+        confidence: float,
+        hold_ms: int,
+    ) -> GestureEvent:
+        event = GestureEvent(
+            gesture_id=gesture_id,
+            hand=hand,
+            confidence=confidence,
+            hold_ms=hold_ms,
+        )
+        await self.input_bus.publish(event)
+        return event
 
 
 class EventOrchestrator:

@@ -1,8 +1,18 @@
-from visionai.core.events import ActionRequest, RiskLevel
+import pytest
+from pydantic import ValidationError
+
+from visionai.core.events import ActionRequest, ActionResult, GestureEvent, Intent, RiskLevel
 from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.policy import ConfirmationService
 from visionai.policy.permissions import JsonPermissionStore
 from visionai.runtime import build_runtime
+
+
+async def _drain_available(bus):
+    events = []
+    while bus.size:
+        events.append(await bus.next_event())
+    return events
 
 
 class _MutableLock:
@@ -98,3 +108,42 @@ def test_runtime_allows_mutating_capability_while_screen_is_unlocked() -> None:
 
     assert result.success is True
     assert launched == ["notepad.exe"]
+
+
+@pytest.mark.asyncio
+async def test_runtime_input_adapter_transcript_reaches_the_real_orchestrator() -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+
+    event = await runtime.input_adapter.publish_transcript("open notepad", confidence=0.95)
+    runtime.input_bus.close()
+    await runtime.orchestrator.run_until_closed()
+    outputs = await _drain_available(runtime.output_bus)
+
+    assert event.text == "open notepad"
+    assert launched == ["notepad.exe"]
+    assert isinstance(outputs[0], Intent)
+    assert isinstance(outputs[-1], ActionResult)
+
+
+@pytest.mark.asyncio
+async def test_runtime_input_adapter_publishes_validated_gesture_events() -> None:
+    runtime = build_runtime()
+
+    event = await runtime.input_adapter.publish_gesture(
+        "pinch", hand="right", confidence=0.9, hold_ms=250
+    )
+    queued = await runtime.input_bus.next_event()
+
+    assert isinstance(queued, GestureEvent)
+    assert queued == event
+
+
+@pytest.mark.asyncio
+async def test_runtime_input_adapter_rejects_invalid_input_without_publishing() -> None:
+    runtime = build_runtime()
+
+    with pytest.raises(ValidationError):
+        await runtime.input_adapter.publish_transcript("open\x00notepad", confidence=0.95)
+
+    assert runtime.input_bus.size == 0

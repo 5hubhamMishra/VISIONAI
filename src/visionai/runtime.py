@@ -31,7 +31,7 @@ from visionai.core.cancellation import OperationController
 from visionai.core.event_bus import EventBus
 from visionai.core.state import StateMachine
 from visionai.observability import InMemoryAuditSink
-from visionai.orchestration import EventOrchestrator, TextCommandPlanner
+from visionai.orchestration import EventOrchestrator, InputAdapter, TextCommandPlanner
 from visionai.orchestration.event_orchestrator import PolicyContextFactory
 from visionai.platform.lock_state import LockStateAdapter, WindowsLockStateAdapter
 from visionai.policy import ConfirmationService, FixedWindowRateLimiter, PolicyContext, PolicyEngine
@@ -51,6 +51,7 @@ class Runtime:
     permissions: JsonPermissionStore
     policy_context_factory: PolicyContextFactory
     input_bus: EventBus
+    input_adapter: InputAdapter
     output_bus: EventBus
     orchestrator: EventOrchestrator
     state_machine: StateMachine
@@ -128,6 +129,7 @@ def build_runtime(
         )
 
     inputs = input_bus or EventBus(max_size=100)
+    input_adapter = InputAdapter(inputs)
     outputs = output_bus or EventBus(max_size=100)
     orchestrator = EventOrchestrator(
         input_bus=inputs,
@@ -150,6 +152,7 @@ def build_runtime(
         permissions=permissions,
         policy_context_factory=policy_context_factory,
         input_bus=inputs,
+        input_adapter=input_adapter,
         output_bus=outputs,
         orchestrator=orchestrator,
         state_machine=state,
