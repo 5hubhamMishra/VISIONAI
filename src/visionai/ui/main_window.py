@@ -66,12 +66,17 @@ class MainWindow(QMainWindow):
         input_row.addWidget(self._run_button)
         input_row.addWidget(self._stop_button)
 
+        result_label = QLabel("Result:")
+        result_label.setBuddy(self._output)
+        history_label = QLabel("History:")
+        history_label.setBuddy(self._history)
+
         layout = QVBoxLayout()
         layout.addWidget(self._status_label)
         layout.addLayout(input_row)
-        layout.addWidget(QLabel("Result:"))
+        layout.addWidget(result_label)
         layout.addWidget(self._output)
-        layout.addWidget(QLabel("History:"))
+        layout.addWidget(history_label)
         layout.addWidget(self._history)
 
         central = QWidget()
@@ -82,6 +87,7 @@ class MainWindow(QMainWindow):
         self._command_input.returnPressed.connect(self.run_current_command)
         self._stop_button.clicked.connect(self.stop_current_operation)
         self._refresh_history()
+        self._command_input.setFocus()
 
     def stop_current_operation(self) -> None:
         """Request cooperative cancellation, independent of the Run/input state."""

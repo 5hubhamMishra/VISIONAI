@@ -64,6 +64,46 @@ def test_main_window_stop_button_is_independent_of_run_state(qtbot: Any) -> None
     assert window._output.toPlainText() == "No operation is currently running."
 
 
+def test_main_window_tab_order_reaches_every_control_without_a_trap(qtbot: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitExposed(window)
+
+    assert window.focusWidget() is window._command_input
+
+    expected_order = [
+        window._run_button,
+        window._stop_button,
+        window._output,
+        window._history,
+        window._command_input,
+    ]
+    for widget in expected_order:
+        qtbot.keyClick(window.focusWidget(), Qt.Key.Key_Tab)
+        assert window.focusWidget() is widget
+
+
+def test_main_window_tab_order_reverses_cleanly_with_shift_tab(qtbot: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.waitExposed(window)
+
+    expected_reverse_order = [
+        window._history,
+        window._output,
+        window._stop_button,
+        window._run_button,
+        window._command_input,
+    ]
+    for widget in expected_reverse_order:
+        qtbot.keyClick(window.focusWidget(), Qt.Key.Key_Backtab)
+        assert window.focusWidget() is widget
+
+
 def test_main_window_ignores_empty_input(qtbot: Any) -> None:
     runtime = build_runtime()
     window = MainWindow(runtime)
