@@ -71,6 +71,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Added the first real `MainWindow` confirmation prompt for Risk 2+ actions. When the orchestrator publishes a `ConfirmationRequest`, the window shows a `QMessageBox`; approving calls `EventOrchestrator.confirm(confirmation.id)`, and declining calls `cancel_pending_confirmation()`. The UI never injects request IDs into policy context itself, never calls a handler, and never bypasses dispatcher re-evaluation. Tests use a synthetic sensitive capability to prove approval executes exactly once, decline executes nothing, output/status/history update correctly, and no real OS action is triggered.
 - Moved `MainWindow` command and confirmation execution off the GUI thread into a small Qt worker thread. This removes the blocking `asyncio.run()` model from button handlers while preserving the same orchestrator/policy/dispatcher path. Idle Stop still runs through the audited `system.stop` path; busy Stop now calls `OperationController.cancel_active_operation()` directly so it can signal cancellation while a worker is running instead of waiting behind the serialized dispatcher. Tests include a synthetic slow orchestrator that proves the Stop button remains clickable and requests cancellation while Run/input are disabled.
 - Added a read-only Diagnostics button/dialog to `MainWindow`. It reports VisionAI version, Python version, PySide6 version, registered capability count, tray availability, current state, and the not-connected voice/camera status. It is deliberately introspection-only: it cannot alter settings, policy, permissions, dispatch, or state.
+- Investigated the "contrast, OS scaling" gap left by the WCAG 2.2 AA pass, rather than leaving it untouched. Confirmed via direct inspection (not assumption) that `MainWindow` and every child widget apply zero custom stylesheets or palettes, and confirmed no code disables Qt's default HiDPI scaling -- so both properties inherit whatever the native OS theme provides, including Windows' own High Contrast mode, which only works by overriding a theme the app already defers to. Also discovered, and this matters for anyone tempted to write a palette-based contrast test: the headless `QT_QPA_PLATFORM=offscreen` platform this suite runs under substitutes an unrelated generic `fusion` palette, verified by direct probe to differ from the real desktop's native `windows11` style (different RGB values for `Window`/`Button`, and a `Highlight` color that is a *user-configurable Windows accent color* on the real desktop, not a fixed value at all) -- so a test asserting specific contrast numbers against the offscreen palette would silently verify the wrong platform's colors, not what a real user sees. Added a regression test proving the no-custom-styling invariant instead, which is the one contrast-relevant property this codebase can actually own. A live NVDA/Narrator screen-reader pass is still not done.
 
 ## Implemented but Not Fully Verified
 
@@ -80,12 +81,12 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 - Incremental migration from the previous JARVIS prototype: `app.open`, `browser.open`, `browser.search`, and `media.control` migrated; voice, gesture, and LLM behaviors remain unmigrated and untrusted.
 - Deterministic text planning (`TextCommandPlanner`) now covers typed-text commands for every registered capability; voice/gesture input still has no adapter to feed it.
-- Phase 2 desktop UI: a minimal main window exists and is tested, now with a Stop control, verified keyboard tab-order/focus behavior, a tray icon, a confirmation prompt, a read-only diagnostics dialog, and worker-thread command execution; settings, onboarding, contrast/scaling/screen-reader verification, and long-running capability handlers that actually poll cancellation tokens are not built yet.
+- Phase 2 desktop UI: a minimal main window exists and is tested, now with a Stop control, verified keyboard tab-order/focus behavior, a tray icon, a confirmation prompt, a read-only diagnostics dialog, and worker-thread command execution; settings, onboarding, a live screen-reader pass, and long-running capability handlers that actually poll cancellation tokens are not built yet.
 
 ## Approved Next Tasks
 
 1. Continue Phase 2: tray, diagnostics, confirmation prompt, and non-blocking command execution now exist; settings, onboarding, and a better confirmation UX for richer Risk 2+ action summaries are still needed.
-2. Continue the WCAG 2.2 AA pass on `MainWindow`: keyboard focus order and no-trap navigation are now verified (see Implemented and Tested), but contrast, OS scaling, and a real screen-reader (NVDA/Narrator) pass are still outstanding -- do not claim accessibility compliance until those are checked too.
+2. Continue the WCAG 2.2 AA pass on `MainWindow`: keyboard focus order/no-trap navigation and the no-custom-styling contrast/scaling inheritance are now verified (see Implemented and Tested), but a real screen-reader (NVDA/Narrator) pass is still outstanding -- do not claim accessibility compliance until that is checked too.
 3. Wire voice/gesture input to `EventOrchestrator` (already event-driven and StateMachine-integrated, so no orchestrator changes should be needed -- only a new adapter that publishes real `TranscriptEvent`/`GestureEvent`s) so `system.stop` can interrupt real long-running operations.
 4. Ensure future long-running capability handlers accept and poll cancellation tokens. `MainWindow` can now request cancellation while a worker is active, but built-in handlers are currently fast and synchronous, so deeper cancellation cooperation still matters before voice/vision work arrives.
 
@@ -134,7 +135,7 @@ cd visionai
 - Python: 3.12.10
 - Ruff: passed
 - mypy: passed for 36 source files
-- pytest: 175 passed, 92% coverage (headless, via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
+- pytest: 176 passed, 92% coverage (headless, via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

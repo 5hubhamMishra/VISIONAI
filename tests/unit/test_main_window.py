@@ -3,7 +3,7 @@ from typing import Any
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QWidget
 
 from visionai.capabilities import CapabilityManifest, CapabilityRegistry, IdempotencyMode
 from visionai.capabilities.dispatcher import SerializedDispatcher
@@ -245,6 +245,32 @@ def test_main_window_stop_button_can_cancel_while_worker_is_running(qtbot: Any) 
     assert window._output.toPlainText() == "Stop requested."
     _wait_for_command_complete(window, qtbot)
     assert window._run_button.isEnabled() is True
+
+
+def test_main_window_and_children_inherit_native_os_theming(qtbot: Any) -> None:
+    """No widget hardcodes its own colors -- contrast comes from the OS theme.
+
+    MainWindow applies zero custom stylesheets or palettes anywhere. This
+    matters for WCAG contrast in a way a fixed color audit cannot capture:
+    the app's real on-screen colors come from the native platform style
+    (`windows11` normally; this headless test suite runs under Qt's
+    offscreen platform, which substitutes an unrelated generic `fusion`
+    palette -- verified by direct inspection, not assumed -- so asserting
+    against *specific* RGB values here would test the wrong platform's
+    colors, not what a user actually sees). What this test can and does
+    prove: nothing in this codebase overrides that inheritance, so Windows'
+    own accessibility guarantees for native controls -- including High
+    Contrast mode, which only works by overriding the OS theme the app
+    already defers to -- are never silently defeated by a hardcoded style.
+    """
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    assert window.styleSheet() == ""
+    for widget in window.findChildren(QWidget):
+        assert widget.styleSheet() == "", f"{widget!r} has a custom stylesheet"
 
 
 def test_main_window_diagnostics_text_reports_environment_and_state(qtbot: Any) -> None:
