@@ -40,6 +40,22 @@ class InputAdapter:
 
     input_bus: EventBus
 
+    async def publish_voice_capture(
+        self,
+        transcribe_once: Callable[[], str],
+        *,
+        confidence: float,
+        language: str = "en",
+    ) -> TranscriptEvent:
+        """Publish one final push-to-talk transcript from an injected STT provider."""
+
+        return await self.publish_transcript(
+            transcribe_once(),
+            confidence=confidence,
+            language=language,
+            is_final=True,
+        )
+
     async def publish_transcript(
         self,
         text: str,

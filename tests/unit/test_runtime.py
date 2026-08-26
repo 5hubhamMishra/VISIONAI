@@ -127,6 +127,22 @@ async def test_runtime_input_adapter_transcript_reaches_the_real_orchestrator() 
 
 
 @pytest.mark.asyncio
+async def test_runtime_input_adapter_voice_capture_uses_injected_transcriber() -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+
+    event = await runtime.input_adapter.publish_voice_capture(
+        lambda: "open notepad", confidence=0.93
+    )
+    runtime.input_bus.close()
+    await runtime.orchestrator.run_until_closed()
+
+    assert event.text == "open notepad"
+    assert event.is_final is True
+    assert launched == ["notepad.exe"]
+
+
+@pytest.mark.asyncio
 async def test_runtime_input_adapter_publishes_validated_gesture_events() -> None:
     runtime = build_runtime()
 
@@ -140,10 +156,22 @@ async def test_runtime_input_adapter_publishes_validated_gesture_events() -> Non
 
 
 @pytest.mark.asyncio
-async def test_runtime_input_adapter_rejects_invalid_input_without_publishing() -> None:
+async def test_runtime_input_adapter_rejects_invalid_transcript_without_publishing() -> None:
     runtime = build_runtime()
 
     with pytest.raises(ValidationError):
         await runtime.input_adapter.publish_transcript("open\x00notepad", confidence=0.95)
+
+    assert runtime.input_bus.size == 0
+
+
+@pytest.mark.asyncio
+async def test_runtime_input_adapter_rejects_invalid_voice_capture_without_publishing() -> None:
+    runtime = build_runtime()
+
+    with pytest.raises(ValidationError):
+        await runtime.input_adapter.publish_voice_capture(
+            lambda: "open\x00notepad", confidence=0.95
+        )
 
     assert runtime.input_bus.size == 0

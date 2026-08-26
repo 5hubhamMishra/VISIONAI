@@ -59,3 +59,12 @@ from the documented state instead of re-inspecting the whole workspace.
 - Commands/tests run: elevated `.venv312\Scripts\python.exe -m pytest tests\unit\test_runtime.py -q` passed with `10 passed`; elevated `.\scripts\verify.ps1` passed with Ruff, mypy for 37 source files, `213 passed`, 93% coverage, Bandit passed, and `pip-audit` reporting no known vulnerabilities.
 - Result: added `InputAdapter` in the existing orchestrator module, exposed it on `Runtime`, verified already-recognized transcript text reaches the real orchestrator/planner/dispatcher path, verified already policy-approved gestures queue as typed `GestureEvent`s, and verified invalid transcript text is rejected before publishing.
 - Next task: add the smallest real Phase 3 voice boundary feeding `InputAdapter.publish_transcript()`; keep raw audio out of stored events by default.
+
+## 2026-08-27 Injectable Voice Boundary Slice
+
+- Date/time: 2026-08-27
+- User request: move on to the next part.
+- Files changed: `src/visionai/orchestration/event_orchestrator.py`, `tests/unit/test_runtime.py`, `docs/ARCHITECTURE.md`, `docs/PROJECT_STATE.md`, `docs/TESTING.md`, `docs/WORK_LOG.md`.
+- Commands/tests run: elevated `.venv312\Scripts\python.exe -m pytest tests\unit\test_runtime.py -q` passed with `12 passed`; elevated `.\scripts\verify.ps1` passed with Ruff, mypy for 37 source files, `215 passed`, 93% coverage, Bandit passed, and `pip-audit` reporting no known vulnerabilities.
+- Result: added `InputAdapter.publish_voice_capture()`, a one-shot injectable STT/push-to-talk boundary that publishes only final transcript text through the existing validated event path and stores no raw audio. Verified injected STT output reaches the real orchestrator/planner/dispatcher path and invalid output is rejected before publishing.
+- Next task: add microphone device selection or a real push-to-talk runner feeding the existing injectable STT boundary; keep raw audio out of events and storage by default.
