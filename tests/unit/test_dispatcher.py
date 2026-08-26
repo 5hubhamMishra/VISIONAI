@@ -89,6 +89,38 @@ def test_dispatcher_returns_policy_denial_without_second_handler_call() -> None:
     assert audit.list()[-1].summary == "rate limit exceeded"
 
 
+def test_dispatcher_evaluate_checks_policy_without_executing_or_consuming_rate_limit() -> None:
+    registry = CapabilityRegistry([_manifest()])
+    audit = InMemoryAuditSink()
+    calls = 0
+
+    def handler(request: ActionRequest) -> ActionResult:
+        nonlocal calls
+        calls += 1
+        return ActionResult(request_id=request.id, success=True, message="ok")
+
+    dispatcher = SerializedDispatcher(
+        registry=registry,
+        policy=PolicyEngine(registry, FixedWindowRateLimiter(clock=lambda: 100.0)),
+        audit=audit,
+        handlers={"system.time": handler},
+    )
+    request = ActionRequest(capability_id="system.time", risk_level=RiskLevel.READ_ONLY)
+
+    decision = dispatcher.evaluate(request, PolicyContext())
+    result = dispatcher.dispatch(request, PolicyContext())
+    denied = dispatcher.dispatch(
+        ActionRequest(capability_id="system.time", risk_level=RiskLevel.READ_ONLY),
+        PolicyContext(),
+    )
+
+    assert decision.allowed is True
+    assert result.success is True
+    assert denied.success is False
+    assert calls == 1
+    assert len(audit.list()) == 2
+
+
 def test_dispatcher_audits_denials_with_the_manifests_risk_level_not_the_requests() -> None:
     """A caller-supplied risk_level must not be able to understate severity in the audit log."""
     sensitive_manifest = CapabilityManifest(

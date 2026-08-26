@@ -67,10 +67,11 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Added a Stop button to `MainWindow` toward Phase 2's "cancellation" exit criterion (Section 19). It requests cancellation the same way `visionai --text "stop"` does and is deliberately never disabled by the Run flow, so it stays reachable even while the command input/Run button are disabled during processing -- closing a real gap where cancellation was previously only reachable through the same input Run disables. It cannot yet interrupt anything mid-flight (`run_current_command` and `stop_current_operation` both call `asyncio.run()` synchronously on the GUI thread, and every registered capability is fast and synchronous), so clicking it before any long-running operation exists just reports that nothing is running -- see `docs/SECURITY.md` for why this is an honest limitation rather than a bug.
 - Ran a first, partial accessibility pass on `MainWindow` toward Section 14's WCAG 2.2 AA target (approved next task 2) -- partial, not a full audit; see the honest scope note below. Found and fixed a real bug via test execution: the window set no initial focus at all on show (`focusWidget()` was `None`, confirmed with a failing test before the fix), so a keyboard-only user had no visible starting point. Fixed with `self._command_input.setFocus()`. Verified, with passing tests in both directions, that Tab and Shift+Tab cycle through every interactive control (command input, Run, Stop, result, history) with no keyboard trap -- disproving an initial suspicion that the read-only result `QTextEdit` might swallow Tab, which the test showed does not happen in this Qt version/configuration, so no speculative fix was added for it. Associated the "Result" and "History" labels with their widgets via `QLabel.setBuddy()`, matching the existing "Command" label pattern, so assistive technology can announce them. **Not verified**: actual contrast ratios and OS-level scaling (no custom colors or fonts are set, so these currently inherit the OS theme's values, but that inheritance itself has not been measured), real screen-reader software (only `setAccessibleName`/buddy wiring, not a live NVDA/Narrator pass), and remappable shortcuts (not applicable yet -- no gestures exist). Do not describe the WCAG 2.2 AA pass as complete.
 - Added a system tray icon to `MainWindow`, the next component in Section 6's UI package order after the main window itself (approved next task 1, first slice). A Show/Quit context menu and click-to-toggle visibility, wired to plain window-lifecycle calls (`show`/`hide`/`raise_`/`activateWindow`/`QApplication.quit`) with no path into the runtime, orchestrator, or dispatcher -- see `docs/SECURITY.md`. Closing the window minimizes to tray only when `QSystemTrayIcon.isSystemTrayAvailable()` is true, and closes normally otherwise, so the window can never become unreachable on a system without a tray. Uses a standard Qt style icon as a placeholder (no branded VisionAI icon asset exists yet; real branding is Phase 8 release work). `isSystemTrayAvailable()` is always `False` under the offscreen platform the automated test suite runs under, so the headless tests exercise the real no-tray fallback path directly and use a monkeypatch only to exercise the tray-available path; the tray-available behavior was additionally live-verified on the real Windows desktop (tray actually available, icon actually visible, close-to-tray actually works) before documenting it.
+- Added early confirmation-dialog plumbing for the next Phase 2 slice: `Runtime` now owns an injectable `ConfirmationService`, and `SerializedDispatcher.evaluate()` can perform a non-executing policy preflight for UI/orchestrator callers that need to know whether a confirmation prompt is required. Fixed the important safety detail before committing it: this preflight does not consume rate-limit quota, and `dispatch()` still re-evaluates policy before handler execution, so a stale or buggy preflight cannot authorize anything.
 
 ## Implemented but Not Fully Verified
 
-- None outstanding at this time.
+- The latest confirmation-precheck slice has focused tests passing, but the full `scripts\verify.ps1` suite has not been rerun after that slice because the elevated full-suite run hit the platform usage-limit gate. The previous full-suite result is recorded below.
 
 ## In Progress
 
@@ -126,6 +127,12 @@ cd visionai
 ```
 
 ## Last Verification Result
+
+Latest focused verification after confirmation-precheck changes:
+
+- `pytest tests\unit\test_dispatcher.py tests\unit\test_policy.py tests\unit\test_runtime.py tests\unit\test_event_orchestrator.py tests\unit\test_main_window.py`: 33 passed
+
+Most recent full local verification before that final precheck slice:
 
 - Python: 3.12.10
 - Ruff: passed

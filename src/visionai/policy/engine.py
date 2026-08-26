@@ -61,7 +61,13 @@ class PolicyEngine:
         self._registry = registry
         self._rate_limiter = rate_limiter
 
-    def evaluate(self, request: ActionRequest, context: PolicyContext) -> PolicyDecision:
+    def evaluate(
+        self,
+        request: ActionRequest,
+        context: PolicyContext,
+        *,
+        consume_rate_limit: bool = True,
+    ) -> PolicyDecision:
         manifest = self._registry.get(request.capability_id)
         argument_error = _first_argument_error(request, manifest)
         if argument_error:
@@ -83,10 +89,16 @@ class PolicyEngine:
                 "fresh confirmation is required",
                 requires_confirmation=True,
             )
-        if self._rate_limiter and not self._rate_limiter.allow(
-            manifest.id, manifest.rate_limit_per_minute
-        ):
-            return PolicyDecision(False, "rate limit exceeded")
+        if self._rate_limiter:
+            rate_allowed = (
+                self._rate_limiter.allow(manifest.id, manifest.rate_limit_per_minute)
+                if consume_rate_limit
+                else self._rate_limiter.would_allow(
+                    manifest.id, manifest.rate_limit_per_minute
+                )
+            )
+            if not rate_allowed:
+                return PolicyDecision(False, "rate limit exceeded")
         return PolicyDecision(True, "allowed")
 
 

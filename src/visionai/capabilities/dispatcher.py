@@ -12,7 +12,7 @@ from visionai.core.events import ActionRequest, ActionResult, AuditEvent
 from visionai.observability.audit import InMemoryAuditSink
 
 if TYPE_CHECKING:
-    from visionai.policy.engine import PolicyContext, PolicyEngine
+    from visionai.policy.engine import PolicyContext, PolicyDecision, PolicyEngine
 
 CapabilityHandler = Callable[[ActionRequest], ActionResult]
 
@@ -38,6 +38,19 @@ class SerializedDispatcher:
         if handler_id in self._handlers:
             raise DispatchError(f"handler already registered: {handler_id}")
         self._handlers[handler_id] = handler
+
+    def evaluate(self, request: ActionRequest, context: PolicyContext) -> PolicyDecision:
+        """Check policy without executing anything.
+
+        Read-only: callers (e.g. the orchestrator, to decide whether to show
+        a confirmation prompt) can inspect `requires_confirmation` here, but
+        this cannot be used to bypass anything -- `dispatch()` always
+        re-evaluates policy itself before running a handler, so policy stays
+        the sole authority over execution regardless of what a caller does
+        with this result.
+        """
+
+        return self._policy.evaluate(request, context, consume_rate_limit=False)
 
     def dispatch(self, request: ActionRequest, context: PolicyContext) -> ActionResult:
         # Looked up from the registry, not request.risk_level: the caller

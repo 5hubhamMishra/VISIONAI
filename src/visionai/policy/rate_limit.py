@@ -42,6 +42,18 @@ class FixedWindowRateLimiter:
             window.count += 1
             return True
 
+    def would_allow(self, key: str, limit_per_minute: int) -> bool:
+        """Check the current window without consuming quota."""
+
+        if limit_per_minute <= 0:
+            return False
+        now = self._clock()
+        with self._lock:
+            window = self._windows.get(key)
+            if window is None or now - window.started_at >= 60:
+                return True
+            return window.count < limit_per_minute
+
     def reset(self, key: str | None = None) -> None:
         with self._lock:
             if key is None:

@@ -31,7 +31,7 @@ from visionai.core.event_bus import EventBus
 from visionai.core.state import StateMachine
 from visionai.observability import InMemoryAuditSink
 from visionai.orchestration import EventOrchestrator, TextCommandPlanner
-from visionai.policy import FixedWindowRateLimiter, PolicyEngine
+from visionai.policy import ConfirmationService, FixedWindowRateLimiter, PolicyEngine
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +43,7 @@ class Runtime:
     dispatcher: SerializedDispatcher
     operations: OperationController
     planner: TextCommandPlanner
+    confirmation: ConfirmationService
     input_bus: EventBus
     output_bus: EventBus
     orchestrator: EventOrchestrator
@@ -55,6 +56,7 @@ def build_runtime(
     browser_opener: BrowserOpener = default_browser_opener,
     key_presser: KeyPresser = default_key_presser,
     operation_controller: OperationController | None = None,
+    confirmation: ConfirmationService | None = None,
     input_bus: EventBus | None = None,
     output_bus: EventBus | None = None,
     state_machine: StateMachine | None = None,
@@ -77,6 +79,7 @@ def build_runtime(
     registry = CapabilityRegistry(manifests)
     operations = operation_controller or OperationController()
     state = state_machine or StateMachine()
+    confirmations = confirmation or ConfirmationService()
     audit = InMemoryAuditSink()
     policy = PolicyEngine(registry, FixedWindowRateLimiter())
     handlers = {
@@ -101,6 +104,7 @@ def build_runtime(
         planner=planner,
         dispatcher=dispatcher,
         operations=operations,
+        confirmation=confirmations,
         state_machine=state,
     )
     return Runtime(
@@ -109,6 +113,7 @@ def build_runtime(
         dispatcher=dispatcher,
         operations=operations,
         planner=planner,
+        confirmation=confirmations,
         input_bus=inputs,
         output_bus=outputs,
         orchestrator=orchestrator,

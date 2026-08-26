@@ -63,3 +63,14 @@ def test_new_confirmation_replaces_old_pending_confirmation_for_same_request() -
         service.validate(request, old_confirmation.id)
 
     service.validate(request, new_confirmation.id)
+
+
+def test_discard_removes_pending_confirmation_without_authorizing_it() -> None:
+    service = ConfirmationService(ttl_seconds=30)
+    request = ActionRequest(capability_id="clipboard.read", risk_level=RiskLevel.SENSITIVE)
+    confirmation = service.create(request, action_summary="Read clipboard")
+
+    assert service.discard(confirmation.id) is True
+    assert service.discard(confirmation.id) is False
+    with pytest.raises(ConfirmationError):
+        service.validate(request, confirmation.id)

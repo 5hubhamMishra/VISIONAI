@@ -8,7 +8,7 @@ from visionai.capabilities import (
     ParameterType,
 )
 from visionai.core.events import ActionRequest, RiskLevel
-from visionai.policy import PolicyContext, PolicyEngine
+from visionai.policy import FixedWindowRateLimiter, PolicyContext, PolicyEngine
 
 
 def _open_site_manifest() -> CapabilityManifest:
@@ -43,6 +43,26 @@ def _clipboard_manifest() -> CapabilityManifest:
         idempotency=IdempotencyMode.IDEMPOTENT,
         audit_category="clipboard",
         handler_id="clipboard.read",
+    )
+
+
+def _rate_limited_manifest() -> CapabilityManifest:
+    return CapabilityManifest(
+        id="browser.search",
+        description="Open an encoded search.",
+        parameters={
+            "query": ParameterSpec(
+                type=ParameterType.STRING,
+                required=True,
+                description="Search query.",
+            )
+        },
+        risk_level=RiskLevel.REVERSIBLE,
+        rate_limit_per_minute=1,
+        timeout_seconds=5,
+        idempotency=IdempotencyMode.NON_IDEMPOTENT,
+        audit_category="browser",
+        handler_id="browser.search",
     )
 
 
@@ -145,3 +165,31 @@ def test_unrelated_confirmation_does_not_authorize_request() -> None:
 
     assert decision.allowed is False
     assert decision.requires_confirmation is True
+
+
+def test_policy_can_check_rate_limit_without_consuming_it() -> None:
+    registry = CapabilityRegistry([_rate_limited_manifest()])
+    limiter = FixedWindowRateLimiter(clock=lambda: 100.0)
+    engine = PolicyEngine(registry, limiter)
+    context = PolicyContext()
+    request = ActionRequest(
+        capability_id="browser.search",
+        arguments={"query": "visionai"},
+        risk_level=RiskLevel.REVERSIBLE,
+    )
+
+    preflight = engine.evaluate(request, context, consume_rate_limit=False)
+    first = engine.evaluate(request, context)
+    second = engine.evaluate(
+        ActionRequest(
+            capability_id="browser.search",
+            arguments={"query": "visionai"},
+            risk_level=RiskLevel.REVERSIBLE,
+        ),
+        context,
+    )
+
+    assert preflight.allowed is True
+    assert first.allowed is True
+    assert second.allowed is False
+    assert second.reason == "rate limit exceeded"

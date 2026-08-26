@@ -54,3 +54,8 @@ class ConfirmationService:
             self._pending.pop(confirmation_id, None)
             raise ConfirmationError("confirmation has expired")
         self._pending.pop(confirmation_id, None)
+
+    def discard(self, confirmation_id: UUID) -> bool:
+        """Remove a pending confirmation without authorizing its request."""
+
+        return self._pending.pop(confirmation_id, None) is not None
