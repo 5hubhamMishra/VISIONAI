@@ -56,6 +56,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Fixed the log redaction control (Section 15 "log redaction"): it did not work at all as wired. `RedactionFilter` was attached to the *root* logger via `Logger.addFilter`, but a filter on a logger only gates that logger's own calls -- it is never consulted for records from named child loggers (the only kind `get_logger()` returns) reaching the same handlers by propagating up the hierarchy, so redaction silently never ran for any real application logger. Separately, even when attached correctly, redacting `record.msg` and `record.args` independently before %-substitution could leave a placeholder in `msg` with no matching arg (e.g. a secret passed the idiomatic way, `logger.info("api_key=%s", key)`, has no "key=" prefix in `args` alone to match against), which either failed to redact the secret or crashed message rendering with `TypeError: not all arguments converted during string formatting`. Verified both failure modes live before fixing. Fix: attach the filter to each handler instead of the root logger, and redact the fully substituted message (`record.getMessage()`) rather than msg/args separately, then clear `args` so no further substitution is attempted.
 - Migrated the first `../jarvis` prototype behavior into the trusted runtime, per the user's decision and `docs/MIGRATION_QUARANTINE.md`'s required steps: `app.open`, a Risk 1 (Reversible) capability that opens one allowlisted desktop application (`notepad`, `calculator`, `paint`) by its exact executable name with `shell=False`. Deliberately excludes anything from the old prototype's broader app list that is itself a general-purpose command surface (`cmd`, `powershell`, Task Manager), since those would reintroduce the arbitrary-execution risk this capability exists to avoid. Verified live end to end through the actual CLI and dispatcher: the denial path (`cmd` rejected) and the real launch path (Notepad actually opened as a live process, confirmed via `Get-Process`, then closed).
 - Added the two remaining Section 13 initial safe capabilities that don't require an orchestrator: `system.capabilities` (lists every registered capability by ID and description) and `system.help` (summarizes current functionality and the registered count). Both are pure registry introspection, Risk 0 (Read-only). "Stop current operation" is still deferred -- there is no orchestrator or in-flight operation yet for it to stop.
+- Locally quarantined the old `../jarvis` prototype execution path in this workspace: app parsing now rejects injection-shaped text instead of partially matching it, unknown app/site names no longer fall back to raw spoken text, app launch uses `subprocess.Popen([cmd], shell=False)`, command-surface apps are blocked, web opens are host/scheme allowlisted, search query encoding uses `quote_plus`, mutating system commands are hard-blocked, and touched debug prints are ASCII-safe on the Windows console. These source edits are outside the `visionai/` Git repository and therefore are not pushed to `5hubhamMishra/VISIONAI`; this document records the local hardening step.
 
 ## Implemented but Not Fully Verified
 
@@ -73,11 +74,12 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## Known Defects
 
-- Existing `../jarvis` prototype still contains direct OS/browser/media execution paths, including a concrete, traceable OS command injection path: `brain/intent_parser.py`'s `open_app`/`web` intents fall back to the *raw spoken word* when it isn't in the `APP_COMMANDS`/URL allowlist dicts (`config["apps"].get(app, app)` -- the fallback default is the unvalidated input itself, not a rejection), and `actions/executor.py` repeats the identical fallback (`APP_COMMANDS.get(name, name)`) before passing the result straight to `subprocess.Popen(cmd, shell=True)`. A voice command like "open calc & del /f /q ..." would have `&` interpreted by `cmd.exe` as a command separator, chaining an arbitrary second command. This is exactly the class of "malicious/replayed audio" threat the master prompt's threat model calls out, and exactly why the new `app.open` capability rejects an unrecognized app outright instead of falling back to the input.
+- Existing `../jarvis` prototype is still untrusted reference material, but its previously documented concrete OS command injection path has been locally quarantined in this workspace. The quarantine is not part of the `visionai/` Git repository, so a separate `jarvis` copy or restore must not be assumed safe.
 - Existing `../jarvis` docs claim production readiness without verification evidence.
 - Existing `../jarvis` logs are very large and should be rotated or removed with user approval.
 - Existing `../jarvis` venv is not runnable in this workspace.
 - `WindowsLockStateAdapter`'s true locked-workstation path has not been manually verified (requires a human to lock the screen and observe the result); only the unlocked path has been confirmed live.
+- Old `../jarvis` media control and pointer automation remain direct local actions outside the trusted `visionai` manifest/policy/dispatcher/audit path.
 
 ## Security Restrictions
 
@@ -94,6 +96,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Further old-prototype migration must pass `docs/MIGRATION_QUARANTINE.md` gates.
 - `system.help` and `system.capabilities` are read-only registry introspection only.
 - `app.open` launches by exact executable name with `shell=False`, never a shell string; its allowlist (`notepad`, `calculator`, `paint`) deliberately excludes any general-purpose command surface (shell, terminal, task manager).
+- The old `../jarvis` prototype must remain outside the trusted runtime even after local quarantine; only `visionai/` capabilities registered by manifest are trusted.
 
 ## Required Decisions
 
