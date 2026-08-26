@@ -28,6 +28,7 @@ from visionai.capabilities.meta import meta_handlers, meta_manifests
 from visionai.capabilities.system_info import system_info_handlers, system_info_manifests
 from visionai.core.cancellation import OperationController
 from visionai.observability import InMemoryAuditSink
+from visionai.orchestration import TextCommandPlanner
 from visionai.policy import FixedWindowRateLimiter, PolicyEngine
 
 
@@ -39,6 +40,7 @@ class Runtime:
     audit: InMemoryAuditSink
     dispatcher: SerializedDispatcher
     operations: OperationController
+    planner: TextCommandPlanner
 
 
 def build_runtime(
@@ -80,4 +82,11 @@ def build_runtime(
         audit=audit,
         handlers=handlers,
     )
-    return Runtime(registry=registry, audit=audit, dispatcher=dispatcher, operations=operations)
+    planner = TextCommandPlanner(registry)
+    return Runtime(
+        registry=registry,
+        audit=audit,
+        dispatcher=dispatcher,
+        operations=operations,
+        planner=planner,
+    )

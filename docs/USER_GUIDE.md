@@ -16,7 +16,11 @@ visionai app.open --app notepad
 visionai browser.open --site github
 visionai browser.search --query "VisionAI local assistant"
 visionai media.control --media-action play_pause
+visionai --text "open notepad"
+visionai --text "what time is it"
 ```
+
+`--text` plans and runs one typed command through the same deterministic phrase matching, allowlists, and policy/dispatcher path as the explicit commands above -- it does not add any new capability, just an alternate way to invoke the existing ones. Anything that doesn't match a reviewed phrase, or whose slot isn't allowlisted, is treated as non-executable conversation and nothing runs.
 
 `app.open` accepts `notepad`, `calculator`, or `paint` -- any other value is rejected before anything opens. There is no wake word, no orchestrator, and no way to invoke these from voice or gesture input yet.
 

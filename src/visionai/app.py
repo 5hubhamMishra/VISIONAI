@@ -36,9 +36,21 @@ def main() -> int:
     parser.add_argument("--site", default=None, help="Website to open (browser.open only).")
     parser.add_argument("--query", default=None, help="Search query (browser.search only).")
     parser.add_argument("--media-action", default=None, help="Media action (media.control only).")
+    parser.add_argument("--text", default=None, help="Plan and run one safe typed command.")
     args = parser.parse_args()
 
     runtime = build_runtime()
+    if args.text is not None:
+        _intent, plan = runtime.planner.plan(args.text)
+        if not plan.steps:
+            print(plan.summary)
+            return 1
+        result = runtime.dispatcher.dispatch(plan.steps[0], PolicyContext())
+        print(result.message)
+        if not result.success:
+            return 1
+        return 0
+
     arguments: dict[str, str] = {}
     if args.format is not None:
         arguments["format"] = args.format

@@ -42,6 +42,26 @@ def test_app_runs_system_stop(monkeypatch, capsys) -> None:
     assert "No operation is currently running." in output
 
 
+def test_app_runs_safe_text_command(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("sys.argv", ["visionai", "--text", "what time is it"])
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "It is " in output
+
+
+def test_app_rejects_unknown_text_command(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("sys.argv", ["visionai", "--text", "open calc & powershell"])
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "No executable action selected." in output
+
+
 def test_app_runs_browser_search(monkeypatch) -> None:
     opened: list[str] = []
     monkeypatch.setattr("sys.argv", ["visionai", "browser.search", "--query", "hello world"])

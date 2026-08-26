@@ -23,8 +23,9 @@ Input adapters -> bounded event bus -> recognition services -> intent orchestrat
 - `visionai.capabilities.dispatcher`: serialized handler dispatch after policy approval, with audit output. Audit records for both denials and successes use the registered capability's manifest risk level, never the caller-supplied request field, so a request cannot understate its own severity in the audit trail.
 - `visionai.policy`: deterministic policy, persistent permission storage, rate limiting (thread-safe), URL validation helpers (deny-by-default: an empty host allowlist denies every host, not just non-private ones), and confirmation checks before any dispatcher can execute a request.
 - `visionai.platform`: platform-state adapter boundary with static test adapter and Windows lock-state wrapper. The Windows wrapper checks whether the interactive input desktop can be opened (fails while the workstation is locked or a secure desktop such as a UAC prompt is active); any check failure or unreachable desktop is treated as locked.
-- `visionai.runtime`: assembles the registry, policy engine, rate limiter, audit sink, and dispatcher into a single `Runtime` for the console entry point.
-- `visionai.app`: console entry point (`visionai` script) that dispatches one capability through the full policy + dispatcher path.
+- `visionai.orchestration.TextCommandPlanner`: deterministic, non-LLM planning over already-captured text (Section 12's "deterministic parser"). Matches a small set of reviewed phrases and allowlisted slot values (app names, site names, media actions) and emits a typed `Intent` + `ActionPlan` -- never a raw dict, never an arbitrary capability. It is explicitly not the security boundary: an unrecognized or rejected slot produces an empty, non-executable plan, and any `ActionRequest` it does emit still passes through the same policy engine and dispatcher as a directly-invoked capability, so a planner bug cannot itself authorize an action.
+- `visionai.runtime`: assembles the registry, policy engine, rate limiter, audit sink, dispatcher, operation controller, and text planner into a single `Runtime` for the console entry point.
+- `visionai.app`: console entry point (`visionai` script) that dispatches one capability through the full policy + dispatcher path, or plans and dispatches one typed text command via `--text`.
 
 ## Migration Rule
 

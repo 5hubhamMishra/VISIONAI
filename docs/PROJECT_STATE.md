@@ -60,6 +60,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Added Section 13 initial safe meta capabilities: `system.capabilities` lists every registered capability by ID and description, and `system.help` summarizes current functionality and the registered count.
 - Added the remaining Section 13 stop command as `system.stop`, backed by `OperationController`. It requests cooperative cancellation of the currently tracked operation, reports when nothing is active, and does not kill threads or processes directly.
 - Locally quarantined the old `../jarvis` prototype execution path in this workspace: app parsing now rejects injection-shaped text instead of partially matching it, unknown app/site names no longer fall back to raw spoken text, app launch uses `subprocess.Popen([cmd], shell=False)`, command-surface apps are blocked, web opens are host/scheme allowlisted, search query encoding uses `quote_plus`, mutating system commands are hard-blocked, and touched debug prints are ASCII-safe on the Windows console. These source edits are outside the `visionai/` Git repository and therefore are not pushed to `5hubhamMishra/VISIONAI`; this document records the local hardening step.
+- Added `visionai.orchestration.TextCommandPlanner` (Section 12's deterministic parser, text-only -- no voice, no LLM) and wired it into the CLI as `visionai --text "<command>"`. Matches a small set of reviewed phrases and allowlisted slot values (app names, site names, media actions) into a typed `Intent` + `ActionPlan`; anything else becomes non-executable conversation data. The planner is explicitly not the security boundary -- any `ActionRequest` it emits still passes through the same policy engine and dispatcher as a directly-invoked capability. Found and fixed a real bug via test execution (not just review): `_empty_plan()` passed the raw, unsanitized original text straight into `Intent`'s `SafeText` fields, so any input correctly rejected as non-executable but still containing a control character (e.g. `"open notepad\x00"`, or a search query with an embedded NUL byte) crashed the planner outright with a pydantic `ValidationError` instead of returning the intended graceful non-executable response. The rejection decision itself was already correct and made against the raw text; only the informational `Intent` object needed sanitizing, since it carries no executable authority. Added a second regression test for the app-name case beyond the one that first caught it.
 
 ## Implemented but Not Fully Verified
 
@@ -68,11 +69,12 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 ## In Progress
 
 - Incremental migration from the previous JARVIS prototype: `app.open`, `browser.open`, `browser.search`, and `media.control` migrated; voice, gesture, and LLM behaviors remain unmigrated and untrusted.
+- Deterministic text planning (`TextCommandPlanner`) now covers typed-text commands for every registered capability; voice/gesture input still has no adapter to feed it.
 
 ## Approved Next Tasks
 
 1. Decide whether to disable or quarantine unsafe direct execution paths in the old `../jarvis` prototype itself (distinct from the new package, which never imports from it).
-2. Decide which prototype feature to migrate next (voice input, gesture input, LLM response planning, or something else).
+2. Decide on the next major phase: Phase 2 (desktop UI, needs PySide6) or Phase 3 (voice, needs an STT/TTS stack) -- both are large, new-heavy-dependency efforts that warrant explicit sign-off rather than another narrow autonomous slice.
 3. Wire voice/gesture/orchestrator work to `OperationController` so `system.stop` can interrupt real long-running operations.
 
 ## Known Defects
@@ -107,7 +109,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 ## Required Decisions
 
 - Decide whether the old `../jarvis` prototype itself needs its unsafe execution paths disabled/quarantined, given it is not imported by and has no effect on the new `visionai` package.
-- Decide which prototype feature to migrate next.
+- Decide the next major phase: desktop UI (Phase 2) or voice input (Phase 3). All four of Section 13's initial safe capabilities and a deterministic text planner are now implemented; the remaining scope requires new heavy dependencies (PySide6, or an STT/TTS stack) that should be chosen deliberately rather than picked up as another small increment.
 
 ## Verification Commands
 
@@ -120,8 +122,8 @@ cd visionai
 
 - Python: 3.12.10
 - Ruff: passed
-- mypy: passed for 31 source files
-- pytest: 126 passed, 92% coverage
+- mypy: passed for 33 source files
+- pytest: 138 passed, 93% coverage
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

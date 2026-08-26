@@ -29,15 +29,16 @@ Phase 0 tests cover core contracts and invariants:
 - `system.capabilities`/`system.help`/`system.stop` tests cover manifest risk classification, listing sorted by ID, the empty-registry case, cooperative cancellation behavior, locked-screen availability, and end to end through `build_runtime()` -- including that the listing correctly includes itself.
 - Browser capability tests cover `browser.open` and `browser.search`: allowlisted site normalization, unknown-site rejection, URL policy failure before opener execution, encoded search queries, empty/control-character query rejection, runtime dispatch/audit, CLI invocation, and policy rejection of missing/unknown arguments.
 - Media capability tests cover `media.control`: manifest risk classification, allowlisted key mapping, unknown-action rejection before keypress, key-presser failure handling, runtime dispatch/audit, CLI invocation, and policy rejection of missing/unknown arguments -- all via an injected fake key presser, since automated verification must not send live keyboard input. Separately, `pyautogui` (initially missing from declared dependencies) was manually verified live once: mute toggled on then off via both the raw function and the CLI. This did happen -- do not re-flip this line back to "not live-tested" without re-running the check.
+- Text planner tests cover direct phrase mapping (help/stop/time/date/battery/health), allowlisted app/site/media slot extraction, free-text search query passthrough, and -- critically -- that unrecognized text and injection-shaped text ("open calc & powershell", matching the exact `../jarvis` vulnerability shape) produce no executable step. Also covers a real bug found by running these tests, not just reviewing the code: a control character in text that gets correctly rejected (e.g. `"open notepad\x00"`) used to crash the planner with a pydantic `ValidationError` instead of returning the intended non-executable response, because the rejection fallback passed the raw, unsanitized text into a `SafeText`-constrained field. Fixed by sanitizing only the informational `Intent` object in that fallback, which carries no executable authority; the rejection decision itself was already made correctly beforehand.
 
 ## Verified Results
 
 Verified locally on Windows with Python 3.12.10 using `scripts\verify.ps1`:
 
 - Ruff: passed
-- mypy: passed for 31 source files
-- pytest: 126 passed
-- Coverage: 92%
+- mypy: passed for 33 source files
+- pytest: 138 passed
+- Coverage: 93%
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 
