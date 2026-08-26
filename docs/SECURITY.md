@@ -11,7 +11,7 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 - Typed contracts reject control characters, oversized text, invalid confidence values, and malformed mappings.
 - Event bus is bounded to provide backpressure; closing it is guaranteed to be observed by consumers (via a separate close signal) even if the bounded queue is full at that moment, after draining any already-queued events.
 - Raw media retention defaults to disabled.
-- Log redaction covers common key-value secret patterns.
+- Log redaction covers common key-value secret patterns, including secrets passed as lazy %-style logging arguments rather than baked into the message template; the filter is attached to every configured handler so it applies to all named application loggers, not only the root logger.
 - Capability registry rejects prohibited capabilities and duplicate IDs.
 - Policy rejects unknown arguments, unsupported platforms, missing permissions, missing fresh confirmations, and mutating actions while the screen is locked.
 - Confirmation service binds approval to the exact action request, expires it quickly, and consumes it after one use.

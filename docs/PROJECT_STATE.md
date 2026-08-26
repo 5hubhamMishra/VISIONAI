@@ -52,6 +52,7 @@ Phase 1 Safety foundation locally verified.
 - Fixed a thread-safety gap in `FixedWindowRateLimiter`: its per-key window state was mutated with no lock, unlike every other shared-mutable-state class in this codebase (`InMemoryAuditSink`, `JsonlAuditSink`). `SerializedDispatcher` only serializes handler execution, not policy evaluation, so once multiple recognition threads (voice, gesture) dispatch concurrently this had a real TOCTOU race that could let the limit be exceeded. Added a lock and a concurrency regression test (100 threads racing via a barrier) that verifies the limit holds exactly.
 - Fixed a deadlock in `EventBus.close()`: it signalled closure by pushing a `None` sentinel onto the same bounded queue via `put_nowait`, silently dropped (`suppress(QueueFull)`) if the queue was already at capacity -- leaving any consumer blocked in `next_event()` waiting forever, since `publish()` now rejects new events but no close signal ever reached the queue. Reproduced the exact hang (2s timeout, confirmed) before fixing. The close signal now travels over a separate `asyncio.Event`, which can never be lost regardless of queue fullness; `next_event()`/`subscribe()` still drain any already-queued events before raising `EventBusClosed`.
 - Fixed a thread-safety gap in `StateMachine` itself: `transition()`/`cancel()`/`on_transition()` had no lock, so concurrent callers (voice thread, gesture thread) could all observe the same starting state and all succeed, corrupting `history`'s from/to invariant -- exactly the uncontrolled shared-state problem this class exists to replace. Reproduced deterministically (50 threads racing via a barrier with `sys.setswitchinterval` tightened; 4/5 trials showed multiple simultaneous "successful" transitions to the same target before the fix, 0/10 after). Listeners are still notified outside the lock so a callback cannot deadlock or block other threads.
+- Fixed the log redaction control (Section 15 "log redaction"): it did not work at all as wired. `RedactionFilter` was attached to the *root* logger via `Logger.addFilter`, but a filter on a logger only gates that logger's own calls -- it is never consulted for records from named child loggers (the only kind `get_logger()` returns) reaching the same handlers by propagating up the hierarchy, so redaction silently never ran for any real application logger. Separately, even when attached correctly, redacting `record.msg` and `record.args` independently before %-substitution could leave a placeholder in `msg` with no matching arg (e.g. a secret passed the idiomatic way, `logger.info("api_key=%s", key)`, has no "key=" prefix in `args` alone to match against), which either failed to redact the secret or crashed message rendering with `TypeError: not all arguments converted during string formatting`. Verified both failure modes live before fixing. Fix: attach the filter to each handler instead of the root logger, and redact the fully substituted message (`record.getMessage()`) rather than msg/args separately, then clear `args` so no further substitution is attempted.
 
 ## Implemented but Not Fully Verified
 
@@ -105,7 +106,7 @@ cd visionai
 - Python: 3.12.10
 - Ruff: passed
 - mypy: passed for 27 source files
-- pytest: 75 passed, 90% coverage
+- pytest: 79 passed, 91% coverage
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 
