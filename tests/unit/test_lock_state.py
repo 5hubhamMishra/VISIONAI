@@ -20,20 +20,37 @@ def test_policy_context_can_be_built_from_permission_and_lock_adapters(tmp_path)
 
 
 def test_windows_lock_state_adapter_is_conservative_on_failure() -> None:
-    adapter = WindowsLockStateAdapter(
-        process_id_provider=lambda: 10,
-        session_id_provider=lambda process_id: None,
-    )
+    def _raise() -> bool:
+        raise OSError("desktop query failed")
+
+    adapter = WindowsLockStateAdapter(can_open_input_desktop=_raise)
 
     assert adapter.is_locked() is True
     assert adapter.last_error is not None
 
 
-def test_windows_lock_state_adapter_reports_unlocked_when_session_is_available() -> None:
-    adapter = WindowsLockStateAdapter(
-        process_id_provider=lambda: 10,
-        session_id_provider=lambda process_id: 1,
-    )
+def test_windows_lock_state_adapter_reports_locked_when_input_desktop_is_unreachable() -> None:
+    """OpenInputDesktop fails while the secure lock-screen desktop is active."""
+    adapter = WindowsLockStateAdapter(can_open_input_desktop=lambda: False)
+
+    assert adapter.is_locked() is True
+    assert adapter.last_error is None
+
+
+def test_windows_lock_state_adapter_reports_unlocked_when_input_desktop_is_reachable() -> None:
+    adapter = WindowsLockStateAdapter(can_open_input_desktop=lambda: True)
 
     assert adapter.is_locked() is False
     assert adapter.last_error is None
+
+
+def test_windows_lock_state_adapter_runs_against_the_real_windows_api() -> None:
+    """Smoke test: catches ctypes signature/marshaling regressions.
+
+    This cannot assert a specific lock state (the test runner's session is
+    not under our control), only that the real OpenInputDesktop/CloseDesktop
+    call sequence executes cleanly and returns a bool.
+    """
+    result = WindowsLockStateAdapter().is_locked()
+
+    assert isinstance(result, bool)

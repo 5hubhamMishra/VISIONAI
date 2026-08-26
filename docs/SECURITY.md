@@ -18,10 +18,10 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 - Serialized dispatcher refuses denied requests before handler lookup and records denials/results to audit history.
 - URL policy rejects non-HTTPS schemes by default, unallowlisted hosts, private/local hosts, embedded credentials, control characters, empty searches, and oversized searches.
 - JSON permission and audit storage reject malformed local state.
-- Lock-state policy input is isolated behind an adapter boundary. The Windows wrapper treats API failures or unknown session state as locked.
+- Lock-state policy input is isolated behind an adapter boundary. The Windows wrapper checks whether the interactive desktop can be opened (`OpenInputDesktop`), which fails while the workstation is locked or a secure desktop such as a UAC prompt is active, and treats any check failure or unreachable desktop as locked.
 
 ## Remaining Risks
 
 - The previous `../jarvis` prototype contains direct system execution, browser opening, media control, and pointer automation. It should not be run as a trusted VisionAI build.
-- The Windows lock-state wrapper still needs runtime verification on Windows once Python is available.
-- No real capability handlers exist yet.
+- The Windows lock-state wrapper has been verified against a live *unlocked* session (correctly reports unlocked, no crash) and against mocked locked/failure branches in unit tests. Its behavior against a genuinely *locked* workstation has not been manually verified, since that requires a human to lock the screen and observe the result — do not treat the locked-state path as field-tested until that manual check has been done.
+- No real capability handlers with side effects exist yet; only read-only system info capabilities are wired to the dispatcher.

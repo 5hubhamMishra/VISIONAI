@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import ctypes
 from collections.abc import Callable
+from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Protocol
 
 from visionai.core.errors import PlatformStateError
+
+_DESKTOP_SWITCHDESKTOP = 0x0100
 
 
 class LockStateAdapter(Protocol):
@@ -33,43 +36,46 @@ class StaticLockStateAdapter:
 
 
 class WindowsLockStateAdapter:
-    """Checks Windows lock state using read-only session information.
+    """Checks whether the interactive Windows desktop is locked.
 
-    Any failure is treated as locked by default. The exception is retained in
-    `last_error` for diagnostics without allowing unknown state to authorize a
-    mutating action.
+    Locking the workstation switches the visible desktop to a secure
+    desktop that ordinary processes cannot open with OpenInputDesktop; the
+    same is true while a UAC consent prompt or other secure desktop is
+    shown, which is also a reasonable time to block mutating actions. Any
+    failure to check is treated as locked by default. The exception is
+    retained in `last_error` for diagnostics without allowing unknown
+    state to authorize a mutating action.
     """
 
     def __init__(
         self,
         *,
-        process_id_provider: Callable[[], int] | None = None,
-        session_id_provider: Callable[[int], int | None] | None = None,
+        can_open_input_desktop: Callable[[], bool] | None = None,
     ) -> None:
-        self._process_id_provider = (
-            process_id_provider or ctypes.windll.kernel32.GetCurrentProcessId
-        )
-        self._session_id_provider = session_id_provider or _session_id_for_process
+        self._can_open_input_desktop = can_open_input_desktop or _can_open_input_desktop
         self.last_error: PlatformStateError | None = None
 
     def is_locked(self) -> bool:
         try:
-            current_process_id = self._process_id_provider()
-            session_id = self._session_id_provider(current_process_id)
+            unlocked = self._can_open_input_desktop()
         except Exception as exc:
             self.last_error = PlatformStateError("Windows lock state could not be checked")
             self.last_error.__cause__ = exc
             return True
-        if session_id is None:
-            self.last_error = PlatformStateError("Windows session ID is unavailable")
-            return True
         self.last_error = None
+        return not unlocked
+
+
+def _can_open_input_desktop() -> bool:
+    """Return True if the input desktop can be opened (workstation unlocked)."""
+    user32 = ctypes.windll.user32
+    user32.OpenInputDesktop.restype = wintypes.HANDLE
+    user32.OpenInputDesktop.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    user32.CloseDesktop.restype = wintypes.BOOL
+    user32.CloseDesktop.argtypes = [wintypes.HANDLE]
+
+    desktop = user32.OpenInputDesktop(0, False, _DESKTOP_SWITCHDESKTOP)
+    if not desktop:
         return False
-
-
-def _session_id_for_process(process_id: int) -> int | None:
-    session_id = ctypes.c_ulong()
-    ok = ctypes.windll.kernel32.ProcessIdToSessionId(process_id, ctypes.byref(session_id))
-    if not ok:
-        return None
-    return int(session_id.value)
+    user32.CloseDesktop(desktop)
+    return True

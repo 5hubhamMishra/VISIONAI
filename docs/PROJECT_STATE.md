@@ -38,7 +38,7 @@ Phase 1 Safety foundation locally verified.
 - Phase 1 JSON permission store with atomic file replacement and malformed-store rejection
 - Phase 1 JSON Lines audit sink with malformed-log rejection
 - Phase 1 lock-state adapter boundary with conservative static fallback
-- Phase 1 Windows lock-state adapter wrapper that treats API failures or unknown session state as locked
+- Phase 1 Windows lock-state adapter wrapper that checks whether the interactive desktop is reachable (`OpenInputDesktop`) and treats API failures or an unreachable desktop as locked
 - CI workflow and local verification scripts for formatting, typing, tests, security scan, and dependency audit
 - Migration quarantine documentation for the previous prototype
 - Environment repair documentation for Python 3.12 and virtual environment recreation
@@ -47,6 +47,7 @@ Phase 1 Safety foundation locally verified.
 - Console entry point (`visionai.app.main`) that dispatches a read-only capability through the full policy + dispatcher path
 - Battery and CPU/memory probes backed by `psutil`, injectable for testing, with a graceful "no battery detected" fallback on desktops/VMs without one
 - Fixed a fail-open gap in `UrlPolicy`: an empty `allowed_hosts` previously allowed any public hostname through; it now denies by default, matching its documented behavior
+- Fixed a critical gap in `WindowsLockStateAdapter`: it previously checked `ProcessIdToSessionId` on the current process, which cannot detect lock state at all (a process keeps its session whether the workstation is locked or not) and would have reported "unlocked" almost always, defeating locked-screen mutation blocking entirely. It now checks whether the input desktop can be opened, which correctly fails while the workstation is locked or a secure desktop (e.g. a UAC prompt) is active. Verified against the live unlocked session (no crash, correct result) and against mocked locked/failure branches; the true locked-state path still needs a human to lock the screen and confirm (see Known Defects).
 
 ## Implemented but Not Fully Verified
 
@@ -68,6 +69,7 @@ Phase 1 Safety foundation locally verified.
 - Existing `../jarvis` docs claim production readiness without verification evidence.
 - Existing `../jarvis` logs are very large and should be rotated or removed with user approval.
 - Existing `../jarvis` venv is not runnable in this workspace.
+- `WindowsLockStateAdapter`'s true locked-workstation path has not been manually verified (requires a human to lock the screen and observe the result); only the unlocked path has been confirmed live.
 
 ## Security Restrictions
 
@@ -99,7 +101,7 @@ cd visionai
 - Python: 3.12.10
 - Ruff: passed
 - mypy: passed for 27 source files
-- pytest: 68 passed, 88% coverage
+- pytest: 70 passed, 89% coverage
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 
