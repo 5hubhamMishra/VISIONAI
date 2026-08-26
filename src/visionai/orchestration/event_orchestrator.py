@@ -30,6 +30,7 @@ from visionai.core.state import AppState, StateMachine
 from visionai.orchestration.text_planner import TextCommandPlanner
 from visionai.policy import ConfirmationService, PolicyContext
 from visionai.policy.permissions import JsonPermissionStore
+from visionai.recognition.gesture import TemporalGestureRecognizer
 
 PolicyContextFactory = Callable[[], PolicyContext]
 
@@ -89,6 +90,30 @@ class InputAdapter:
         )
         await self.input_bus.publish(event)
         return event
+
+    async def publish_gesture_observation(
+        self,
+        recognizer: TemporalGestureRecognizer,
+        gesture_id: str | None,
+        *,
+        hand: Literal["left", "right"] = "right",
+        confidence: float = 0.0,
+    ) -> GestureEvent | None:
+        """Feed one raw single-frame gesture candidate through temporal voting.
+
+        Most calls return `None`: still building a hold streak, rejected by
+        low confidence or a gesture/hand change, or blocked by cooldown.
+        Only a confirmed `GestureVote` reaches `publish_gesture()` and the
+        input bus, so a jittery or single-frame misclassification can never
+        reach an action on its own.
+        """
+
+        vote = recognizer.observe(gesture_id, hand=hand, confidence=confidence)
+        if vote is None:
+            return None
+        return await self.publish_gesture(
+            vote.gesture_id, hand=vote.hand, confidence=vote.confidence, hold_ms=vote.hold_ms
+        )
 
 
 class EventOrchestrator:

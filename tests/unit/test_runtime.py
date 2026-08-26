@@ -5,6 +5,7 @@ from visionai.core.events import ActionRequest, ActionResult, GestureEvent, Inte
 from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.policy import ConfirmationService
 from visionai.policy.permissions import JsonPermissionStore
+from visionai.recognition.gesture import TemporalGestureRecognizer
 from visionai.runtime import build_runtime
 
 
@@ -153,6 +154,31 @@ async def test_runtime_input_adapter_publishes_validated_gesture_events() -> Non
 
     assert isinstance(queued, GestureEvent)
     assert queued == event
+
+
+@pytest.mark.asyncio
+async def test_runtime_input_adapter_gesture_observation_requires_a_confirmed_vote() -> None:
+    runtime = build_runtime()
+    times = iter([0.0, 0.1, 0.45])
+    recognizer = TemporalGestureRecognizer(min_hold_ms=400, clock=lambda: next(times))
+
+    first = await runtime.input_adapter.publish_gesture_observation(
+        recognizer, "pinch", hand="right", confidence=0.9
+    )
+    second = await runtime.input_adapter.publish_gesture_observation(
+        recognizer, "pinch", hand="right", confidence=0.9
+    )
+    third = await runtime.input_adapter.publish_gesture_observation(
+        recognizer, "pinch", hand="right", confidence=0.9
+    )
+
+    assert first is None
+    assert second is None
+    assert third is not None
+    assert runtime.input_bus.size == 1
+    queued = await runtime.input_bus.next_event()
+    assert isinstance(queued, GestureEvent)
+    assert queued == third
 
 
 @pytest.mark.asyncio
