@@ -8,7 +8,7 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 
 - Deny-by-default foundation: no executable capabilities are registered yet.
 - Typed contracts reject control characters, oversized text, invalid confidence values, and malformed mappings.
-- Event bus is bounded to provide backpressure.
+- Event bus is bounded to provide backpressure; closing it is guaranteed to be observed by consumers (via a separate close signal) even if the bounded queue is full at that moment, after draining any already-queued events.
 - Raw media retention defaults to disabled.
 - Log redaction covers common key-value secret patterns.
 - Capability registry rejects prohibited capabilities and duplicate IDs.

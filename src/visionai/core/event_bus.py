@@ -11,34 +11,55 @@ from visionai.core.events import EventBase
 
 
 class EventBus:
-    """A bounded queue with explicit close semantics and backpressure."""
+    """A bounded queue with explicit close semantics and backpressure.
+
+    Closing never discards events already queued: next_event() drains them
+    first and only raises EventBusClosed once the queue is empty. The
+    close signal itself travels over a separate asyncio.Event rather than
+    a sentinel value placed on the queue, so it can never be lost even if
+    the queue is completely full at the moment close() is called.
+    """
 
     def __init__(self, max_size: int) -> None:
         if max_size <= 0:
             raise ValueError("max_size must be greater than zero")
-        self._queue: asyncio.Queue[EventBase | None] = asyncio.Queue(maxsize=max_size)
-        self._closed = False
+        self._queue: asyncio.Queue[EventBase] = asyncio.Queue(maxsize=max_size)
+        self._closed_event = asyncio.Event()
 
     @property
     def closed(self) -> bool:
-        return self._closed
+        return self._closed_event.is_set()
 
     @property
     def size(self) -> int:
         return self._queue.qsize()
 
     async def publish(self, event: EventBase) -> None:
-        if self._closed:
+        if self.closed:
             raise EventBusClosed("event bus is closed")
         await self._queue.put(event)
 
     async def next_event(self) -> EventBase:
-        event = await self._queue.get()
-        if event is None:
-            self._queue.task_done()
+        try:
+            return self._queue.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+
+        get_task = asyncio.ensure_future(self._queue.get())
+        closed_task = asyncio.ensure_future(self._closed_event.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {get_task, closed_task}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if get_task in done:
+                return get_task.result()
             raise EventBusClosed("event bus is closed")
-        self._queue.task_done()
-        return event
+        finally:
+            for task in (get_task, closed_task):
+                if not task.done():
+                    task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await task
 
     async def subscribe(self) -> AsyncIterator[EventBase]:
         while True:
@@ -48,8 +69,4 @@ class EventBus:
                 return
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        with suppress(asyncio.QueueFull):
-            self._queue.put_nowait(None)
+        self._closed_event.set()
