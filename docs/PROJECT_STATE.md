@@ -26,6 +26,8 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 - Added `visionai --wake-word-text`, which applies the persisted wake word to one already-transcribed utterance and routes matching text through `WakeWordVoiceRunner`, the real `EventOrchestrator`, and the policy/dispatcher path. Non-matching text exits cleanly without publishing or launching. This is a CLI text-entry surface only; it does not add STT or microphone capture.
 
+- Continued Phase 5 vision with the first real `LandmarkAdapter`: `visionai.platform.webcam.WebcamLandmarkAdapter` reads one OpenCV webcam frame and classifies it with mediapipe's legacy `solutions.hands` API -- the new `vision` optional dependency group (`requirements/vision.txt`; `mediapipe==0.10.14`, Apache-2.0; `opencv-contrib-python==5.0.0.93`, Apache-2.0/MIT-mixed OpenCV license; `numpy==2.5.2`, BSD-3-Clause). mediapipe is pinned exactly, not ranged: 0.10.35 and 1.0.1 were both installed and checked, and both drop `mediapipe.solutions` from their Windows wheels in favor of a Tasks API that needs a downloaded model file at runtime; 0.10.14 is the newest cp312 Windows wheel confirmed to still ship the offline `solutions.hands` API. Classification is a pure function, `classify_finger_count()`, over a small `HandLandmark(x, y)` shape decoupled from mediapipe's own landmark type, so it is unit-tested with fixture coordinates and needs neither a camera nor mediapipe installed; it recognizes two gestures for this first slice (`open_palm`, `closed_fist`) by counting extended fingers, reporting anything else as no gesture rather than guessing. `WebcamLandmarkAdapter` itself has both frame capture and classification injectable, matching `MicrophoneCapture`'s `stream_factory` pattern, so the automated suite needs neither a real camera nor the `vision` extra; `cv2`/`mediapipe` are only imported inside the functions that touch them, and `webcam` is deliberately not re-exported from `visionai.platform.__init__`, mirroring `microphone`. Live-verified once on the real Windows desktop, outside the automated suite: a real camera opened, five real frames were captured and classified through the real mediapipe model with no crash (no hand was in frame during the check, so gesture classification with an actual hand held up is not yet verified). Found a real, load-bearing constraint while adopting this dependency: mediapipe 0.10.14 requires `protobuf<5`, and every protobuf 4.x release -- including the latest patch, 4.25.9 -- carries an unpatched denial-of-service CVE (PYSEC-2026-1805) with no fix inside that range. Accepted as a documented exception rather than silently ignored or silently avoided: `docs/DECISIONS/0003-accepted-protobuf-cve.md` records that nothing in this codebase calls the vulnerable `google.protobuf.json_format.ParseDict()` path, so the vulnerable code is present in the dependency tree but unreachable from any code this project runs. This is not yet wired into a CLI/desktop surface or a continuous capture loop, and gestures still are not mapped to any capability.
+
 - Phase 0 package skeleton under `visionai/`
 - Environment-backed settings loader
 - Typed core event contracts with validation for text, confidence ranges, and immutable mappings
@@ -101,7 +103,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## In Progress
 
-- Incremental migration from the previous JARVIS prototype: `app.open`, `browser.open`, `browser.search`, and `media.control` migrated; voice now has real device enumeration/capture behind an injectable STT boundary, push-to-talk and wake-word control boundaries, an injectable continuous transcript loop, and a CLI device-listing surface, gesture now has camera-candidate and temporal voting boundaries, and LLM behavior remains unmigrated and untrusted.
+- Incremental migration from the previous JARVIS prototype: `app.open`, `browser.open`, `browser.search`, and `media.control` migrated; voice now has real device enumeration/capture behind an injectable STT boundary, push-to-talk and wake-word control boundaries, an injectable continuous transcript loop, and a CLI device-listing surface, gesture now has camera-candidate and temporal voting boundaries plus a real webcam/mediapipe `LandmarkAdapter` (not yet wired into a CLI/desktop surface or mapped to any capability), and LLM behavior remains unmigrated and untrusted.
 - Deterministic text planning (`TextCommandPlanner`) now covers typed-text commands for every registered capability; already-recognized voice transcripts, injected one-shot STT results, push-to-talk releases, policy-approved gestures, temporally voted gesture observations, and single-frame camera/landmark candidates now have an `InputAdapter`/recognition path into the runtime bus.
 - Cancellation-token plumbing (`CapabilityHandler` signature, dispatcher-level pre-check, `_execute` wiring) is in place, but every current built-in handler is fast/synchronous and does not poll it -- the first handler that actually needs to poll mid-run will be whatever approved next task 3 (voice/gesture input) adds.
 - Phase 2 desktop UI: a minimal main window exists and is tested, now with a Stop control, verified keyboard tab-order/focus behavior, a tray icon, confirmation and permission-grant prompts, read-only diagnostics, an editable settings dialog for log level, microphone selection, and wake word, a one-time onboarding dialog, and worker-thread command execution; a live screen-reader pass is not done yet.
@@ -111,7 +113,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 1. Phase 2's core slice is now complete: tray, diagnostics, editable settings, one-time onboarding, confirmation and permission-grant prompts (all live-verified end to end), and non-blocking command execution all exist. Other future permission/confirmation-gated capabilities should get their own specific `TextCommandPlanner` summary the same way `system.clear_history` now does, rather than the generic "Run X." default, if their summary will ever reach a prompt.
 2. Continue the WCAG 2.2 AA pass on `MainWindow`: keyboard focus order/no-trap navigation and the no-custom-styling contrast/scaling inheritance are now verified (see Implemented and Tested), but a real screen-reader (NVDA/Narrator) pass is still outstanding -- do not claim accessibility compliance until that is checked too.
 3. Continue Phase 3 voice with a real STT provider (e.g. a local Whisper-family model or a cloud API) plugged into `MicrophonePushToTalk`'s injected `transcribe` callable, and connect that provider to `WakeWordListeningLoop` or a hotword-spotting engine. Keep raw audio out of events and storage by default.
-4. Continue Phase 5 vision with a real webcam/landmark implementation behind `LandmarkAdapter`, or a per-frame classifier feeding `GestureCaptureLoop`; keep camera frames/landmarks out of events and storage by default.
+4. Continue Phase 5 vision: `WebcamLandmarkAdapter` now provides a real webcam/landmark implementation behind `LandmarkAdapter` with a real per-frame classifier (see Implemented and Tested). Remaining work: wire it into `GestureCaptureLoop` behind a CLI/desktop surface or a continuous capture loop (mirroring how voice's real capture boundary later got `--wake-word-text`), live-verify actual gesture classification with a real hand in frame (only a no-crash pipeline check is done so far), and eventually map confirmed gestures to a capability request. Keep camera frames/landmarks out of events and storage by default.
 
 ## Known Defects
 
@@ -142,6 +144,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - `browser.open` and `browser.search` validate through `UrlPolicy` and allowlisted HTTPS hosts before the browser opener is called.
 - `media.control` only maps allowlisted action names to fixed media keys and remains behind manifest, policy, dispatcher, rate-limit, and audit controls.
 - The old `../jarvis` prototype must remain outside the trusted runtime even after local quarantine; only `visionai/` capabilities registered by manifest are trusted.
+- `WebcamLandmarkAdapter` retains no raw frames or landmarks; only one classified `GestureCandidate` per frame ever crosses the `LandmarkAdapter` boundary. It ships with one documented, accepted dependency exception (a transitive `protobuf` CVE unreachable from any code path this project runs) -- see `docs/DECISIONS/0003-accepted-protobuf-cve.md`.
 
 ## Required Decisions
 
@@ -157,11 +160,11 @@ cd visionai
 ## Last Verification Result
 
 - Python: 3.12.10
-- Ruff: passed
-- mypy: passed for 44 source files
-- pytest: 271 passed, 93% coverage (headless, via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
-- Bandit: passed
-- pip-audit: no known vulnerabilities found
+- Ruff: passed (whole repo)
+- mypy: passed for this slice's files (`src/visionai/platform/webcam.py`, `src/visionai/platform/camera.py`) scoped individually; a concurrent, unrelated in-progress file (`src/visionai/platform/stt.py`, a second agent's active slice, not part of this change) currently fails a full `mypy src` run and was not touched here
+- pytest: 281 passed, 92% coverage (full repo, including the concurrent in-progress slice's own tests; headless via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
+- Bandit: passed (whole repo, `src`)
+- pip-audit: no known vulnerabilities found (`scripts/verify.ps1`'s scope: `requirements/base.txt` + `requirements/dev.txt`); a full-environment audit reports one accepted exception, see `docs/DECISIONS/0003-accepted-protobuf-cve.md`
 
 ## Last Updated
 

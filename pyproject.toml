@@ -37,9 +37,15 @@ voice = [
     "sounddevice>=0.5,<1",
     "numpy>=2.0,<3",
 ]
-# Populated in a later phase once the vision subsystem's exact
-# dependencies are verified.
-vision = []
+# mediapipe is pinned exactly, not ranged: 0.10.35 and 1.0.1 were both
+# checked and drop `mediapipe.solutions` from their Windows wheels in
+# favor of a Tasks API needing a downloaded model file. 0.10.14 is the
+# newest cp312 Windows wheel confirmed to still ship `solutions.hands`.
+vision = [
+    "mediapipe==0.10.14",
+    "opencv-contrib-python>=4.5,<6",
+    "numpy>=2.0,<3",
+]
 
 [project.scripts]
 visionai = "visionai.app:main"

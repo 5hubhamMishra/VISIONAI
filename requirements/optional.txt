@@ -13,5 +13,7 @@
 # pyttsx3==2.90              # offline TTS
 
 # --- Vision (Phase 5) ---
-# opencv-python==4.10.*
-# mediapipe==0.10.*
+# Webcam capture/hand-landmark classification (opencv-contrib-python,
+# mediapipe, numpy) now implemented -- see requirements/vision.txt and
+# visionai.platform.webcam. mediapipe is pinned exactly, not ranged: newer
+# releases drop the offline `solutions.hands` API this module depends on.
