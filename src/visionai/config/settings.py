@@ -12,6 +12,8 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+SttDevice = Literal["cpu", "cuda"]
+SttComputeType = Literal["int8", "float16", "float32"]
 
 
 class Settings(BaseSettings):
@@ -27,6 +29,9 @@ class Settings(BaseSettings):
     log_level: LogLevel = Field(default="INFO")
     log_dir: Path = Field(default=Path("logs"))
     data_dir: Path = Field(default=Path(".visionai"))
+    stt_model_size: str = Field(default="base.en", min_length=1)
+    stt_device: SttDevice = Field(default="cpu")
+    stt_compute_type: SttComputeType = Field(default="int8")
 
 
 @lru_cache

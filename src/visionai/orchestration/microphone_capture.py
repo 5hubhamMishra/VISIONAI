@@ -16,6 +16,7 @@ import numpy as np
 from visionai.core.events import TranscriptEvent
 from visionai.orchestration.event_orchestrator import InputAdapter
 from visionai.platform.microphone import MicrophoneCapture, default_microphone_capture
+from visionai.platform.stt import default_transcriber
 
 
 class MicrophonePushToTalk:
@@ -35,13 +36,13 @@ class MicrophonePushToTalk:
         *,
         input_adapter: InputAdapter,
         capture: MicrophoneCapture | None = None,
-        transcribe: Callable[[np.ndarray], str],
+        transcribe: Callable[[np.ndarray], str] | None = None,
         confidence: float = 1.0,
         language: str = "en",
     ) -> None:
         self._input_adapter = input_adapter
         self._capture = capture if capture is not None else default_microphone_capture()
-        self._transcribe = transcribe
+        self._transcribe = transcribe or default_transcriber()
         self._confidence = confidence
         self._language = language
         self._recording = False

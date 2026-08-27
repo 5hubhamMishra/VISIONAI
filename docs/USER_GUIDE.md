@@ -39,6 +39,8 @@ A wake-word gate and injectable listening loop exist (`visionai.orchestration.Wa
 
 `--wake-word-text` accepts one already-transcribed utterance, applies the saved wake word, and sends only a matching command through the normal orchestrator and policy path. It does not provide speech-to-text or continuous microphone capture.
 
+Real microphone capture uses the local `faster-whisper` provider when `MicrophonePushToTalk` is created without a custom transcriber. The default is the `base.en` model on CPU with int8 computation; set `VISIONAI_STT_MODEL_SIZE`, `VISIONAI_STT_DEVICE`, or `VISIONAI_STT_COMPUTE_TYPE` before starting VisionAI to change it. The model downloads from Hugging Face on first transcription and stays local afterward.
+
 `system.stop` requests cooperative cancellation of the current operation. Until voice, vision, and long-running orchestration are wired in, it usually reports that no operation is running.
 
 `system.clear_history` clears the local audit history, but it is a sensitive action: it requires both a stored permission grant and a fresh confirmation before it runs. The desktop window can ask for those prompts; the direct console command is mainly useful to prove policy denies it when the gates are missing.

@@ -36,6 +36,7 @@ ui = [
 voice = [
     "sounddevice>=0.5,<1",
     "numpy>=2.0,<3",
+    "faster-whisper>=1.2,<2",
 ]
 # mediapipe is pinned exactly, not ranged: 0.10.35 and 1.0.1 were both
 # checked and drop `mediapipe.solutions` from their Windows wheels in

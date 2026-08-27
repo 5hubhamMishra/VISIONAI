@@ -159,6 +159,13 @@ from the documented state instead of re-inspecting the whole workspace.
 - Result: the desktop Settings dialog now edits and persists the normalized wake word, rejects invalid values without changing other settings, and displays the effective wake word. The wake-word gate remains text-only and is not yet a continuous listener.
 - Next task: plug a real STT provider into `MicrophonePushToTalk`, wire the wake-word gate into real continuous listening, add a real webcam/landmark implementation, or complete the live screen-reader pass.
 
+## 2026-08-27 Local STT Provider
+
+- User request: set up a suitable STT provider.
+- Result: selected and installed `faster-whisper==1.2.1` in `.venv312`, added `FasterWhisperTranscriber` with lazy local model loading, and made it the default when `MicrophonePushToTalk` has no custom transcriber. Configuration defaults to `base.en`, CPU, and int8 through `VISIONAI_STT_MODEL_SIZE`, `VISIONAI_STT_DEVICE`, and `VISIONAI_STT_COMPUTE_TYPE`. Audio remains in-memory and only final text enters the event pipeline.
+- Verification: focused STT/microphone tests passed; `faster-whisper` imported successfully; the configured `base.en` model downloaded and loaded on CPU with int8; full verification passed with 281 tests, 92% coverage, Ruff, mypy for 46 source files, Bandit, and pip-audit reporting no known vulnerabilities.
+- Next task: download the configured model on first use and live-test one microphone transcription, then connect the resulting transcript to wake-word continuous listening.
+
 ## 2026-08-27 Wake-Word CLI Surface
 
 - Date/time: 2026-08-27
