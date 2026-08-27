@@ -13,9 +13,11 @@ shape for gestures, and lets this wake-word gate coexist with
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterable
 from dataclasses import dataclass, field
 
 from visionai.config.user_settings import DEFAULT_WAKE_WORD
+from visionai.core.cancellation import CancellationToken
 from visionai.core.events import TranscriptEvent
 from visionai.orchestration.event_orchestrator import InputAdapter
 
@@ -94,3 +96,27 @@ class WakeWordVoiceRunner:
             confidence=self.confidence,
             language=self.language,
         )
+
+
+@dataclass(slots=True)
+class WakeWordListeningLoop:
+    """Feed an async stream of final transcripts through wake-word gating.
+
+    The source owns transcription and any hardware; this loop owns only
+    cancellation and routing accepted commands to the existing input bus.
+    """
+
+    runner: WakeWordVoiceRunner
+    source: AsyncIterable[str]
+    cancellation: CancellationToken | None = None
+
+    async def run(self) -> int:
+        """Consume until the source ends or cancellation is requested."""
+
+        accepted = 0
+        async for utterance in self.source:
+            if self.cancellation is not None and self.cancellation.is_cancelled:
+                break
+            if await self.runner.observe(utterance) is not None:
+                accepted += 1
+        return accepted

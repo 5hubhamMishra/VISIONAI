@@ -1,6 +1,13 @@
 import pytest
 
-from visionai.orchestration.wake_word import WakeWordGate
+from visionai.core.cancellation import CancellationToken
+from visionai.core.event_bus import EventBus
+from visionai.orchestration.event_orchestrator import InputAdapter
+from visionai.orchestration.wake_word import (
+    WakeWordGate,
+    WakeWordListeningLoop,
+    WakeWordVoiceRunner,
+)
 
 
 def test_wake_word_gate_strips_default_wake_word() -> None:
@@ -62,3 +69,24 @@ def test_wake_word_gate_does_not_match_a_word_that_only_starts_with_the_wake_wor
     gate = WakeWordGate()
 
     assert gate.match("visionaiable open notepad") is None
+
+
+@pytest.mark.asyncio
+async def test_wake_word_listening_loop_publishes_matches_and_honors_cancellation() -> None:
+    bus = EventBus(max_size=10)
+    runner = WakeWordVoiceRunner(InputAdapter(input_bus=bus))
+
+    async def source():
+        yield "open notepad"
+        yield "visionai open notepad"
+        yield "visionai what time is it"
+
+    accepted = await WakeWordListeningLoop(runner, source()).run()
+
+    assert accepted == 2
+    assert bus.size == 2
+
+    token = CancellationToken()
+    token.cancel()
+    assert await WakeWordListeningLoop(runner, source(), token).run() == 0
+    assert bus.size == 2
