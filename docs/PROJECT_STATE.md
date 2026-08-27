@@ -143,7 +143,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## Required Decisions
 
-- None outstanding. (Resolved: `../jarvis` was locally quarantined; the next major phase was decided as Phase 2, desktop UI.)
+- None outstanding. (Resolved: `../jarvis` was locally quarantined; the next major phase was decided as Phase 2, desktop UI; the current package layout's deviation from the master prompt's Section 6 target structure -- no `audio`/`vision`/`intelligence`/`storage`/`plugins` packages yet -- is recorded as an accepted, revisit-when-justified choice in `docs/DECISIONS/0002-package-layout-deviation.md`.)
 
 ## Verification Commands
 
