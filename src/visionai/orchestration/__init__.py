@@ -6,5 +6,13 @@ from visionai.orchestration.event_orchestrator import (
     PushToTalkRunner,
 )
 from visionai.orchestration.text_planner import TextCommandPlanner
+from visionai.orchestration.wake_word import WakeWordGate, WakeWordVoiceRunner
 
-__all__ = ["EventOrchestrator", "InputAdapter", "PushToTalkRunner", "TextCommandPlanner"]
+__all__ = [
+    "EventOrchestrator",
+    "InputAdapter",
+    "PushToTalkRunner",
+    "TextCommandPlanner",
+    "WakeWordGate",
+    "WakeWordVoiceRunner",
+]

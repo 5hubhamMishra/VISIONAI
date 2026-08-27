@@ -2,7 +2,8 @@ import pytest
 from pydantic import ValidationError
 
 from visionai.core.events import ActionRequest, ActionResult, GestureEvent, Intent, RiskLevel
-from visionai.orchestration import PushToTalkRunner
+from visionai.orchestration import PushToTalkRunner, WakeWordVoiceRunner
+from visionai.orchestration.wake_word import WakeWordGate
 from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.policy import ConfirmationService
 from visionai.policy.permissions import JsonPermissionStore
@@ -162,6 +163,38 @@ async def test_push_to_talk_runner_publishes_once_on_release() -> None:
     assert event.is_final is True
     assert launched == ["notepad.exe"]
     assert await runner.release() is None
+
+
+@pytest.mark.asyncio
+async def test_wake_word_runner_ignores_utterances_without_the_wake_word() -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    runner = WakeWordVoiceRunner(runtime.input_adapter)
+
+    event = await runner.observe("open notepad")
+    runtime.input_bus.close()
+    await runtime.orchestrator.run_until_closed()
+
+    assert event is None
+    assert launched == []
+
+
+@pytest.mark.asyncio
+async def test_wake_word_runner_publishes_the_stripped_command_on_a_match() -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    runner = WakeWordVoiceRunner(
+        runtime.input_adapter, gate=WakeWordGate("hey visionai"), confidence=0.88
+    )
+
+    event = await runner.observe("hey visionai open notepad")
+    runtime.input_bus.close()
+    await runtime.orchestrator.run_until_closed()
+
+    assert event is not None
+    assert event.text == "open notepad"
+    assert event.is_final is True
+    assert launched == ["notepad.exe"]
 
 
 @pytest.mark.asyncio

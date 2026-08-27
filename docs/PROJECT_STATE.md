@@ -17,7 +17,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Workspace inspected on Windows path: `C:\Users\shubh\OneDrive\Desktop\DESKTOP\projects\demo`
 - Existing project classified as previous JARVIS prototype in `../jarvis`
 - Python 3.12.10 installed and available in elevated shell sessions
-- Python runtime in `../jarvis/venv` is broken because it points to a missing base interpreter
+- Python runtime in `../jarvis/venv` runs successfully as of 2026-08-27 (`../jarvis/venv/Scripts/python.exe` invoked directly; its `pyvenv.cfg` `home` path points at the base interpreter and is unaffected by the venv folder itself moving, which is how it kept working after an earlier workspace path change)
 - Python runtime in `.venv` remains partially locked/broken
 - Working local development environment created at `.venv312`
 - Git initialized in `visionai/` on branch `main`
@@ -91,6 +91,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Added the first CLI surface for real microphone device selection: `visionai --list-microphones` prints audio input device index, name, and input-channel count using `list_input_devices()`. It runs before `build_runtime()`, records no audio, does not dispatch any capability, and reports device-listing failures cleanly. Tests inject the lister to pin formatting/failure behavior and prove runtime construction is skipped.
 - Added desktop microphone selection: the existing Settings dialog now lazily enumerates input devices, persists a validated device index beside the log-level preference, and falls back to the default microphone if enumeration fails. This stores only the selection; it does not record audio or wire raw samples into events/storage.
 - Connected the saved microphone choice to the real capture boundary: `MicrophonePushToTalk` now builds `MicrophoneCapture` from the persisted device index when no explicit capture is supplied, while retaining injection for tests and custom callers. Raw audio remains transient and STT remains an injected provider.
+- Added a wake-word activation boundary alongside push-to-talk: `visionai.orchestration.wake_word.WakeWordGate` is pure, deterministic text matching (case-insensitive, whitespace-normalized, supports a multi-word phrase) that strips a configured wake word from an already-transcribed utterance, or rejects it (`None`) if the wake word is absent or nothing follows it. `WakeWordVoiceRunner.observe()` wires that gate to `InputAdapter.publish_voice_capture()`, publishing only on a match -- the same "most calls return `None`" shape gesture observation uses for noisy input. `UserSettingsStore` gained `get_wake_word()`/`set_wake_word()` (validated: non-empty, no control characters, normalized) and `effective_wake_word()`, mirroring the existing log-level override pattern, defaulting to `"visionai"`. Verified end to end through `build_runtime()`: an utterance without the wake word publishes and dispatches nothing, and a matching utterance with a custom wake phrase publishes the stripped command and reaches the real dispatcher. This is text-matching only -- no real continuous microphone capture, no hotword-spotting engine, and not yet wired into `app.py` or `MainWindow` -- the same scope boundary `PushToTalkRunner` had before `MicrophonePushToTalk` connected it to real hardware.
 
 ## Implemented but Not Fully Verified
 
@@ -98,7 +99,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## In Progress
 
-- Incremental migration from the previous JARVIS prototype: `app.open`, `browser.open`, `browser.search`, and `media.control` migrated; voice now has real device enumeration/capture behind an injectable STT boundary plus a CLI device-listing surface, gesture now has camera-candidate and temporal voting boundaries, and LLM behavior remains unmigrated and untrusted.
+- Incremental migration from the previous JARVIS prototype: `app.open`, `browser.open`, `browser.search`, and `media.control` migrated; voice now has real device enumeration/capture behind an injectable STT boundary, a push-to-talk control boundary, a wake-word gate, and a CLI device-listing surface, gesture now has camera-candidate and temporal voting boundaries, and LLM behavior remains unmigrated and untrusted.
 - Deterministic text planning (`TextCommandPlanner`) now covers typed-text commands for every registered capability; already-recognized voice transcripts, injected one-shot STT results, push-to-talk releases, policy-approved gestures, temporally voted gesture observations, and single-frame camera/landmark candidates now have an `InputAdapter`/recognition path into the runtime bus.
 - Cancellation-token plumbing (`CapabilityHandler` signature, dispatcher-level pre-check, `_execute` wiring) is in place, but every current built-in handler is fast/synchronous and does not poll it -- the first handler that actually needs to poll mid-run will be whatever approved next task 3 (voice/gesture input) adds.
 - Phase 2 desktop UI: a minimal main window exists and is tested, now with a Stop control, verified keyboard tab-order/focus behavior, a tray icon, confirmation and permission-grant prompts, read-only diagnostics, an editable settings dialog for log level and microphone selection, a one-time onboarding dialog, and worker-thread command execution; a live screen-reader pass is not done yet.
@@ -107,15 +108,15 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 1. Phase 2's core slice is now complete: tray, diagnostics, editable settings, one-time onboarding, confirmation and permission-grant prompts (all live-verified end to end), and non-blocking command execution all exist. Other future permission/confirmation-gated capabilities should get their own specific `TextCommandPlanner` summary the same way `system.clear_history` now does, rather than the generic "Run X." default, if their summary will ever reach a prompt.
 2. Continue the WCAG 2.2 AA pass on `MainWindow`: keyboard focus order/no-trap navigation and the no-custom-styling contrast/scaling inheritance are now verified (see Implemented and Tested), but a real screen-reader (NVDA/Narrator) pass is still outstanding -- do not claim accessibility compliance until that is checked too.
-3. Continue Phase 3 voice with a real STT provider (e.g. a local Whisper-family model or a cloud API) plugged into `MicrophonePushToTalk`'s injected `transcribe` callable, replacing the test-only transcriber; optionally wire microphone selection into the desktop settings UI. Keep raw audio out of events and storage by default.
+3. Continue Phase 3 voice with a real STT provider (e.g. a local Whisper-family model or a cloud API) plugged into `MicrophonePushToTalk`'s injected `transcribe` callable, replacing the test-only transcriber; wire the wake-word gate into a real continuous-listening loop (or a hotword-spotting engine) feeding `WakeWordVoiceRunner.observe()`; and expose wake-word editing in the desktop Settings dialog the same way microphone selection is exposed. Keep raw audio out of events and storage by default.
 4. Continue Phase 5 vision with a real webcam/landmark implementation behind `LandmarkAdapter`, or a per-frame classifier feeding `GestureCaptureLoop`; keep camera frames/landmarks out of events and storage by default.
 
 ## Known Defects
 
 - Existing `../jarvis` prototype is still untrusted reference material, but its previously documented concrete OS command injection path has been locally quarantined in this workspace. The quarantine is not part of the `visionai/` Git repository, so a separate `jarvis` copy or restore must not be assumed safe.
 - Existing `../jarvis` docs claim production readiness without verification evidence.
-- Existing `../jarvis` logs are very large and should be rotated or removed with user approval.
-- Existing `../jarvis` venv is not runnable in this workspace.
+- Resolved 2026-08-27: `../jarvis`'s hand-tracking loop retried a failed camera read with no backoff or give-up condition, spinning at full CPU and growing `jarvis.log` unbounded (868MB / 11.5M lines observed). Fixed with a 100ms backoff and a give-up-after-30-consecutive-drops guard; the oversized logs were deleted with user approval. This was found and fixed directly in `../jarvis`, outside the `visionai/` migration gate, since it is a prototype-only bug fix, not a capability migration.
+- Resolved: `../jarvis/venv` is runnable in this workspace as of 2026-08-27 (`../jarvis/venv/Scripts/python.exe` ran `test_components.py` and `main.py` successfully); the earlier "broken, missing base interpreter" note no longer reflects its current state.
 - `WindowsLockStateAdapter`'s true locked-workstation path has not been manually verified (requires a human to lock the screen and observe the result); only the unlocked path has been confirmed live.
 - Old `../jarvis` media control and pointer automation remain direct local actions outside the trusted `visionai` manifest/policy/dispatcher/audit path.
 
@@ -155,8 +156,8 @@ cd visionai
 
 - Python: 3.12.10
 - Ruff: passed
-- mypy: passed for 43 source files
-- pytest: 250 passed, 93% coverage (headless, via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
+- mypy: passed for 44 source files
+- pytest: 267 passed, 93% coverage (headless, via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

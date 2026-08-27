@@ -3,7 +3,7 @@
 Mirrors `visionai.policy.permissions.JsonPermissionStore`'s atomic-write
 JSON pattern. Deliberately covers only the fields safe to change at
 runtime without restart/migration risk (log level, onboarding-seen,
-microphone-device selection);
+microphone-device selection, wake word);
 `log_dir`/`data_dir` remain environment-only in `Settings`.
 """
 
@@ -18,6 +18,18 @@ from visionai.config.settings import LogLevel, get_settings
 from visionai.core.errors import StorageError
 
 _VALID_LOG_LEVELS = frozenset(get_args(LogLevel))
+
+DEFAULT_WAKE_WORD = "visionai"
+_CONTROL_CHARS = frozenset(chr(c) for c in (*range(0x00, 0x20), 0x7F))
+
+
+def _normalize_wake_word(word: str) -> str | None:
+    """Collapse whitespace and lowercase; return None if empty or unsafe."""
+
+    if any(char in _CONTROL_CHARS for char in word):
+        return None
+    normalized = " ".join(word.split()).lower()
+    return normalized or None
 
 
 class UserSettingsStore:
@@ -43,6 +55,20 @@ class UserSettingsStore:
     def mark_onboarding_seen(self) -> None:
         data = self._read()
         data["onboarding_seen"] = True
+        self._write(data)
+
+    def get_wake_word(self) -> str | None:
+        value = self._read().get("wake_word")
+        if not isinstance(value, str):
+            return None
+        return _normalize_wake_word(value)
+
+    def set_wake_word(self, word: str) -> None:
+        normalized = _normalize_wake_word(word)
+        if normalized is None:
+            raise ValueError("wake word must be non-empty and contain no control characters")
+        data = self._read()
+        data["wake_word"] = normalized
         self._write(data)
 
     def get_microphone_device_index(self) -> int | None:
@@ -90,6 +116,12 @@ def effective_log_level(store: UserSettingsStore) -> LogLevel:
     """Return the override log level if set, else the environment default."""
 
     return store.get_log_level() or get_settings().log_level
+
+
+def effective_wake_word(store: UserSettingsStore) -> str:
+    """Return the override wake word if set, else the built-in default."""
+
+    return store.get_wake_word() or DEFAULT_WAKE_WORD
 
 
 def default_user_settings_store() -> UserSettingsStore:

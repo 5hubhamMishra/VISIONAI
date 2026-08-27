@@ -26,7 +26,9 @@ visionai --text "what time is it"
 
 `--text` plans and runs one typed command through the same deterministic phrase matching, allowlists, and policy/dispatcher path as the explicit commands above -- it does not add any new capability, just an alternate way to invoke the existing ones. Anything that doesn't match a reviewed phrase, or whose slot isn't allowlisted, is treated as non-executable conversation and nothing runs.
 
-`app.open` accepts `notepad`, `calculator`, or `paint` -- any other value is rejected before anything opens. There is no wake word, no orchestrator, and no way to invoke these from voice or gesture input yet.
+`app.open` accepts `notepad`, `calculator`, or `paint` -- any other value is rejected before anything opens. There is no way to invoke these from real voice or gesture input yet -- both the push-to-talk and wake-word activation boundaries exist and are tested, but neither is wired into `visionai`/`visionai-ui` yet.
+
+A wake-word gate exists (`visionai.orchestration.WakeWordGate`/`WakeWordVoiceRunner`) that strips a configured trigger word (default `"visionai"`, editable via `UserSettingsStore.set_wake_word()`) from an already-transcribed utterance and only then publishes it as a command -- but it is not yet reachable from the console or the desktop window, since neither has real continuous microphone capture wired to it.
 
 `browser.open` accepts `youtube`, `instagram`, `twitter`, `facebook`, `github`, `reddit`, or `netflix`. `browser.search` opens an encoded Google search URL; empty queries, control characters, and non-allowlisted hosts are rejected before anything opens.
 
