@@ -21,6 +21,22 @@ def test_user_settings_store_persists_log_level_and_onboarding_flag(tmp_path) ->
     assert loaded.has_seen_onboarding() is True
 
 
+def test_user_settings_store_persists_microphone_device_index(tmp_path) -> None:
+    store = UserSettingsStore(tmp_path / "settings.json")
+
+    assert store.get_microphone_device_index() is None
+    store.set_microphone_device_index(3)
+
+    assert UserSettingsStore(tmp_path / "settings.json").get_microphone_device_index() == 3
+
+
+def test_user_settings_store_ignores_invalid_microphone_device_index(tmp_path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"microphone_device_index": -1}), encoding="utf-8")
+
+    assert UserSettingsStore(path).get_microphone_device_index() is None
+
+
 def test_user_settings_store_ignores_invalid_log_level(tmp_path) -> None:
     path = tmp_path / "settings.json"
     path.write_text(json.dumps({"log_level": "TRACE"}), encoding="utf-8")

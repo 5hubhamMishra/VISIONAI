@@ -380,7 +380,7 @@ def test_main_window_settings_text_reports_current_settings(qtbot: Any, tmp_path
     assert "Data directory: .visionai" in text
     assert "Raw audio retention: disabled" in text
     assert "Raw camera retention: disabled" in text
-    assert "Settings editing: log level only" in text
+    assert "Settings editing: log level and microphone selection" in text
 
 
 def test_main_window_settings_button_saves_a_chosen_log_level(
@@ -391,7 +391,7 @@ def test_main_window_settings_button_saves_a_chosen_log_level(
     window = MainWindow(runtime, settings_store=store)
     qtbot.addWidget(window)
 
-    monkeypatch.setattr(window, "_ask_new_log_level", lambda current: "DEBUG")
+    monkeypatch.setattr(window, "_ask_new_settings", lambda current, device, devices: ("DEBUG", 2))
     configured: list[str] = []
     monkeypatch.setattr(
         "visionai.ui.main_window.configure_logging", lambda level: configured.append(level)
@@ -407,7 +407,8 @@ def test_main_window_settings_button_saves_a_chosen_log_level(
 
     assert store.get_log_level() == "DEBUG"
     assert configured == ["DEBUG"]
-    assert shown == [("Settings", "Log level set to DEBUG. Applied immediately.")]
+    assert store.get_microphone_device_index() == 2
+    assert shown == [("Settings", "Settings saved.")]
 
 
 def test_main_window_settings_button_does_nothing_when_dialog_is_cancelled(
@@ -418,7 +419,7 @@ def test_main_window_settings_button_does_nothing_when_dialog_is_cancelled(
     window = MainWindow(runtime, settings_store=store)
     qtbot.addWidget(window)
 
-    monkeypatch.setattr(window, "_ask_new_log_level", lambda current: None)
+    monkeypatch.setattr(window, "_ask_new_settings", lambda current, device, devices: None)
     shown: list[tuple[str, str]] = []
     monkeypatch.setattr(
         QMessageBox,
@@ -433,11 +434,19 @@ def test_main_window_settings_button_does_nothing_when_dialog_is_cancelled(
 
 
 def test_settings_dialog_preselects_the_current_log_level(qtbot: Any) -> None:
-    dialog = _SettingsDialog("WARNING")
+    dialog = _SettingsDialog("WARNING", 2, [])
     qtbot.addWidget(dialog)
 
     assert dialog._log_level_combo.count() == 4
     assert dialog.selected_log_level() == "WARNING"
+
+
+def test_settings_dialog_preselects_a_listed_microphone(qtbot: Any) -> None:
+    device = type("Device", (), {"index": 2, "name": "USB mic", "max_input_channels": 1})()
+    dialog = _SettingsDialog("INFO", 2, [device])
+    qtbot.addWidget(dialog)
+
+    assert dialog.selected_microphone_device_index() == 2
 
 
 def test_main_window_shows_onboarding_once(qtbot: Any, monkeypatch: Any, tmp_path: Any) -> None:

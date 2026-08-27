@@ -2,7 +2,8 @@
 
 Mirrors `visionai.policy.permissions.JsonPermissionStore`'s atomic-write
 JSON pattern. Deliberately covers only the fields safe to change at
-runtime without restart/migration risk (log level, onboarding-seen);
+runtime without restart/migration risk (log level, onboarding-seen,
+microphone-device selection);
 `log_dir`/`data_dir` remain environment-only in `Settings`.
 """
 
@@ -42,6 +43,19 @@ class UserSettingsStore:
     def mark_onboarding_seen(self) -> None:
         data = self._read()
         data["onboarding_seen"] = True
+        self._write(data)
+
+    def get_microphone_device_index(self) -> int | None:
+        value = self._read().get("microphone_device_index")
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return None
+        return value
+
+    def set_microphone_device_index(self, index: int | None) -> None:
+        if index is not None and (isinstance(index, bool) or index < 0):
+            raise ValueError("microphone device index must be non-negative or None")
+        data = self._read()
+        data["microphone_device_index"] = index
         self._write(data)
 
     def _read(self) -> dict[str, object]:

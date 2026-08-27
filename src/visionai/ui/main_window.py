@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import traceback
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import PySide6
@@ -73,6 +74,8 @@ _ONBOARDING_TEXT = (
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QCloseEvent
+
+    from visionai.platform.microphone import MicrophoneDevice
 
 
 class _RuntimeWorker(QObject):
@@ -140,13 +143,19 @@ async def _drain_runtime_outputs(runtime: Runtime) -> list[EventBase]:
 
 
 class _SettingsDialog(QDialog):
-    """Editable settings dialog: log level only, via a closed-choice combo box.
+    """Editable settings dialog with closed-choice local preferences.
 
     A combo box restricted to `_LOG_LEVELS` needs no input validation of its
     own -- the widget cannot produce a value outside the valid set.
     """
 
-    def __init__(self, current: LogLevel, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        current: LogLevel,
+        microphone_device_index: int | None = None,
+        microphone_devices: Sequence[MicrophoneDevice] = (),
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Settings")
 
@@ -155,8 +164,19 @@ class _SettingsDialog(QDialog):
         self._log_level_combo.addItems(_LOG_LEVELS)
         self._log_level_combo.setCurrentIndex(_LOG_LEVELS.index(current))
 
+        self._microphone_combo = QComboBox()
+        self._microphone_combo.setAccessibleName("Microphone")
+        self._microphone_combo.addItem("Default microphone", None)
+        for device in microphone_devices:
+            self._microphone_combo.addItem(
+                f"{device.name} (device {device.index})", device.index
+            )
+        selected = self._microphone_combo.findData(microphone_device_index)
+        self._microphone_combo.setCurrentIndex(selected if selected >= 0 else 0)
+
         form = QFormLayout()
         form.addRow("Log level:", self._log_level_combo)
+        form.addRow("Microphone:", self._microphone_combo)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -171,6 +191,10 @@ class _SettingsDialog(QDialog):
 
     def selected_log_level(self) -> LogLevel:
         return _LOG_LEVELS[self._log_level_combo.currentIndex()]
+
+    def selected_microphone_device_index(self) -> int | None:
+        value = self._microphone_combo.currentData()
+        return value if isinstance(value, int) else None
 
 
 class MainWindow(QMainWindow):
@@ -301,33 +325,48 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Diagnostics", self._diagnostics_text())
 
     def show_settings(self) -> None:
-        """Show current settings; the log level can be changed here.
+        """Show current settings; local log and microphone choices can change here.
 
-        Only the log level is editable. `log_dir`/`data_dir` are
+        `log_dir`/`data_dir` are
         environment-only (see `visionai.config.settings`) since changing a
         storage path at runtime would need a migration step this dialog
         does not perform.
         """
 
         current = effective_log_level(self._settings_store)
-        chosen = self._ask_new_log_level(current)
-        if chosen is None or chosen == current:
-            return
+        current_device = self._settings_store.get_microphone_device_index()
+        try:
+            from visionai.platform.microphone import list_input_devices
 
-        self._settings_store.set_log_level(chosen)
-        configure_logging(chosen)
+            devices = list_input_devices()
+        except Exception:
+            devices = []
+        chosen = self._ask_new_settings(current, current_device, devices)
+        if chosen is None:
+            return
+        chosen_level, chosen_device = chosen
+
+        if chosen_level != current:
+            self._settings_store.set_log_level(chosen_level)
+            configure_logging(chosen_level)
+        if chosen_device != current_device:
+            self._settings_store.set_microphone_device_index(chosen_device)
         QMessageBox.information(
-            self, "Settings", f"Log level set to {chosen}. Applied immediately."
+            self, "Settings", "Settings saved."
         )
 
-    def _ask_new_log_level(self, current: LogLevel) -> LogLevel | None:
-        """Show the editable settings dialog. Returns the chosen level, or
-        None if the dialog was cancelled or nothing changed."""
+    def _ask_new_settings(
+        self,
+        current: LogLevel,
+        current_device: int | None,
+        devices: Sequence[MicrophoneDevice],
+    ) -> tuple[LogLevel, int | None] | None:
+        """Show the editable settings dialog, or return None when cancelled."""
 
-        dialog = _SettingsDialog(current, self)
+        dialog = _SettingsDialog(current, current_device, devices, self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return None
-        return dialog.selected_log_level()
+        return dialog.selected_log_level(), dialog.selected_microphone_device_index()
 
     def _settings_text(self) -> str:
         """Build the settings summary shown before editing."""
@@ -340,7 +379,7 @@ class MainWindow(QMainWindow):
             "Raw audio retention: disabled",
             "Raw camera retention: disabled",
             "Permissions: managed by policy store, not this dialog",
-            "Settings editing: log level only",
+            "Settings editing: log level and microphone selection",
         ]
         return "\n".join(lines)
 
