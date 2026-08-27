@@ -19,6 +19,7 @@ visionai app.open --app notepad
 visionai browser.open --site github
 visionai browser.search --query "VisionAI local assistant"
 visionai media.control --media-action play_pause
+visionai --list-microphones
 visionai --text "open notepad"
 visionai --text "what time is it"
 ```
@@ -30,6 +31,8 @@ visionai --text "what time is it"
 `browser.open` accepts `youtube`, `instagram`, `twitter`, `facebook`, `github`, `reddit`, or `netflix`. `browser.search` opens an encoded Google search URL; empty queries, control characters, and non-allowlisted hosts are rejected before anything opens.
 
 `media.control` accepts `play_pause`, `next`, `previous`, `volume_up`, `volume_down`, or `mute`.
+
+`--list-microphones` lists real audio input devices by index, name, and input-channel count. It does not record audio, run speech-to-text, or dispatch any command.
 
 `system.stop` requests cooperative cancellation of the current operation. Until voice, vision, and long-running orchestration are wired in, it usually reports that no operation is running.
 

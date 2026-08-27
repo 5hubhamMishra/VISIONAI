@@ -1,5 +1,8 @@
+import pytest
+
 from visionai import app
 from visionai.platform.lock_state import StaticLockStateAdapter
+from visionai.platform.microphone import MicrophoneDevice
 from visionai.runtime import build_runtime
 
 
@@ -51,6 +54,39 @@ def test_app_runs_safe_text_command(monkeypatch, capsys) -> None:
 
     assert exit_code == 0
     assert "It is " in output
+
+
+def test_app_lists_microphones_without_building_runtime(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("sys.argv", ["visionai", "--list-microphones"])
+    monkeypatch.setattr(
+        "visionai.app._list_input_devices",
+        lambda: [MicrophoneDevice(index=3, name="Desk Mic", max_input_channels=2)],
+    )
+    monkeypatch.setattr(
+        "visionai.app.build_runtime",
+        lambda: pytest.fail("listing microphones must not build the runtime"),
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "3: Desk Mic (2 input channels)" in output
+
+
+def test_app_reports_microphone_listing_failure(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("sys.argv", ["visionai", "--list-microphones"])
+
+    def fail() -> list[MicrophoneDevice]:
+        raise RuntimeError("audio backend unavailable")
+
+    monkeypatch.setattr("visionai.app._list_input_devices", fail)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Could not list microphones: audio backend unavailable" in output
 
 
 def test_app_rejects_unknown_text_command(monkeypatch, capsys) -> None:
