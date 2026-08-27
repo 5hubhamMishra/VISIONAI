@@ -380,7 +380,8 @@ def test_main_window_settings_text_reports_current_settings(qtbot: Any, tmp_path
     assert "Data directory: .visionai" in text
     assert "Raw audio retention: disabled" in text
     assert "Raw camera retention: disabled" in text
-    assert "Settings editing: log level and microphone selection" in text
+    assert "Wake word: visionai" in text
+    assert "Settings editing: log level, microphone selection, and wake word" in text
 
 
 def test_main_window_settings_button_saves_a_chosen_log_level(
@@ -391,7 +392,11 @@ def test_main_window_settings_button_saves_a_chosen_log_level(
     window = MainWindow(runtime, settings_store=store)
     qtbot.addWidget(window)
 
-    monkeypatch.setattr(window, "_ask_new_settings", lambda current, device, devices: ("DEBUG", 2))
+    monkeypatch.setattr(
+        window,
+        "_ask_new_settings",
+        lambda current, device, devices, wake_word: ("DEBUG", 2, "friday"),
+    )
     configured: list[str] = []
     monkeypatch.setattr(
         "visionai.ui.main_window.configure_logging", lambda level: configured.append(level)
@@ -408,6 +413,7 @@ def test_main_window_settings_button_saves_a_chosen_log_level(
     assert store.get_log_level() == "DEBUG"
     assert configured == ["DEBUG"]
     assert store.get_microphone_device_index() == 2
+    assert store.get_wake_word() == "friday"
     assert shown == [("Settings", "Settings saved.")]
 
 
@@ -419,7 +425,9 @@ def test_main_window_settings_button_does_nothing_when_dialog_is_cancelled(
     window = MainWindow(runtime, settings_store=store)
     qtbot.addWidget(window)
 
-    monkeypatch.setattr(window, "_ask_new_settings", lambda current, device, devices: None)
+    monkeypatch.setattr(
+        window, "_ask_new_settings", lambda current, device, devices, wake_word: None
+    )
     shown: list[tuple[str, str]] = []
     monkeypatch.setattr(
         QMessageBox,
@@ -433,17 +441,40 @@ def test_main_window_settings_button_does_nothing_when_dialog_is_cancelled(
     assert shown == []
 
 
+def test_main_window_settings_rejects_an_invalid_wake_word(
+    qtbot: Any, monkeypatch: Any, tmp_path: Any
+) -> None:
+    runtime = build_runtime()
+    store = UserSettingsStore(tmp_path / "settings.json")
+    window = MainWindow(runtime, settings_store=store)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(
+        window, "_ask_new_settings", lambda current, device, devices, wake_word: ("INFO", None, " ")
+    )
+    shown: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda parent, title, text: shown.append((title, text))
+    )
+
+    qtbot.mouseClick(window._settings_button, Qt.MouseButton.LeftButton)
+
+    assert store.get_wake_word() is None
+    assert shown == [("Settings", "wake word must be non-empty and contain no control characters")]
+
+
 def test_settings_dialog_preselects_the_current_log_level(qtbot: Any) -> None:
-    dialog = _SettingsDialog("WARNING", 2, [])
+    dialog = _SettingsDialog("WARNING", 2, [], wake_word="friday")
     qtbot.addWidget(dialog)
 
     assert dialog._log_level_combo.count() == 4
     assert dialog.selected_log_level() == "WARNING"
+    assert dialog.selected_wake_word() == "friday"
 
 
 def test_settings_dialog_preselects_a_listed_microphone(qtbot: Any) -> None:
     device = type("Device", (), {"index": 2, "name": "USB mic", "max_input_channels": 1})()
-    dialog = _SettingsDialog("INFO", 2, [device])
+    dialog = _SettingsDialog("INFO", 2, [device], wake_word="visionai")
     qtbot.addWidget(dialog)
 
     assert dialog.selected_microphone_device_index() == 2

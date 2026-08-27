@@ -44,9 +44,13 @@ from PySide6.QtWidgets import (
 )
 
 import visionai
-from visionai.config import default_user_settings_store, effective_log_level, get_settings
+from visionai.config import (
+    default_user_settings_store,
+    effective_log_level,
+    get_settings,
+)
 from visionai.config.settings import LogLevel
-from visionai.config.user_settings import UserSettingsStore
+from visionai.config.user_settings import UserSettingsStore, effective_wake_word
 from visionai.core.events import (
     ActionPlan,
     ActionResult,
@@ -155,6 +159,7 @@ class _SettingsDialog(QDialog):
         microphone_device_index: int | None = None,
         microphone_devices: Sequence[MicrophoneDevice] = (),
         parent: QWidget | None = None,
+        wake_word: str = "visionai",
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -174,9 +179,13 @@ class _SettingsDialog(QDialog):
         selected = self._microphone_combo.findData(microphone_device_index)
         self._microphone_combo.setCurrentIndex(selected if selected >= 0 else 0)
 
+        self._wake_word_input = QLineEdit(wake_word)
+        self._wake_word_input.setAccessibleName("Wake word")
+
         form = QFormLayout()
         form.addRow("Log level:", self._log_level_combo)
         form.addRow("Microphone:", self._microphone_combo)
+        form.addRow("Wake word:", self._wake_word_input)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -195,6 +204,9 @@ class _SettingsDialog(QDialog):
     def selected_microphone_device_index(self) -> int | None:
         value = self._microphone_combo.currentData()
         return value if isinstance(value, int) else None
+
+    def selected_wake_word(self) -> str:
+        return self._wake_word_input.text()
 
 
 class MainWindow(QMainWindow):
@@ -335,17 +347,24 @@ class MainWindow(QMainWindow):
 
         current = effective_log_level(self._settings_store)
         current_device = self._settings_store.get_microphone_device_index()
+        current_wake_word = effective_wake_word(self._settings_store)
         try:
             from visionai.platform.microphone import list_input_devices
 
             devices = list_input_devices()
         except Exception:
             devices = []
-        chosen = self._ask_new_settings(current, current_device, devices)
+        chosen = self._ask_new_settings(current, current_device, devices, current_wake_word)
         if chosen is None:
             return
-        chosen_level, chosen_device = chosen
+        chosen_level, chosen_device, chosen_wake_word = chosen
 
+        if chosen_wake_word != current_wake_word:
+            try:
+                self._settings_store.set_wake_word(chosen_wake_word)
+            except ValueError as exc:
+                QMessageBox.warning(self, "Settings", str(exc))
+                return
         if chosen_level != current:
             self._settings_store.set_log_level(chosen_level)
             configure_logging(chosen_level)
@@ -360,13 +379,20 @@ class MainWindow(QMainWindow):
         current: LogLevel,
         current_device: int | None,
         devices: Sequence[MicrophoneDevice],
-    ) -> tuple[LogLevel, int | None] | None:
+        current_wake_word: str,
+    ) -> tuple[LogLevel, int | None, str] | None:
         """Show the editable settings dialog, or return None when cancelled."""
 
-        dialog = _SettingsDialog(current, current_device, devices, self)
+        dialog = _SettingsDialog(
+            current, current_device, devices, self, wake_word=current_wake_word
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return None
-        return dialog.selected_log_level(), dialog.selected_microphone_device_index()
+        return (
+            dialog.selected_log_level(),
+            dialog.selected_microphone_device_index(),
+            dialog.selected_wake_word(),
+        )
 
     def _settings_text(self) -> str:
         """Build the settings summary shown before editing."""
@@ -379,7 +405,8 @@ class MainWindow(QMainWindow):
             "Raw audio retention: disabled",
             "Raw camera retention: disabled",
             "Permissions: managed by policy store, not this dialog",
-            "Settings editing: log level and microphone selection",
+            f"Wake word: {effective_wake_word(self._settings_store)}",
+            "Settings editing: log level, microphone selection, and wake word",
         ]
         return "\n".join(lines)
 

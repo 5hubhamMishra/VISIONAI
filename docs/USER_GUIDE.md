@@ -54,7 +54,7 @@ The Stop button requests cooperative cancellation and stays clickable even while
 
 The Diagnostics button shows a read-only status summary: app/library versions, registered capability count, tray availability, current state, and which input subsystems are still disconnected.
 
-The Settings button lets you change the log level (`DEBUG`/`INFO`/`WARNING`/`ERROR`) and choose an enumerated microphone device. Choices are saved locally; log-level changes apply immediately. If microphone enumeration is unavailable, the default microphone remains available. `log_dir`/`data_dir` remain environment-only (see `.env.example`) since changing a storage path at runtime isn't supported. Settings cannot grant permissions or enable raw audio/camera retention.
+The Settings button lets you change the log level (`DEBUG`/`INFO`/`WARNING`/`ERROR`), choose an enumerated microphone device, and edit the wake word. Choices are saved locally; log-level changes apply immediately. Invalid wake words are rejected. If microphone enumeration is unavailable, the default microphone remains available. `log_dir`/`data_dir` remain environment-only (see `.env.example`) since changing a storage path at runtime isn't supported. Settings cannot grant permissions or enable raw audio/camera retention.
 
 If a command requires confirmation, the window asks before executing it. Choosing No cancels the pending request; choosing Yes sends the bound confirmation back through the orchestrator and dispatcher. If a command also or instead requires permission, the window asks to grant that first ("Grant permission") -- granting can still be followed by a separate confirmation prompt if the same command needs both. `clear history` is the first built-in command that exercises both prompts.
 
