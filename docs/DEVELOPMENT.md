@@ -37,3 +37,8 @@ On POSIX shells:
 
 The old `../jarvis` prototype is not trusted runtime code. See
 `docs/MIGRATION_QUARANTINE.md` before migrating any behavior.
+# Agent coordination
+
+Before starting or handing off a slice, follow [`AGENT_COORDINATION.md`](AGENT_COORDINATION.md).
+It keeps Codex and Claude Code on the same pushed `main` history and records
+which parts of the master prompt are implemented versus still only planned.
