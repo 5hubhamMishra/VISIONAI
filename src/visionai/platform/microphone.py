@@ -24,6 +24,7 @@ from typing import Protocol
 
 import numpy as np
 
+from visionai.config.user_settings import UserSettingsStore, default_user_settings_store
 from visionai.core.errors import VisionAIError
 
 DEFAULT_SAMPLE_RATE = 16_000
@@ -131,3 +132,12 @@ class MicrophoneCapture:
             return np.empty((0,), dtype=np.float32)
         audio: np.ndarray = np.reshape(np.concatenate(self._frames, axis=0), -1)
         return audio
+
+
+def default_microphone_capture(
+    settings_store: UserSettingsStore | None = None,
+) -> MicrophoneCapture:
+    """Build capture using the persisted device choice, if one exists."""
+
+    store = settings_store or default_user_settings_store()
+    return MicrophoneCapture(device=store.get_microphone_device_index())

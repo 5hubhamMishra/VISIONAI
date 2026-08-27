@@ -122,3 +122,12 @@ from the documented state instead of re-inspecting the whole workspace.
 - Commands/tests run: `git diff --check` passed; focused settings/UI tests passed; `scripts/verify.ps1` passed with Ruff, mypy for 43 source files, 248 pytest tests, 93% coverage, Bandit, and pip-audit reporting no known vulnerabilities.
 - Result: the desktop Settings dialog now lazily lists real input devices, persists a validated device index, and keeps the default microphone available when enumeration fails. No audio is recorded or stored by this preference slice.
 - Next task: plug a real STT provider into `MicrophonePushToTalk`, add a real webcam/landmark implementation, or complete the live screen-reader pass.
+
+## 2026-08-27 Saved Microphone Wiring Slice
+
+- Date/time: 2026-08-27
+- User request: next part.
+- Files changed: `src/visionai/platform/microphone.py`, `src/visionai/orchestration/microphone_capture.py`, `tests/unit/test_microphone.py`, `tests/unit/test_microphone_capture.py`, `docs/ARCHITECTURE.md`, `docs/PROJECT_STATE.md`, `docs/WORK_LOG.md`.
+- Commands/tests run: `git diff --check` passed; focused microphone tests passed with 12 tests; `scripts/verify.ps1` passed with Ruff, mypy for 43 source files, 250 pytest tests, 93% coverage, Bandit, and pip-audit reporting no known vulnerabilities.
+- Result: `MicrophonePushToTalk` now defaults to a capture built from the persisted Settings microphone index, while explicit capture injection remains supported. Raw audio is still not stored or published.
+- Next task: plug a real STT provider into `MicrophonePushToTalk`, add a real webcam/landmark implementation, or complete the live screen-reader pass.

@@ -13,10 +13,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from visionai.config.user_settings import UserSettingsStore
 from visionai.platform.microphone import (
     MicrophoneCapture,
     MicrophoneCaptureError,
     MicrophoneDevice,
+    default_microphone_capture,
     list_input_devices,
 )
 
@@ -104,3 +106,12 @@ def test_list_input_devices_runs_against_the_real_backend() -> None:
     for device in devices:
         assert isinstance(device, MicrophoneDevice)
         assert device.max_input_channels > 0
+
+
+def test_default_microphone_capture_uses_saved_device(tmp_path) -> None:
+    store = UserSettingsStore(tmp_path / "settings.json")
+    store.set_microphone_device_index(4)
+
+    capture = default_microphone_capture(store)
+
+    assert capture._device == 4

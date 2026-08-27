@@ -105,3 +105,16 @@ async def test_release_after_release_is_a_noop() -> None:
     assert first is not None
     assert second is None
     assert bus.size == 1
+
+
+def test_capture_defaults_to_saved_microphone_factory(monkeypatch) -> None:
+    expected = MicrophoneCapture(stream_factory=_factory([]))
+    monkeypatch.setattr(
+        "visionai.orchestration.microphone_capture.default_microphone_capture",
+        lambda: expected,
+    )
+    input_adapter = InputAdapter(input_bus=EventBus(max_size=10))
+
+    runner = MicrophonePushToTalk(input_adapter=input_adapter, transcribe=lambda audio: "")
+
+    assert runner._capture is expected
