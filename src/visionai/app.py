@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from collections.abc import Sequence
 from typing import Protocol, cast
 
 from visionai.config import default_user_settings_store, effective_log_level
-from visionai.core.events import ActionRequest
+from visionai.config.user_settings import effective_wake_word
+from visionai.core.events import ActionPlan, ActionRequest, ActionResult, EventBase
 from visionai.observability import configure_logging
-from visionai.runtime import build_runtime
+from visionai.orchestration import WakeWordGate, WakeWordVoiceRunner
+from visionai.runtime import Runtime, build_runtime
 
 
 class _MicrophoneDevice(Protocol):
@@ -24,10 +27,29 @@ def _list_input_devices() -> Sequence[_MicrophoneDevice]:
     return cast(Sequence[_MicrophoneDevice], list_input_devices())
 
 
+async def _run_wake_word_text(
+    runtime: Runtime, utterance: str, wake_word: str
+) -> tuple[bool, str]:
+    runner = WakeWordVoiceRunner(runtime.input_adapter, gate=WakeWordGate(wake_word))
+    event = await runner.observe(utterance)
+    if event is None:
+        return False, "No wake-word command detected."
+    await runtime.orchestrator.process_event(event)
+    outputs: list[EventBase] = []
+    while runtime.output_bus.size:
+        outputs.append(await runtime.output_bus.next_event())
+    result = next((output for output in outputs if isinstance(output, ActionResult)), None)
+    if result is not None:
+        return result.success, result.message
+    plan = next((output for output in outputs if isinstance(output, ActionPlan)), None)
+    return False, plan.summary if plan is not None else "No response."
+
+
 def main() -> int:
     """Run one registered capability through the full policy and dispatcher path."""
 
-    configure_logging(effective_log_level(default_user_settings_store()))
+    settings_store = default_user_settings_store()
+    configure_logging(effective_log_level(settings_store))
 
     parser = argparse.ArgumentParser(prog="visionai")
     parser.add_argument(
@@ -55,6 +77,9 @@ def main() -> int:
     parser.add_argument("--query", default=None, help="Search query (browser.search only).")
     parser.add_argument("--media-action", default=None, help="Media action (media.control only).")
     parser.add_argument("--text", default=None, help="Plan and run one safe typed command.")
+    parser.add_argument(
+        "--wake-word-text", default=None, help="Run one already-transcribed wake-word command."
+    )
     parser.add_argument("--list-microphones", action="store_true", help="List audio input devices.")
     args = parser.parse_args()
 
@@ -72,6 +97,12 @@ def main() -> int:
         return 0
 
     runtime = build_runtime()
+    if args.wake_word_text is not None:
+        success, message = asyncio.run(
+            _run_wake_word_text(runtime, args.wake_word_text, effective_wake_word(settings_store))
+        )
+        print(message)
+        return 0 if success else 1
     if args.text is not None:
         _intent, plan = runtime.planner.plan(args.text)
         if not plan.steps:

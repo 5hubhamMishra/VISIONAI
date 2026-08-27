@@ -1,6 +1,7 @@
 import pytest
 
 from visionai import app
+from visionai.config.user_settings import UserSettingsStore
 from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.platform.microphone import MicrophoneDevice
 from visionai.runtime import build_runtime
@@ -54,6 +55,45 @@ def test_app_runs_safe_text_command(monkeypatch, capsys) -> None:
 
     assert exit_code == 0
     assert "It is " in output
+
+
+def test_app_runs_a_wake_word_text_command(monkeypatch, capsys, tmp_path) -> None:
+    launched: list[str] = []
+    store = UserSettingsStore(tmp_path / "settings.json")
+    store.set_wake_word("hey visionai")
+    monkeypatch.setattr("visionai.app.default_user_settings_store", lambda: store)
+    monkeypatch.setattr(
+        "sys.argv", ["visionai", "--wake-word-text", "hey visionai open notepad"]
+    )
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Opening notepad." in output
+    assert launched == ["notepad.exe"]
+
+
+def test_app_rejects_wake_word_text_without_matching_wake_word(
+    monkeypatch, capsys, tmp_path
+) -> None:
+    launched: list[str] = []
+    store = UserSettingsStore(tmp_path / "settings.json")
+    monkeypatch.setattr("visionai.app.default_user_settings_store", lambda: store)
+    monkeypatch.setattr("sys.argv", ["visionai", "--wake-word-text", "open notepad"])
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "No wake-word command detected." in output
+    assert launched == []
 
 
 def test_app_lists_microphones_without_building_runtime(monkeypatch, capsys) -> None:

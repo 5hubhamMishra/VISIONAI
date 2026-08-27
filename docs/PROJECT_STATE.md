@@ -24,6 +24,8 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## Implemented and Tested
 
+- Added `visionai --wake-word-text`, which applies the persisted wake word to one already-transcribed utterance and routes matching text through `WakeWordVoiceRunner`, the real `EventOrchestrator`, and the policy/dispatcher path. Non-matching text exits cleanly without publishing or launching. This is a CLI text-entry surface only; it does not add STT or microphone capture.
+
 - Phase 0 package skeleton under `visionai/`
 - Environment-backed settings loader
 - Typed core event contracts with validation for text, confidence ranges, and immutable mappings
@@ -157,7 +159,7 @@ cd visionai
 - Python: 3.12.10
 - Ruff: passed
 - mypy: passed for 44 source files
-- pytest: 269 passed, 93% coverage (headless, via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
+- pytest: 271 passed, 93% coverage (headless, via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
 - Bandit: passed
 - pip-audit: no known vulnerabilities found
 

@@ -159,6 +159,15 @@ from the documented state instead of re-inspecting the whole workspace.
 - Result: the desktop Settings dialog now edits and persists the normalized wake word, rejects invalid values without changing other settings, and displays the effective wake word. The wake-word gate remains text-only and is not yet a continuous listener.
 - Next task: plug a real STT provider into `MicrophonePushToTalk`, wire the wake-word gate into real continuous listening, add a real webcam/landmark implementation, or complete the live screen-reader pass.
 
+## 2026-08-27 Wake-Word CLI Surface
+
+- Date/time: 2026-08-27
+- User request: move on to the next step.
+- Files changed: `src/visionai/app.py`, `tests/unit/test_app.py`, `docs/ARCHITECTURE.md`, `docs/USER_GUIDE.md`, `docs/TESTING.md`, `docs/PROJECT_STATE.md`, `docs/RELEASE_NOTES.md`, `docs/WORK_LOG.md`.
+- Commands/tests run: focused CLI tests passed with 14 tests; full verification passed with Ruff, mypy for 44 source files, 271 pytest tests, 93% coverage, Bandit, and pip-audit reporting no known vulnerabilities.
+- Result: added `visionai --wake-word-text`, applying the saved wake word and routing matching already-transcribed text through the existing wake runner, event orchestrator, and policy/dispatcher path. Non-matches publish nothing and launch nothing. No STT or raw-audio path was added.
+- Next task: plug a real STT provider into `MicrophonePushToTalk`, connect it to the listening loop or a hotword engine, add real webcam/landmark capture, or complete the live screen-reader pass.
+
 ## 2026-08-27 Injectable Wake-Word Listening Loop
 
 - Date/time: 2026-08-27

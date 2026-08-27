@@ -22,6 +22,7 @@ visionai media.control --media-action play_pause
 visionai --list-microphones
 visionai --text "open notepad"
 visionai --text "what time is it"
+visionai --wake-word-text "visionai open notepad"
 ```
 
 `--text` plans and runs one typed command through the same deterministic phrase matching, allowlists, and policy/dispatcher path as the explicit commands above -- it does not add any new capability, just an alternate way to invoke the existing ones. Anything that doesn't match a reviewed phrase, or whose slot isn't allowlisted, is treated as non-executable conversation and nothing runs.
@@ -35,6 +36,8 @@ A wake-word gate and injectable listening loop exist (`visionai.orchestration.Wa
 `media.control` accepts `play_pause`, `next`, `previous`, `volume_up`, `volume_down`, or `mute`.
 
 `--list-microphones` lists real audio input devices by index, name, and input-channel count. It does not record audio, run speech-to-text, or dispatch any command.
+
+`--wake-word-text` accepts one already-transcribed utterance, applies the saved wake word, and sends only a matching command through the normal orchestrator and policy path. It does not provide speech-to-text or continuous microphone capture.
 
 `system.stop` requests cooperative cancellation of the current operation. Until voice, vision, and long-running orchestration are wired in, it usually reports that no operation is running.
 
