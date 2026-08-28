@@ -134,9 +134,10 @@ def make_system_help_handler(registry: CapabilityRegistry) -> CapabilityHandler:
         count = len(registry.list())
         message = (
             f"VisionAI is in early development with {count} capabilities registered. "
-            "Run system.capabilities to list them by name. Voice and gesture input, "
-            "and any capability beyond the listed policy-gated surface, are not "
-            "available yet."
+            "Run system.capabilities to list them by name. Gesture commands: open palm "
+            "stops, thumbs up opens Notepad, peace sign shows help, index finger tells "
+            "the time, and two fingers plus thumb raises volume. Closed fist starts "
+            "voice mode when microphone capture is connected."
         )
         return ActionResult(request_id=request.id, success=True, message=message)
 

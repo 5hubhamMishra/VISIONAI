@@ -1,12 +1,32 @@
+from dataclasses import dataclass, field
+
 import pytest
 
 from visionai import app
 from visionai.config.user_settings import UserSettingsStore
-from visionai.platform.camera import GestureCandidate, StaticLandmarkAdapter
+from visionai.core.cancellation import CancellationToken
+from visionai.platform.camera import GestureCandidate, LandmarkAdapter, StaticLandmarkAdapter
 from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.platform.microphone import MicrophoneDevice
 from visionai.recognition import TemporalGestureRecognizer
 from visionai.runtime import build_runtime
+
+
+@dataclass
+class _CancelWhenExhausted:
+    """Cancels a token once `total` reads happen, mirroring the recognition-level test double."""
+
+    inner: LandmarkAdapter
+    token: CancellationToken
+    total: int
+    _count: int = field(default=0, init=False)
+
+    def read_candidate(self) -> GestureCandidate:
+        self._count += 1
+        candidate = self.inner.read_candidate()
+        if self._count >= self.total:
+            self.token.cancel()
+        return candidate
 
 
 def test_app_runs_default_time_capability(monkeypatch, capsys) -> None:
@@ -126,6 +146,44 @@ def test_app_reports_no_gesture_detected_within_frame_budget(monkeypatch, capsys
 
     assert exit_code == 0
     assert "No gesture detected." in output
+
+
+def test_app_gesture_listen_counts_confirmed_votes_until_cancelled(monkeypatch, capsys) -> None:
+    token = CancellationToken()
+    candidates = [GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9)] * 3
+    wrapped = _CancelWhenExhausted(StaticLandmarkAdapter(candidates=candidates), token, total=3)
+    times = iter([0.0, 0.1, 0.5])
+    monkeypatch.setattr("sys.argv", ["visionai", "--gesture-listen"])
+    monkeypatch.setattr("visionai.app._build_landmark_adapter", lambda: wrapped)
+    monkeypatch.setattr("visionai.app._build_cancellation_token", lambda: token)
+    monkeypatch.setattr(
+        "visionai.app.TemporalGestureRecognizer",
+        lambda: TemporalGestureRecognizer(min_hold_ms=400, clock=lambda: next(times)),
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Listening for gestures. Press Ctrl+C to stop." in output
+    assert "Stopped. Confirmed 1 gesture(s)." in output
+
+
+def test_app_gesture_listen_reads_nothing_when_already_cancelled(monkeypatch, capsys) -> None:
+    token = CancellationToken()
+    token.cancel()
+    adapter = StaticLandmarkAdapter(
+        candidates=[GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9)]
+    )
+    monkeypatch.setattr("sys.argv", ["visionai", "--gesture-listen"])
+    monkeypatch.setattr("visionai.app._build_landmark_adapter", lambda: adapter)
+    monkeypatch.setattr("visionai.app._build_cancellation_token", lambda: token)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Stopped. Confirmed 0 gesture(s)." in output
 
 
 def test_app_lists_microphones_without_building_runtime(monkeypatch, capsys) -> None:

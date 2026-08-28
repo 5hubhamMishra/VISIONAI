@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import threading
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Protocol, cast
 
 from visionai.config import default_user_settings_store, effective_log_level
 from visionai.config.user_settings import effective_wake_word
+from visionai.core.cancellation import CancellationToken
 from visionai.core.events import ActionPlan, ActionRequest, ActionResult, EventBase
 from visionai.observability import configure_logging
 from visionai.orchestration import WakeWordGate, WakeWordVoiceRunner
 from visionai.platform.camera import LandmarkAdapter
-from visionai.recognition import GestureCaptureLoop, TemporalGestureRecognizer
+from visionai.recognition import GestureCaptureLoop, GestureListeningLoop, TemporalGestureRecognizer
 from visionai.runtime import Runtime, build_runtime
 
 if TYPE_CHECKING:
@@ -36,6 +38,61 @@ def _build_landmark_adapter() -> WebcamLandmarkAdapter:
     from visionai.platform.webcam import WebcamLandmarkAdapter
 
     return WebcamLandmarkAdapter()
+
+
+def _build_cancellation_token() -> CancellationToken:
+    return CancellationToken()
+
+
+def _run_gesture_listen(
+    runtime: Runtime,
+    landmark_adapter: LandmarkAdapter,
+    recognizer: TemporalGestureRecognizer,
+    cancellation: CancellationToken,
+) -> int:
+    """Drive `GestureListeningLoop` on a worker thread until Ctrl+C.
+
+    Mirrors the desktop Stop button: the loop runs off the calling thread so
+    a `KeyboardInterrupt` on the main thread can call `cancellation.cancel()`
+    and wait for a clean stop, instead of aborting mid-frame and losing the
+    landmark adapter's `close()` or the confirmed-gesture count.
+    """
+
+    capture = GestureCaptureLoop(
+        landmark_adapter=landmark_adapter,
+        recognizer=recognizer,
+        input_adapter=runtime.input_adapter,
+    )
+    listening_loop = GestureListeningLoop(
+        capture=capture, cancellation=cancellation, stop_gesture_id="open_palm"
+    )
+    result: dict[str, int] = {}
+
+    def _worker() -> None:
+        try:
+            async def run_session() -> int:
+                consumer = asyncio.create_task(runtime.orchestrator.run_until_closed())
+                try:
+                    return await listening_loop.run()
+                finally:
+                    runtime.input_bus.close()
+                    await consumer
+
+            result["confirmed"] = asyncio.run(run_session())
+        finally:
+            close = getattr(landmark_adapter, "close", None)
+            if close is not None:
+                close()
+
+    worker = threading.Thread(target=_worker, daemon=True)
+    worker.start()
+    try:
+        while worker.is_alive():
+            worker.join(timeout=0.2)
+    except KeyboardInterrupt:
+        cancellation.cancel()
+        worker.join()
+    return result.get("confirmed", 0)
 
 
 async def _run_gesture_capture(
@@ -124,6 +181,11 @@ def main() -> int:
         default=None,
         help="Capture up to N real webcam frames and report the first confirmed gesture.",
     )
+    parser.add_argument(
+        "--gesture-listen",
+        action="store_true",
+        help="Continuously watch for gestures until Ctrl+C, then report the confirmed count.",
+    )
     args = parser.parse_args()
 
     if args.list_microphones:
@@ -140,6 +202,16 @@ def main() -> int:
         return 0
 
     runtime = build_runtime()
+    if args.gesture_listen:
+        print("Listening for gestures. Press Ctrl+C to stop.")
+        confirmed = _run_gesture_listen(
+            runtime,
+            _build_landmark_adapter(),
+            TemporalGestureRecognizer(),
+            _build_cancellation_token(),
+        )
+        print(f"Stopped. Confirmed {confirmed} gesture(s).")
+        return 0
     if args.gesture_frames is not None:
         message = asyncio.run(
             _run_gesture_capture(

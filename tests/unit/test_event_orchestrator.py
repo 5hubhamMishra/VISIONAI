@@ -14,6 +14,7 @@ from visionai.core.events import (
     AuditEvent,
     ConfirmationRequest,
     ErrorEvent,
+    GestureEvent,
     Intent,
     PermissionRequest,
     RiskLevel,
@@ -425,6 +426,32 @@ async def test_orchestrator_plans_and_dispatches_final_transcript() -> None:
     assert launched == ["notepad.exe"]
     assert runtime.state_machine.state is AppState.IDLE
     assert runtime.operations.has_active_operation is False
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_maps_safe_gesture_commands_through_planner() -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    event = GestureEvent(gesture_id="thumbs_up", hand="right", confidence=0.95, hold_ms=450)
+
+    await runtime.orchestrator.process_event(event)
+    outputs = await _drain_available(runtime.output_bus)
+
+    assert [type(output) for output in outputs] == [Intent, ActionPlan, ActionResult]
+    assert outputs[0].name == "app.open"
+    assert outputs[2].success is True
+    assert launched == ["notepad.exe"]
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_ignores_closed_fist_until_voice_mode_is_connected() -> None:
+    runtime = build_runtime()
+
+    await runtime.orchestrator.process_event(
+        GestureEvent(gesture_id="closed_fist", hand="right", confidence=0.95, hold_ms=450)
+    )
+
+    assert runtime.output_bus.size == 0
 
 
 @pytest.mark.asyncio

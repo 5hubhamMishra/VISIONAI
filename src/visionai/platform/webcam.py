@@ -18,12 +18,10 @@ any test that injects its own frame source and classifier -- never
 requires the real camera or vision libraries to be present, mirroring
 `visionai.platform.microphone`.
 
-Classifies only two gestures -- open palm and closed fist -- by counting
-extended fingers from hand landmarks: a small, reliable vocabulary for
-this first real slice. Anything else reports no gesture (`gesture_id=
-None`) rather than guessing. Only one classified `GestureCandidate`
-per frame ever crosses the `LandmarkAdapter` boundary; raw frames and
-landmarks never leave this module.
+Classifies a small fixed vocabulary by counting extended fingers. Anything
+ambiguous reports no gesture (`gesture_id=None`) rather than guessing. Only
+one classified `GestureCandidate` per frame ever crosses the boundary; raw
+frames and landmarks never leave this module.
 """
 
 from __future__ import annotations
@@ -55,7 +53,7 @@ class HandLandmark:
 def classify_finger_count(
     landmarks: Sequence[HandLandmark], handedness: Literal["left", "right"]
 ) -> str | None:
-    """Pure heuristic: 21 hand landmarks -> "open_palm", "closed_fist", or None.
+    """Pure heuristic: 21 hand landmarks -> a simple gesture ID or ``None``.
 
     No camera or model dependency -- fully unit-testable with fixture
     coordinates. Extended-finger detection compares each fingertip to its
@@ -63,18 +61,24 @@ def classify_finger_count(
     y); the thumb compares x instead, mirrored by handedness.
     """
 
-    fingers_up = 0
+    non_thumb_fingers_up = 0
     for tip, pip in zip(_FINGER_TIPS, _FINGER_PIPS, strict=True):
         if landmarks[tip].y < landmarks[pip].y:
-            fingers_up += 1
+            non_thumb_fingers_up += 1
     thumb_tip, thumb_ip = landmarks[_THUMB_TIP], landmarks[_THUMB_IP]
     thumb_up = thumb_tip.x > thumb_ip.x if handedness == "left" else thumb_tip.x < thumb_ip.x
-    if thumb_up:
-        fingers_up += 1
 
-    if fingers_up == 0:
+    if non_thumb_fingers_up == 0 and not thumb_up:
         return "closed_fist"
-    if fingers_up >= _OPEN_PALM_MIN_FINGERS:
+    if non_thumb_fingers_up == 0 and thumb_up:
+        return "thumbs_up"
+    if non_thumb_fingers_up == 1 and not thumb_up:
+        return "index_finger_up"
+    if non_thumb_fingers_up == 2 and not thumb_up:
+        return "peace_sign"
+    if non_thumb_fingers_up == 2 and thumb_up:
+        return "two_fingers"
+    if non_thumb_fingers_up + int(thumb_up) >= _OPEN_PALM_MIN_FINGERS:
         return "open_palm"
     return None
 

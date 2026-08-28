@@ -65,12 +65,16 @@ class GestureListeningLoop:
 
     capture: GestureCaptureLoop
     cancellation: CancellationToken
+    stop_gesture_id: str | None = None
 
     async def run(self) -> int:
         """Consume real frames until cancellation; returns the confirmed-gesture count."""
 
         confirmed = 0
         while not self.cancellation.is_cancelled:
-            if await self.capture.capture_once() is not None:
+            event = await self.capture.capture_once()
+            if event is not None:
                 confirmed += 1
+                if event.gesture_id == self.stop_gesture_id:
+                    self.cancellation.cancel()
         return confirmed

@@ -73,7 +73,16 @@ def test_all_fingers_extended_is_open_palm() -> None:
 def test_two_fingers_up_is_not_classified() -> None:
     landmarks = _landmarks(index_up=True, middle_up=True)
 
-    assert classify_finger_count(landmarks, "right") is None
+    assert classify_finger_count(landmarks, "right") == "peace_sign"
+
+
+def test_simple_command_gestures_are_classified() -> None:
+    assert classify_finger_count(_landmarks(thumb_up=True), "right") == "thumbs_up"
+    assert classify_finger_count(_landmarks(index_up=True), "right") == "index_finger_up"
+    assert (
+        classify_finger_count(_landmarks(index_up=True, middle_up=True, thumb_up=True), "right")
+        == "two_fingers"
+    )
 
 
 def test_thumb_direction_is_mirrored_by_handedness() -> None:

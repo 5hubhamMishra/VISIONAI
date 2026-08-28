@@ -34,6 +34,14 @@ from visionai.recognition.gesture import TemporalGestureRecognizer
 
 PolicyContextFactory = Callable[[], PolicyContext]
 
+_GESTURE_COMMANDS = {
+    "open_palm": "stop",
+    "thumbs_up": "open notepad",
+    "peace_sign": "help",
+    "index_finger_up": "what time is it",
+    "two_fingers": "volume up",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class InputAdapter:
@@ -192,6 +200,14 @@ class EventOrchestrator:
 
         if isinstance(event, TranscriptEvent):
             await self._process_transcript(event)
+        elif isinstance(event, GestureEvent):
+            command = _GESTURE_COMMANDS.get(event.gesture_id)
+            if command is not None:
+                await self._process_transcript(
+                    TranscriptEvent(
+                        text=command, confidence=event.confidence, language="en", is_final=True
+                    )
+                )
 
     async def confirm(self, confirmation_id: UUID) -> None:
         """Apply a previously issued confirmation and execute its request.
