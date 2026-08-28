@@ -77,6 +77,10 @@ def _run_gesture_listen(
                 finally:
                     runtime.input_bus.close()
                     await consumer
+                    while runtime.output_bus.size:
+                        output = await runtime.output_bus.next_event()
+                        if isinstance(output, ActionResult):
+                            print(output.message)
 
             result["confirmed"] = asyncio.run(run_session())
         finally:
