@@ -167,7 +167,7 @@ cd visionai
 - mypy: passed for 46 source files (whole repo)
 - pytest: 283 passed, 92% coverage (headless, via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
 - Bandit: passed (whole repo, `src`)
-- pip-audit: `scripts/verify.ps1`'s scoped check (`requirements/base.txt` + `requirements/dev.txt`) not re-run this slice due to a transient network outage reaching PyPI's advisory database at commit time (retry before trusting this line stale); a full-environment audit reports one accepted exception, see `docs/DECISIONS/0003-accepted-protobuf-cve.md`
+- pip-audit: no known vulnerabilities found (`scripts/verify.ps1`'s scope: `requirements/base.txt` + `requirements/dev.txt`); a full-environment audit reports one accepted exception, see `docs/DECISIONS/0003-accepted-protobuf-cve.md`
 
 ## Last Updated
 
