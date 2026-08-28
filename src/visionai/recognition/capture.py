@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from visionai.core.cancellation import CancellationToken
 from visionai.core.events import GestureEvent
 from visionai.platform.camera import LandmarkAdapter
 from visionai.recognition.gesture import TemporalGestureRecognizer
@@ -46,3 +48,29 @@ class GestureCaptureLoop:
             hand=candidate.hand,
             confidence=candidate.confidence,
         )
+
+
+@dataclass(slots=True)
+class GestureListeningLoop:
+    """Continuously drive a `GestureCaptureLoop` until cancellation is requested.
+
+    Mirrors `WakeWordListeningLoop`'s cancellable-consumption shape, but a
+    real camera has no natural end the way an injected transcript stream
+    can be exhausted -- `LandmarkAdapter.read_candidate()` is pulled on
+    demand, not pushed through an `AsyncIterable`, and a fake/static
+    adapter used in tests never signals "done" either. `cancellation` is
+    therefore required, not optional, so this loop can never run forever
+    with no way to stop it.
+    """
+
+    capture: GestureCaptureLoop
+    cancellation: CancellationToken
+
+    async def run(self) -> int:
+        """Consume real frames until cancellation; returns the confirmed-gesture count."""
+
+        confirmed = 0
+        while not self.cancellation.is_cancelled:
+            if await self.capture.capture_once() is not None:
+                confirmed += 1
+        return confirmed
