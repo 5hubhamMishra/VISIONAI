@@ -1,6 +1,6 @@
 # User Guide
 
-VisionAI is not ready for end-user operation yet. It does not accept voice or gesture input, and does not execute file, shutdown, or any other system-mutating actions beyond the specific commands below.
+VisionAI is not ready for end-user operation yet. It does not accept real voice input, and no recognized gesture can trigger any capability -- `--gesture-frames` below can observe and report a real webcam gesture, but nothing acts on it. It does not execute file, shutdown, or any other system-mutating actions beyond the specific commands below.
 
 There are two ways to run a command today: a console entry point, and a minimal desktop window (the first Phase 2 UI slice). Both drive the exact same policy-gated capabilities -- neither has any execution authority the other lacks.
 
@@ -23,6 +23,7 @@ visionai --list-microphones
 visionai --text "open notepad"
 visionai --text "what time is it"
 visionai --wake-word-text "visionai open notepad"
+visionai --gesture-frames 15
 ```
 
 `--text` plans and runs one typed command through the same deterministic phrase matching, allowlists, and policy/dispatcher path as the explicit commands above -- it does not add any new capability, just an alternate way to invoke the existing ones. Anything that doesn't match a reviewed phrase, or whose slot isn't allowlisted, is treated as non-executable conversation and nothing runs.
@@ -38,6 +39,8 @@ A wake-word gate and injectable listening loop exist (`visionai.orchestration.Wa
 `--list-microphones` lists real audio input devices by index, name, and input-channel count. It does not record audio, run speech-to-text, or dispatch any command.
 
 `--wake-word-text` accepts one already-transcribed utterance, applies the saved wake word, and sends only a matching command through the normal orchestrator and policy path. It does not provide speech-to-text or continuous microphone capture.
+
+`--gesture-frames N` opens the real webcam and captures up to N frames, reporting the first confirmed `open_palm` or `closed_fist` gesture (held steady for a moment, the same temporal voting `GestureCaptureLoop` uses) or `"No gesture detected."` if none is confirmed within N frames. It requires the `vision` extra installed and a hand held close to and centered on the camera -- real mediapipe inference on a typical CPU takes roughly 2 seconds per frame, so a small N (a dozen or so) is enough and a large one takes proportionally longer. This only observes and reports; it does not dispatch any command, since gestures are not yet mapped to a capability.
 
 Real microphone capture uses the local `faster-whisper` provider when `MicrophonePushToTalk` is created without a custom transcriber. The default is the `base.en` model on CPU with int8 computation; set `VISIONAI_STT_MODEL_SIZE`, `VISIONAI_STT_DEVICE`, or `VISIONAI_STT_COMPUTE_TYPE` before starting VisionAI to change it. The model downloads from Hugging Face on first transcription and stays local afterward.
 

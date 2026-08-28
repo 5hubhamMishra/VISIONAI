@@ -5,14 +5,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 from collections.abc import Sequence
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from visionai.config import default_user_settings_store, effective_log_level
 from visionai.config.user_settings import effective_wake_word
 from visionai.core.events import ActionPlan, ActionRequest, ActionResult, EventBase
 from visionai.observability import configure_logging
 from visionai.orchestration import WakeWordGate, WakeWordVoiceRunner
+from visionai.platform.camera import LandmarkAdapter
+from visionai.recognition import GestureCaptureLoop, TemporalGestureRecognizer
 from visionai.runtime import Runtime, build_runtime
+
+if TYPE_CHECKING:
+    from visionai.platform.webcam import WebcamLandmarkAdapter
 
 
 class _MicrophoneDevice(Protocol):
@@ -25,6 +30,38 @@ def _list_input_devices() -> Sequence[_MicrophoneDevice]:
     from visionai.platform.microphone import list_input_devices
 
     return cast(Sequence[_MicrophoneDevice], list_input_devices())
+
+
+def _build_landmark_adapter() -> WebcamLandmarkAdapter:
+    from visionai.platform.webcam import WebcamLandmarkAdapter
+
+    return WebcamLandmarkAdapter()
+
+
+async def _run_gesture_capture(
+    runtime: Runtime,
+    landmark_adapter: LandmarkAdapter,
+    recognizer: TemporalGestureRecognizer,
+    max_frames: int,
+) -> str:
+    loop = GestureCaptureLoop(
+        landmark_adapter=landmark_adapter,
+        recognizer=recognizer,
+        input_adapter=runtime.input_adapter,
+    )
+    try:
+        for _ in range(max_frames):
+            event = await loop.capture_once()
+            if event is not None:
+                return (
+                    f"Gesture detected: {event.gesture_id} ({event.hand} hand, "
+                    f"held {event.hold_ms}ms, confidence {event.confidence:.2f})."
+                )
+    finally:
+        close = getattr(landmark_adapter, "close", None)
+        if close is not None:
+            close()
+    return "No gesture detected."
 
 
 async def _run_wake_word_text(
@@ -81,6 +118,12 @@ def main() -> int:
         "--wake-word-text", default=None, help="Run one already-transcribed wake-word command."
     )
     parser.add_argument("--list-microphones", action="store_true", help="List audio input devices.")
+    parser.add_argument(
+        "--gesture-frames",
+        type=int,
+        default=None,
+        help="Capture up to N real webcam frames and report the first confirmed gesture.",
+    )
     args = parser.parse_args()
 
     if args.list_microphones:
@@ -97,6 +140,17 @@ def main() -> int:
         return 0
 
     runtime = build_runtime()
+    if args.gesture_frames is not None:
+        message = asyncio.run(
+            _run_gesture_capture(
+                runtime,
+                _build_landmark_adapter(),
+                TemporalGestureRecognizer(),
+                args.gesture_frames,
+            )
+        )
+        print(message)
+        return 0
     if args.wake_word_text is not None:
         success, message = asyncio.run(
             _run_wake_word_text(runtime, args.wake_word_text, effective_wake_word(settings_store))

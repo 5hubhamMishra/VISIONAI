@@ -2,8 +2,10 @@ import pytest
 
 from visionai import app
 from visionai.config.user_settings import UserSettingsStore
+from visionai.platform.camera import GestureCandidate, StaticLandmarkAdapter
 from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.platform.microphone import MicrophoneDevice
+from visionai.recognition import TemporalGestureRecognizer
 from visionai.runtime import build_runtime
 
 
@@ -94,6 +96,36 @@ def test_app_rejects_wake_word_text_without_matching_wake_word(
     assert exit_code == 1
     assert "No wake-word command detected." in output
     assert launched == []
+
+
+def test_app_reports_first_confirmed_gesture(monkeypatch, capsys) -> None:
+    candidates = [GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9)] * 3
+    adapter = StaticLandmarkAdapter(candidates=candidates)
+    times = iter([0.0, 0.1, 0.5])
+    monkeypatch.setattr("sys.argv", ["visionai", "--gesture-frames", "5"])
+    monkeypatch.setattr("visionai.app._build_landmark_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        "visionai.app.TemporalGestureRecognizer",
+        lambda: TemporalGestureRecognizer(clock=lambda: next(times)),
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Gesture detected: open_palm (right hand, held 500ms, confidence 0.90)." in output
+
+
+def test_app_reports_no_gesture_detected_within_frame_budget(monkeypatch, capsys) -> None:
+    adapter = StaticLandmarkAdapter(candidates=[])
+    monkeypatch.setattr("sys.argv", ["visionai", "--gesture-frames", "3"])
+    monkeypatch.setattr("visionai.app._build_landmark_adapter", lambda: adapter)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "No gesture detected." in output
 
 
 def test_app_lists_microphones_without_building_runtime(monkeypatch, capsys) -> None:
