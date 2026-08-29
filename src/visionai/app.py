@@ -15,7 +15,12 @@ from visionai.config.user_settings import effective_wake_word
 from visionai.core.cancellation import CancellationToken
 from visionai.core.errors import ProviderError
 from visionai.core.events import ActionPlan, ActionRequest, ActionResult, EventBase, GestureEvent
-from visionai.intelligence import DeterministicFallbackProvider, LLMProvider, LLMQuery
+from visionai.intelligence import (
+    DeterministicFallbackProvider,
+    LLMProvider,
+    LLMQuery,
+    suggest_command,
+)
 from visionai.observability import configure_logging
 from visionai.orchestration import WakeWordGate, WakeWordListeningLoop, WakeWordVoiceRunner
 from visionai.platform.camera import LandmarkAdapter
@@ -347,6 +352,11 @@ def main() -> int:
         default=None,
         help="Ask the configured LLM one question. Conversation only -- dispatches nothing.",
     )
+    parser.add_argument(
+        "--suggest",
+        default=None,
+        help="Ask the LLM to propose a command for free text. Prints it -- never dispatches it.",
+    )
     args = parser.parse_args()
 
     if args.ask is not None:
@@ -412,6 +422,30 @@ def main() -> int:
         )
         print(message)
         return 0 if success else 1
+    if args.suggest is not None:
+        try:
+            provider = _build_llm_provider()
+        except (ImportError, ValueError) as exc:
+            print(f"Could not get a suggestion: {exc}")
+            return 1
+        if isinstance(provider, DeterministicFallbackProvider):
+            print(provider.respond(LLMQuery(text=args.suggest)).text)
+            return 0
+        try:
+            phrase = suggest_command(provider, args.suggest)
+        except (ProviderError, ValidationError) as exc:
+            print(f"Could not get a suggestion: {exc}")
+            return 1
+        if phrase is None:
+            print("No matching command found.")
+            return 0
+        _intent, plan = runtime.planner.plan(phrase)
+        if not plan.steps:
+            print("No matching command found.")
+            return 0
+        print(f"Proposed: {plan.summary}")
+        print(f'Not executed. Run visionai --text "{phrase}" to do this for real.')
+        return 0
     if args.text is not None:
         _intent, plan = runtime.planner.plan(args.text)
         if not plan.steps:

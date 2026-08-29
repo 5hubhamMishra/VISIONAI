@@ -200,3 +200,19 @@ def _normalize_text(text: str) -> str:
 
 def _is_safe_name(value: str) -> bool:
     return bool(_SAFE_SLOT.fullmatch(value))
+
+
+def reviewed_phrases() -> tuple[str, ...]:
+    """Every exact phrase (or phrase template) `TextCommandPlanner` accepts.
+
+    Built from the same dicts/allowlists `plan()` matches against, so this
+    can never drift out of sync with what actually executes. Used to give
+    an LLM a fixed menu of safe outputs to choose from -- see
+    `visionai.intelligence.planner.suggest_command()`.
+    """
+
+    phrases = [*_DIRECT_CAPABILITIES, *_MEDIA_PHRASES]
+    phrases += [f"open {app}" for app in sorted(ALLOWED_APPLICATIONS)]
+    phrases += [f"go to {site}" for site in sorted(ALLOWED_SITES)]
+    phrases.append("search for <your query>")
+    return tuple(phrases)

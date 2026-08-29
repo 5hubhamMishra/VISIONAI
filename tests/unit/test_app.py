@@ -406,6 +406,68 @@ def test_app_ask_reports_a_provider_construction_failure(monkeypatch, capsys) ->
     assert "Could not get an answer: VISIONAI_ANTHROPIC_API_KEY is not set" in output
 
 
+def test_app_suggest_uses_the_fallback_by_default(monkeypatch, capsys) -> None:
+    launched: list[str] = []
+    monkeypatch.setattr("sys.argv", ["visionai", "--suggest", "open notepad please"])
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "No LLM provider is configured" in output
+    assert launched == []
+
+
+def test_app_suggest_prints_a_proposal_and_dispatches_nothing(monkeypatch, capsys) -> None:
+    launched: list[str] = []
+
+    class _FakeProvider:
+        def respond(self, query: object) -> object:
+            from visionai.intelligence import LLMReply
+
+            return LLMReply(text="open notepad")
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--suggest", "can you open notepad"])
+    monkeypatch.setattr("visionai.app._build_llm_provider", lambda: _FakeProvider())
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Proposed: Open notepad." in output
+    assert 'Not executed. Run visionai --text "open notepad" to do this for real.' in output
+    assert launched == []
+
+
+def test_app_suggest_reports_no_match(monkeypatch, capsys) -> None:
+    launched: list[str] = []
+
+    class _FakeProvider:
+        def respond(self, query: object) -> object:
+            from visionai.intelligence import LLMReply
+
+            return LLMReply(text="NONE")
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--suggest", "order me a pizza"])
+    monkeypatch.setattr("visionai.app._build_llm_provider", lambda: _FakeProvider())
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "No matching command found." in output
+    assert launched == []
+
+
 def test_app_rejects_unknown_text_command(monkeypatch, capsys) -> None:
     monkeypatch.setattr("sys.argv", ["visionai", "--text", "open calc & powershell"])
 

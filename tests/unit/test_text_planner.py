@@ -1,4 +1,5 @@
 from visionai.core.events import RiskLevel
+from visionai.orchestration.text_planner import reviewed_phrases
 from visionai.policy import PolicyContext
 from visionai.runtime import build_runtime
 
@@ -121,3 +122,27 @@ def test_text_command_with_control_character_app_name_stays_non_executable() -> 
     assert plan.steps == ()
     assert intent.name == "conversation.reply"
     assert "\x00" not in intent.source_text
+
+
+def test_reviewed_phrases_covers_every_matched_category() -> None:
+    phrases = reviewed_phrases()
+
+    assert "help" in phrases
+    assert "stop" in phrases
+    assert "volume up" in phrases
+    assert "open notepad" in phrases
+    assert "go to github" in phrases
+    assert "search for <your query>" in phrases
+
+
+def test_reviewed_phrases_every_direct_and_media_phrase_actually_plans() -> None:
+    """Every non-template phrase this function returns must be a real,
+    plannable phrase -- proving it stays in sync with what `plan()` accepts
+    rather than drifting into a separately maintained, stale list."""
+    runtime = build_runtime()
+
+    for phrase in reviewed_phrases():
+        if phrase == "search for <your query>":
+            continue
+        _intent, plan = runtime.planner.plan(phrase)
+        assert plan.steps, f"{phrase!r} did not plan to an executable step"
