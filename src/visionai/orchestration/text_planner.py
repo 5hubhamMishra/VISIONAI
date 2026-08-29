@@ -22,6 +22,7 @@ _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _APP_PHRASE = re.compile(r"^(?:open|launch|start)\s+(.+)$")
 _SITE_PHRASE = re.compile(r"^(?:open|go to|visit)\s+(.+)$")
 _SEARCH_PHRASE = re.compile(r"^(?:search(?: for)?|google|find|look up)\s+(.+)$")
+_APP_ALIASES = {"notebook": "notepad"}
 
 _DIRECT_CAPABILITIES = {
     "help": "system.help",
@@ -119,6 +120,7 @@ class TextCommandPlanner:
         return self._empty_plan(text, "No executable action selected.")
 
     def _plan_app_open(self, source_text: str, app: str) -> tuple[Intent, ActionPlan] | None:
+        app = _APP_ALIASES.get(app, app)
         if not _is_safe_name(app) or app not in ALLOWED_APPLICATIONS:
             return None
         return self._capability_plan(

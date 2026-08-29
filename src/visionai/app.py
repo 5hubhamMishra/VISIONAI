@@ -5,21 +5,27 @@ from __future__ import annotations
 import argparse
 import asyncio
 import threading
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from typing import TYPE_CHECKING, Protocol, cast
 
 from visionai.config import default_user_settings_store, effective_log_level
 from visionai.config.user_settings import effective_wake_word
 from visionai.core.cancellation import CancellationToken
-from visionai.core.events import ActionPlan, ActionRequest, ActionResult, EventBase
+from visionai.core.events import ActionPlan, ActionRequest, ActionResult, EventBase, GestureEvent
 from visionai.observability import configure_logging
-from visionai.orchestration import WakeWordGate, WakeWordVoiceRunner
+from visionai.orchestration import WakeWordGate, WakeWordListeningLoop, WakeWordVoiceRunner
 from visionai.platform.camera import LandmarkAdapter
 from visionai.recognition import GestureCaptureLoop, GestureListeningLoop, TemporalGestureRecognizer
 from visionai.runtime import Runtime, build_runtime
 
 if TYPE_CHECKING:
+    import numpy as np
+
+    from visionai.orchestration.microphone_capture import MicrophonePushToTalk
+    from visionai.platform.microphone import MicrophoneCapture
     from visionai.platform.webcam import WebcamLandmarkAdapter
+
+_WAKE_WORD_LISTEN_CHUNK_SECONDS = 4.0
 
 
 class _MicrophoneDevice(Protocol):
@@ -42,6 +48,87 @@ def _build_landmark_adapter() -> WebcamLandmarkAdapter:
 
 def _build_cancellation_token() -> CancellationToken:
     return CancellationToken()
+
+
+def _build_microphone_capture() -> MicrophoneCapture:
+    from visionai.platform.microphone import default_microphone_capture
+
+    return default_microphone_capture()
+
+
+def _build_transcriber() -> Callable[[np.ndarray], str]:
+    from visionai.platform.stt import default_transcriber
+
+    return default_transcriber()
+
+
+async def _continuous_transcripts(
+    capture: MicrophoneCapture,
+    transcribe: Callable[[np.ndarray], str],
+    cancellation: CancellationToken,
+) -> AsyncIterator[str]:
+    """Record fixed-length chunks and yield each one's non-empty transcript.
+
+    The smallest real continuous-listening source: no VAD or streaming
+    STT, just repeated record/transcribe cycles until cancelled. Mirrors
+    `GestureCaptureLoop`'s "one blocking read per iteration" shape.
+    """
+
+    while not cancellation.is_cancelled:
+        capture.start()
+        await asyncio.sleep(_WAKE_WORD_LISTEN_CHUNK_SECONDS)
+        audio = capture.stop()
+        text = transcribe(audio)
+        if text:
+            yield text
+
+
+def _run_wake_word_listen(
+    runtime: Runtime,
+    capture: MicrophoneCapture,
+    transcribe: Callable[[np.ndarray], str],
+    wake_word: str,
+    cancellation: CancellationToken,
+) -> int:
+    """Drive `WakeWordListeningLoop` on a worker thread until Ctrl+C.
+
+    Mirrors `_run_gesture_listen`: real microphone capture/transcription
+    happen off the main thread so a `KeyboardInterrupt` can cancel cleanly,
+    and any dispatched action's result is printed once the session ends.
+    """
+
+    runner = WakeWordVoiceRunner(runtime.input_adapter, gate=WakeWordGate(wake_word))
+    result: dict[str, int] = {}
+
+    def _worker() -> None:
+        async def run_session() -> int:
+            consumer = asyncio.create_task(runtime.orchestrator.run_until_closed())
+            listening_loop = WakeWordListeningLoop(
+                runner=runner,
+                source=_continuous_transcripts(capture, transcribe, cancellation),
+                cancellation=cancellation,
+            )
+            try:
+                return await listening_loop.run()
+            finally:
+                runtime.input_bus.close()
+                await consumer
+                while runtime.output_bus.size:
+                    output = await runtime.output_bus.next_event()
+                    if isinstance(output, ActionResult):
+                        print(output.message)
+
+        result["accepted"] = asyncio.run(run_session())
+
+    worker = threading.Thread(target=_worker, daemon=True)
+    worker.start()
+    try:
+        while worker.is_alive():
+            worker.join(timeout=0.2)
+    except KeyboardInterrupt:
+        cancellation.cancel()
+        worker.join()
+    return result.get("accepted", 0)
 
 
 def _run_gesture_listen(
@@ -72,9 +159,43 @@ def _run_gesture_listen(
         try:
             async def run_session() -> int:
                 consumer = asyncio.create_task(runtime.orchestrator.run_until_closed())
+                voice_runner: MicrophonePushToTalk | None = None
+
+                async def on_gesture(event: GestureEvent) -> None:
+                    nonlocal voice_runner
+                    if event.gesture_id == "closed_fist" and voice_runner is None:
+                        try:
+                            from visionai.orchestration.microphone_capture import (
+                                MicrophonePushToTalk,
+                            )
+
+                            voice_runner = MicrophonePushToTalk(
+                                input_adapter=runtime.input_adapter,
+                                capture=_build_microphone_capture(),
+                                transcribe=_build_transcriber(),
+                            )
+                            voice_runner.press()
+                            print("Voice command listening started. Show an open palm to send it.")
+                        except (ImportError, OSError, RuntimeError, ValueError) as exc:
+                            voice_runner = None
+                            print(f"Voice input unavailable: {exc}")
+                    elif event.gesture_id == "open_palm" and voice_runner is not None:
+                        transcript = await voice_runner.release()
+                        voice_runner = None
+                        if transcript is None or not transcript.text.strip():
+                            print("No speech recognized.")
+                        else:
+                            print(f"Recognized command: {transcript.text.strip()}")
+                            print("Voice command sent.")
+
+                listening_loop.on_confirmed = on_gesture
                 try:
                     return await listening_loop.run()
                 finally:
+                    if voice_runner is not None:
+                        transcript = await voice_runner.release()
+                        if transcript is not None and transcript.text.strip():
+                            print(f"Recognized command: {transcript.text.strip()}")
                     runtime.input_bus.close()
                     await consumer
                     while runtime.output_bus.size:
@@ -190,6 +311,11 @@ def main() -> int:
         action="store_true",
         help="Continuously watch for gestures until Ctrl+C, then report the confirmed count.",
     )
+    parser.add_argument(
+        "--wake-word-listen",
+        action="store_true",
+        help="Continuously listen for the wake word via the real microphone until Ctrl+C.",
+    )
     args = parser.parse_args()
 
     if args.list_microphones:
@@ -206,6 +332,18 @@ def main() -> int:
         return 0
 
     runtime = build_runtime()
+    if args.wake_word_listen:
+        wake_word = effective_wake_word(settings_store)
+        print(f"Listening for the wake word ('{wake_word}'). Press Ctrl+C to stop.")
+        accepted = _run_wake_word_listen(
+            runtime,
+            _build_microphone_capture(),
+            _build_transcriber(),
+            wake_word,
+            _build_cancellation_token(),
+        )
+        print(f"Stopped. Accepted {accepted} command(s).")
+        return 0
     if args.gesture_listen:
         print("Listening for gestures. Press Ctrl+C to stop.")
         confirmed = _run_gesture_listen(

@@ -43,6 +43,13 @@ def test_planner_maps_allowlisted_app_open() -> None:
     assert step.risk_level == RiskLevel.REVERSIBLE
 
 
+def test_planner_accepts_common_notepad_speech_variation() -> None:
+    step = _planned_step("open notebook")
+
+    assert step.capability_id == "app.open"
+    assert step.arguments["app"] == "notepad"
+
+
 def test_planner_maps_allowlisted_site_open() -> None:
     step = _planned_step("go to github")
 

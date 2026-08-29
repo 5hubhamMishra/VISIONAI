@@ -1,6 +1,6 @@
 # User Guide
 
-VisionAI is not ready for end-user operation yet. It does not accept real voice input. Recognized gestures can trigger only the small command map below; they do not provide arbitrary system control.
+VisionAI is not ready for end-user operation yet. Real voice input and recognized gestures can each trigger only the small command map below; they do not provide arbitrary system control.
 
 There are two ways to run a command today: a console entry point, and a minimal desktop window (the first Phase 2 UI slice). Both drive the exact same policy-gated capabilities -- neither has any execution authority the other lacks.
 
@@ -23,14 +23,16 @@ visionai --list-microphones
 visionai --text "open notepad"
 visionai --text "what time is it"
 visionai --wake-word-text "visionai open notepad"
+visionai --wake-word-listen
 visionai --gesture-frames 15
+visionai --gesture-listen
 ```
 
 `--text` plans and runs one typed command through the same deterministic phrase matching, allowlists, and policy/dispatcher path as the explicit commands above -- it does not add any new capability, just an alternate way to invoke the existing ones. Anything that doesn't match a reviewed phrase, or whose slot isn't allowlisted, is treated as non-executable conversation and nothing runs.
 
 `app.open` accepts `notepad`, `calculator`, or `paint` -- any other value is rejected before anything opens. The gesture command map invokes only the safe entries listed below through the same planner and policy path as typed commands.
 
-A wake-word gate and injectable listening loop exist (`visionai.orchestration.WakeWordGate`, `WakeWordVoiceRunner`, and `WakeWordListeningLoop`). They accept already-transcribed utterances, strip a configured trigger word (default `"visionai"`, editable in desktop Settings), and publish only matching commands. They are not yet reachable from the console or desktop window because a real STT provider and continuous microphone source are still pending.
+A wake-word gate and listening loop (`visionai.orchestration.WakeWordGate`, `WakeWordVoiceRunner`, and `WakeWordListeningLoop`) strip a configured trigger word (default `"visionai"`, editable in desktop Settings) from an utterance and publish only matching commands. `--wake-word-listen` now drives this loop with the real microphone and STT provider (see below); the desktop window does not have this surface yet.
 
 `browser.open` accepts `youtube`, `instagram`, `twitter`, `facebook`, `github`, `reddit`, or `netflix`. `browser.search` opens an encoded Google search URL; empty queries, control characters, and non-allowlisted hosts are rejected before anything opens.
 
@@ -40,7 +42,11 @@ A wake-word gate and injectable listening loop exist (`visionai.orchestration.Wa
 
 `--wake-word-text` accepts one already-transcribed utterance, applies the saved wake word, and sends only a matching command through the normal orchestrator and policy path. It does not provide speech-to-text or continuous microphone capture.
 
+`--wake-word-listen` continuously records short chunks (4 seconds each) from the real microphone, transcribes each with the local `faster-whisper` provider, and sends only wake-word-matching commands through the normal orchestrator and policy path -- press `Ctrl+C` to stop; it reports `"Stopped. Accepted N command(s)."` and prints any dispatched action's result. It requires the `voice` extra installed. This is the smallest real continuous-listening implementation: fixed-length chunks, no voice-activity detection or streaming transcription, so a command must fit inside one chunk and `Ctrl+C` can take up to one chunk's length to take effect.
+
 `--gesture-frames N` opens the real webcam and captures up to N frames, reporting the first confirmed gesture (held steady for a moment, the same temporal voting `GestureCaptureLoop` uses) or `"No gesture detected."` if none is confirmed within N frames. It requires the `vision` extra installed and a hand held close to and centered on the camera; a small N (a dozen or so) is normally enough.
+
+`--gesture-listen` continuously watches for gestures over the real webcam until `Ctrl+C` (or an `open_palm` gesture, which stops it on its own), reporting `"Stopped. Confirmed N gesture(s)."` and printing any dispatched action's result. See the gesture cheat sheet below for what each pose does.
 
 ## Gesture cheat sheet
 
@@ -55,13 +61,13 @@ Use the same hand and hold each pose briefly:
 | Index finger up | Point hand | Tell the time |
 | Two fingers plus thumb | Volume hand | Turn volume up |
 
-The classifier recognizes these fixed poses and routes the mapped commands
-through the planner and policy engine. Open palm ends continuous gesture
-listening. Closed fist is reserved for starting voice mode once microphone
-capture is connected. Mouse movement, scrolling, clicking, and other side
+The classifier recognizes these fixed poses. Five of them route a mapped command
+through the planner and policy engine; open palm also ends `--gesture-listen`'s
+continuous loop on its own. Closed fist instead starts real push-to-talk voice
+capture (`"Voice command listening started..."`) -- hold it, speak your command,
+then show an open palm to send it (`"Voice command sent."`) through the same
+planner and policy path. Mouse movement, scrolling, clicking, and other side
 effects remain disabled until each action has its own policy-gated capability.
-
-A continuous, cancellable version exists as `visionai.recognition.GestureListeningLoop` (mirroring `WakeWordListeningLoop`), but it is not yet reachable from the console or desktop window -- only `--gesture-frames`'s fixed-budget capture is.
 
 Real microphone capture uses the local `faster-whisper` provider when `MicrophonePushToTalk` is created without a custom transcriber. The default is the `base.en` model on CPU with int8 computation; set `VISIONAI_STT_MODEL_SIZE`, `VISIONAI_STT_DEVICE`, or `VISIONAI_STT_COMPUTE_TYPE` before starting VisionAI to change it. The model downloads from Hugging Face on first transcription and stays local afterward.
 

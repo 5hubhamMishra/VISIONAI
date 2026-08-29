@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -66,6 +67,7 @@ class GestureListeningLoop:
     capture: GestureCaptureLoop
     cancellation: CancellationToken
     stop_gesture_id: str | None = None
+    on_confirmed: Callable[[GestureEvent], Awaitable[None]] | None = None
 
     async def run(self) -> int:
         """Consume real frames until cancellation; returns the confirmed-gesture count."""
@@ -75,6 +77,8 @@ class GestureListeningLoop:
             event = await self.capture.capture_once()
             if event is not None:
                 confirmed += 1
+                if self.on_confirmed is not None:
+                    await self.on_confirmed(event)
                 if event.gesture_id == self.stop_gesture_id:
                     self.cancellation.cancel()
         return confirmed

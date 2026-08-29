@@ -118,6 +118,79 @@ def test_app_rejects_wake_word_text_without_matching_wake_word(
     assert launched == []
 
 
+class _FakeMicrophoneCapture:
+    """No real hardware: `stop()` returns nothing meaningful, since `transcribe` is faked too."""
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        return None
+
+
+def test_app_wake_word_listen_accepts_matching_commands_until_cancelled(
+    monkeypatch, capsys, tmp_path
+) -> None:
+    launched: list[str] = []
+    store = UserSettingsStore(tmp_path / "settings.json")
+    token = CancellationToken()
+    transcripts = iter(["visionai open notepad", "background noise"])
+
+    def _fake_transcribe(audio: object) -> str:
+        try:
+            return next(transcripts)
+        except StopIteration:
+            token.cancel()
+            return ""
+
+    monkeypatch.setattr("visionai.app.default_user_settings_store", lambda: store)
+    monkeypatch.setattr("visionai.app._WAKE_WORD_LISTEN_CHUNK_SECONDS", 0.0)
+    monkeypatch.setattr("sys.argv", ["visionai", "--wake-word-listen"])
+    monkeypatch.setattr("visionai.app._build_microphone_capture", lambda: _FakeMicrophoneCapture())
+    monkeypatch.setattr("visionai.app._build_transcriber", lambda: _fake_transcribe)
+    monkeypatch.setattr("visionai.app._build_cancellation_token", lambda: token)
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Listening for the wake word ('visionai')." in output
+    assert "Stopped. Accepted 1 command(s)." in output
+    assert "Opening notepad." in output
+    assert launched == ["notepad.exe"]
+
+
+def test_app_wake_word_listen_reads_nothing_when_already_cancelled(
+    monkeypatch, capsys, tmp_path
+) -> None:
+    launched: list[str] = []
+    store = UserSettingsStore(tmp_path / "settings.json")
+    token = CancellationToken()
+    token.cancel()
+
+    monkeypatch.setattr("visionai.app.default_user_settings_store", lambda: store)
+    monkeypatch.setattr("visionai.app._WAKE_WORD_LISTEN_CHUNK_SECONDS", 0.0)
+    monkeypatch.setattr("sys.argv", ["visionai", "--wake-word-listen"])
+    monkeypatch.setattr("visionai.app._build_microphone_capture", lambda: _FakeMicrophoneCapture())
+    monkeypatch.setattr(
+        "visionai.app._build_transcriber", lambda: (lambda audio: "visionai open notepad")
+    )
+    monkeypatch.setattr("visionai.app._build_cancellation_token", lambda: token)
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Stopped. Accepted 0 command(s)." in output
+    assert launched == []
+
+
 def test_app_reports_first_confirmed_gesture(monkeypatch, capsys) -> None:
     candidates = [GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9)] * 3
     adapter = StaticLandmarkAdapter(candidates=candidates)
@@ -184,6 +257,75 @@ def test_app_gesture_listen_reads_nothing_when_already_cancelled(monkeypatch, ca
 
     assert exit_code == 0
     assert "Stopped. Confirmed 0 gesture(s)." in output
+
+
+def test_app_gesture_listen_closed_fist_starts_and_open_palm_sends_voice_command(
+    monkeypatch, capsys
+) -> None:
+    launched: list[str] = []
+    candidates = [
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+    ]
+    adapter = StaticLandmarkAdapter(candidates=candidates)
+    times = iter([0.0, 0.5, 0.6, 1.1])
+    monkeypatch.setattr("sys.argv", ["visionai", "--gesture-listen"])
+    monkeypatch.setattr("visionai.app._build_landmark_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        "visionai.app.TemporalGestureRecognizer",
+        lambda: TemporalGestureRecognizer(min_hold_ms=400, clock=lambda: next(times)),
+    )
+    monkeypatch.setattr("visionai.app._build_microphone_capture", lambda: _FakeMicrophoneCapture())
+    monkeypatch.setattr(
+        "visionai.app._build_transcriber", lambda: (lambda audio: "open notepad")
+    )
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Voice command listening started. Show an open palm to send it." in output
+    assert "Voice command sent." in output
+    assert "Opening notepad." in output
+    assert launched == ["notepad.exe"]
+    assert "Stopped. Confirmed 2 gesture(s)." in output
+
+
+def test_app_gesture_listen_reports_when_voice_capture_is_unavailable(
+    monkeypatch, capsys
+) -> None:
+    candidates = [
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+    ]
+    adapter = StaticLandmarkAdapter(candidates=candidates)
+    times = iter([0.0, 0.5, 0.6, 1.1])
+
+    def _broken_capture() -> object:
+        raise OSError("no microphone device available")
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--gesture-listen"])
+    monkeypatch.setattr("visionai.app._build_landmark_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        "visionai.app.TemporalGestureRecognizer",
+        lambda: TemporalGestureRecognizer(min_hold_ms=400, clock=lambda: next(times)),
+    )
+    monkeypatch.setattr("visionai.app._build_microphone_capture", _broken_capture)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Voice input unavailable: no microphone device available" in output
+    assert "Voice command sent." not in output
+    assert "Stopped. Confirmed 2 gesture(s)." in output
 
 
 def test_app_lists_microphones_without_building_runtime(monkeypatch, capsys) -> None:
