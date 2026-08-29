@@ -62,12 +62,14 @@ Use the same hand and hold each pose briefly:
 | Two fingers plus thumb | Volume hand | Turn volume up |
 
 The classifier recognizes these fixed poses. Five of them route a mapped command
-through the planner and policy engine; open palm also ends `--gesture-listen`'s
-continuous loop on its own. Closed fist instead starts real push-to-talk voice
-capture (`"Voice command listening started..."`) -- hold it, speak your command,
-then show an open palm to send it (`"Voice command sent."`) through the same
-planner and policy path. Mouse movement, scrolling, clicking, and other side
-effects remain disabled until each action has its own policy-gated capability.
+through the planner and policy engine; open palm also ends the continuous
+session on its own, whether that's `--gesture-listen` or the desktop Gesture
+Control button. Closed fist instead starts real push-to-talk voice capture
+(`"Voice command listening started..."`) -- hold it, speak your command, then
+show an open palm to send it (`"Voice command sent."`) through the same
+planner and policy path. This works the same way in both places. Mouse
+movement, scrolling, clicking, and other side effects remain disabled until
+each action has its own policy-gated capability.
 
 Real microphone capture uses the local `faster-whisper` provider when `MicrophonePushToTalk` is created without a custom transcriber. The default is the `base.en` model on CPU with int8 computation; set `VISIONAI_STT_MODEL_SIZE`, `VISIONAI_STT_DEVICE`, or `VISIONAI_STT_COMPUTE_TYPE` before starting VisionAI to change it. The model downloads from Hugging Face on first transcription and stays local afterward.
 
@@ -89,7 +91,7 @@ The Stop button requests cooperative cancellation and stays clickable even while
 
 The Diagnostics button shows a read-only status summary: app/library versions, registered capability count, tray availability, current state, and each input subsystem's status (voice input is still disconnected; camera/vision input is available through the Gesture Control button).
 
-Click "Start Gesture Control" to watch the real webcam for the same hand gestures `--gesture-listen` recognizes (see the cheat sheet above); the button's label live-updates with a running confirmed count and doubles as the stop control -- click it again to cancel, or hold an open palm to stop the session on its own, the same as the console command. A confirmed gesture dispatches through the identical planner/policy/dispatcher path as a typed command, including any confirmation or permission prompt it requires. If no webcam or the `vision` extra is available, the result area reports why rather than the window crashing.
+Click "Start Gesture Control" to watch the real webcam for the same hand gestures `--gesture-listen` recognizes (see the cheat sheet above); the button's label live-updates with a running confirmed count and doubles as the stop control -- click it again to cancel, or hold an open palm to stop the session on its own, the same as the console command. A confirmed gesture dispatches through the identical planner/policy/dispatcher path as a typed command, including any confirmation or permission prompt it requires. If no webcam or the `vision` extra is available, the result area reports why rather than the window crashing. Closed fist and open palm work the same way here as in `--gesture-listen`: closed fist starts real push-to-talk voice capture, and open palm sends it (through the same policy/dispatcher path) before also stopping the session.
 
 The Settings button lets you change the log level (`DEBUG`/`INFO`/`WARNING`/`ERROR`), choose an enumerated microphone device, and edit the wake word. Choices are saved locally; log-level changes apply immediately. Invalid wake words are rejected. If microphone enumeration is unavailable, the default microphone remains available. `log_dir`/`data_dir` remain environment-only (see `.env.example`) since changing a storage path at runtime isn't supported. Settings cannot grant permissions or enable raw audio/camera retention.
 

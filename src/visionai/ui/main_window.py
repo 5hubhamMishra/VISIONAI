@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import traceback
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 import PySide6
@@ -85,9 +85,11 @@ _ONBOARDING_TEXT = (
 )
 
 if TYPE_CHECKING:
+    import numpy as np
     from PySide6.QtGui import QCloseEvent
 
-    from visionai.platform.microphone import MicrophoneDevice
+    from visionai.orchestration.microphone_capture import MicrophonePushToTalk
+    from visionai.platform.microphone import MicrophoneCapture, MicrophoneDevice
     from visionai.platform.webcam import WebcamLandmarkAdapter
 
 
@@ -106,6 +108,22 @@ def _build_landmark_adapter() -> WebcamLandmarkAdapter:
 
 def _build_gesture_cancellation_token() -> CancellationToken:
     return CancellationToken()
+
+
+def _build_microphone_capture() -> MicrophoneCapture:
+    """Mirrors `app._build_microphone_capture`, injectable the same way."""
+
+    from visionai.platform.microphone import default_microphone_capture
+
+    return default_microphone_capture()
+
+
+def _build_transcriber() -> Callable[[np.ndarray], str]:
+    """Mirrors `app._build_transcriber`, injectable the same way."""
+
+    from visionai.platform.stt import default_transcriber
+
+    return default_transcriber()
 
 
 class _RuntimeWorker(QObject):
@@ -202,6 +220,8 @@ class _GestureListenWorker(QObject):
         self._landmark_adapter = landmark_adapter
         self._recognizer = recognizer
         self._cancellation = cancellation
+        self._session_input = InputAdapter(EventBus(max_size=100))
+        self._voice_runner: MicrophonePushToTalk | None = None
 
     @Slot()
     def run(self) -> None:
@@ -217,11 +237,10 @@ class _GestureListenWorker(QObject):
         self.finished.emit(confirmed)
 
     async def _run_session(self) -> int:
-        session_input = InputAdapter(EventBus(max_size=100))
         capture = GestureCaptureLoop(
             landmark_adapter=self._landmark_adapter,
             recognizer=self._recognizer,
-            input_adapter=session_input,
+            input_adapter=self._session_input,
         )
         listening_loop = GestureListeningLoop(
             capture=capture,
@@ -229,20 +248,71 @@ class _GestureListenWorker(QObject):
             stop_gesture_id="open_palm",
             on_confirmed=self._on_confirmed,
         )
-        return await listening_loop.run()
+        try:
+            return await listening_loop.run()
+        finally:
+            # Mirrors app._run_gesture_listen's finally block: if the session
+            # ends some other way (e.g. the button cancels it) while voice
+            # capture is still open, send what was captured rather than
+            # discarding it silently.
+            if self._voice_runner is not None:
+                await self._send_voice_capture()
+
+    async def _dispatch(self, event: EventBase) -> ActionResult | None:
+        """Run one event through the real orchestrator and return its result, if any.
+
+        Used for both a confirmed `GestureEvent` and a sent voice
+        `TranscriptEvent`. `process_event()` publishes to the *real* shared
+        `runtime.output_bus` (the same bus `_process_runtime_text`'s
+        `_drain_runtime_outputs` reads), so this drains it immediately
+        rather than only at session end -- otherwise a result could sit in
+        the bus and leak into an unrelated later typed command's rendered
+        result as a stale `ActionResult`.
+        """
+
+        await self._runtime.orchestrator.process_event(event)
+        outputs = await _drain_runtime_outputs(self._runtime)
+        return next((o for o in outputs if isinstance(o, ActionResult)), None)
 
     async def _on_confirmed(self, event: GestureEvent) -> None:
-        await self._runtime.orchestrator.process_event(event)
-        # process_event() publishes to the *real* shared runtime.output_bus
-        # (same bus _process_runtime_text's _drain_runtime_outputs reads).
-        # Draining it here, not just at session end, keeps a gesture's
-        # result from sitting in the bus and leaking into the next
-        # unrelated typed command's _render_result() as a stale ActionResult.
-        outputs = await _drain_runtime_outputs(self._runtime)
+        if event.gesture_id == "closed_fist" and self._voice_runner is None:
+            await self._start_voice_capture()
+        elif event.gesture_id == "open_palm" and self._voice_runner is not None:
+            await self._send_voice_capture()
+
+        result = await self._dispatch(event)
         self.gesture_confirmed.emit(event.gesture_id)
-        result = next((o for o in outputs if isinstance(o, ActionResult)), None)
         if result is not None:
             self.dispatched.emit(result.message)
+
+    async def _start_voice_capture(self) -> None:
+        try:
+            from visionai.orchestration.microphone_capture import MicrophonePushToTalk
+
+            self._voice_runner = MicrophonePushToTalk(
+                input_adapter=self._session_input,
+                capture=_build_microphone_capture(),
+                transcribe=_build_transcriber(),
+            )
+            self._voice_runner.press()
+            self.dispatched.emit("Voice command listening started. Show an open palm to send it.")
+        except (ImportError, OSError, RuntimeError, ValueError) as exc:
+            self._voice_runner = None
+            self.dispatched.emit(f"Voice input unavailable: {exc}")
+
+    async def _send_voice_capture(self) -> None:
+        voice_runner, self._voice_runner = self._voice_runner, None
+        if voice_runner is None:
+            return
+        transcript = await voice_runner.release()
+        if transcript is None or not transcript.text.strip():
+            self.dispatched.emit("No speech recognized.")
+            return
+        result = await self._dispatch(transcript)
+        if result is not None:
+            self.dispatched.emit(result.message)
+        else:
+            self.dispatched.emit(f'Voice command sent: "{transcript.text.strip()}"')
 
 
 class _SettingsDialog(QDialog):

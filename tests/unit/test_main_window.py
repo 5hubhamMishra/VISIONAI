@@ -386,6 +386,90 @@ def test_main_window_gesture_button_reports_unavailable_webcam(
     assert window._gesture_button.text() == "Start Gesture Control"
 
 
+class _FakeMicrophoneCapture:
+    """No real hardware: `stop()` returns nothing meaningful, since `transcribe` is faked too."""
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        return None
+
+
+def test_main_window_gesture_button_closed_fist_starts_and_open_palm_sends_voice_command(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    candidates = [
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+    ]
+    times = iter([0.0, 0.5, 0.6, 1.1])
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_landmark_adapter",
+        lambda: StaticLandmarkAdapter(candidates=candidates),
+    )
+    monkeypatch.setattr(
+        "visionai.ui.main_window.TemporalGestureRecognizer",
+        lambda: TemporalGestureRecognizer(min_hold_ms=400, clock=lambda: next(times)),
+    )
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_microphone_capture", lambda: _FakeMicrophoneCapture()
+    )
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_transcriber", lambda: (lambda audio: "open notepad")
+    )
+
+    qtbot.mouseClick(window._gesture_button, Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(lambda: window._gesture_thread is None, timeout=5000)
+
+    assert launched == ["notepad.exe"]
+    assert window._output.toPlainText() == "Gesture control stopped. 2 gesture(s) confirmed."
+    assert window._history.count() >= 1
+
+
+def test_main_window_gesture_button_reports_when_voice_capture_is_unavailable(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    candidates = [
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+    ]
+    times = iter([0.0, 0.5, 0.6, 1.1])
+
+    def _broken_capture() -> object:
+        raise OSError("no microphone device available")
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_landmark_adapter",
+        lambda: StaticLandmarkAdapter(candidates=candidates),
+    )
+    monkeypatch.setattr(
+        "visionai.ui.main_window.TemporalGestureRecognizer",
+        lambda: TemporalGestureRecognizer(min_hold_ms=400, clock=lambda: next(times)),
+    )
+    monkeypatch.setattr("visionai.ui.main_window._build_microphone_capture", _broken_capture)
+
+    qtbot.mouseClick(window._gesture_button, Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(lambda: window._gesture_thread is None, timeout=5000)
+
+    assert launched == []
+    assert window._output.toPlainText() == "Gesture control stopped. 2 gesture(s) confirmed."
+
+
 def test_main_window_and_children_inherit_native_os_theming(qtbot: Any) -> None:
     """No widget hardcodes its own colors -- contrast comes from the OS theme.
 
