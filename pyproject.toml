@@ -49,6 +49,7 @@ vision = [
 ]
 intelligence = [
     "anthropic>=1.2,<2",
+    "keyring>=25,<26",
 ]
 
 [project.scripts]

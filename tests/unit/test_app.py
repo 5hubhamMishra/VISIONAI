@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from visionai import app
+from visionai.config.secrets import InMemorySecretStore
 from visionai.config.user_settings import UserSettingsStore
 from visionai.core.cancellation import CancellationToken
 from visionai.platform.camera import GestureCandidate, LandmarkAdapter, StaticLandmarkAdapter
@@ -359,6 +360,66 @@ def test_app_reports_microphone_listing_failure(monkeypatch, capsys) -> None:
 
     assert exit_code == 1
     assert "Could not list microphones: audio backend unavailable" in output
+
+
+def test_app_set_api_key_stores_it_in_the_keychain(monkeypatch, capsys) -> None:
+    store = InMemorySecretStore()
+    monkeypatch.setattr("sys.argv", ["visionai", "--set-api-key"])
+    monkeypatch.setattr("getpass.getpass", lambda prompt: "sk-ant-fake-key")
+    monkeypatch.setattr("visionai.app.default_secret_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "API key stored in the OS keychain." in output
+    assert store.get("anthropic_api_key") == "sk-ant-fake-key"
+
+
+def test_app_set_api_key_stores_nothing_for_empty_input(monkeypatch, capsys) -> None:
+    store = InMemorySecretStore()
+    monkeypatch.setattr("sys.argv", ["visionai", "--set-api-key"])
+    monkeypatch.setattr("getpass.getpass", lambda prompt: "   ")
+    monkeypatch.setattr("visionai.app.default_secret_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "No key entered. Nothing stored." in output
+    assert store.get("anthropic_api_key") is None
+
+
+def test_app_set_api_key_cancelled_stores_nothing(monkeypatch, capsys) -> None:
+    store = InMemorySecretStore()
+
+    def _interrupted(prompt: str) -> str:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--set-api-key"])
+    monkeypatch.setattr("getpass.getpass", _interrupted)
+    monkeypatch.setattr("visionai.app.default_secret_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Cancelled." in output
+    assert store.get("anthropic_api_key") is None
+
+
+def test_app_delete_api_key_removes_it(monkeypatch, capsys) -> None:
+    store = InMemorySecretStore()
+    store.set("anthropic_api_key", "sk-ant-fake-key")
+    monkeypatch.setattr("sys.argv", ["visionai", "--delete-api-key"])
+    monkeypatch.setattr("visionai.app.default_secret_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "API key removed from the OS keychain, if it was there." in output
+    assert store.get("anthropic_api_key") is None
 
 
 def test_app_ask_uses_the_fallback_by_default_and_builds_no_runtime(monkeypatch, capsys) -> None:

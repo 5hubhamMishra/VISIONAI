@@ -49,6 +49,7 @@ from visionai.config import (
     default_user_settings_store,
     effective_log_level,
     get_settings,
+    resolve_anthropic_api_key,
 )
 from visionai.config.settings import LogLevel
 from visionai.config.user_settings import UserSettingsStore, effective_wake_word
@@ -146,11 +147,13 @@ def _build_llm_provider() -> LLMProvider:
 
     from visionai.intelligence.anthropic_provider import AnthropicProvider
 
-    if settings.anthropic_api_key is None:
-        raise ValueError("VISIONAI_ANTHROPIC_API_KEY is not set")
-    return AnthropicProvider(
-        api_key=settings.anthropic_api_key.get_secret_value(), model=settings.llm_model
-    )
+    api_key = resolve_anthropic_api_key(settings)
+    if api_key is None:
+        raise ValueError(
+            "No Anthropic API key found. Set VISIONAI_ANTHROPIC_API_KEY or store one "
+            "with `visionai --set-api-key`."
+        )
+    return AnthropicProvider(api_key=api_key, model=settings.llm_model)
 
 
 class _RuntimeWorker(QObject):

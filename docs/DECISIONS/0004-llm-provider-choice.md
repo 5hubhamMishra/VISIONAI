@@ -98,3 +98,7 @@ than needing dedicated tests yet.
 - If OS keychain storage is added later, `Settings.anthropic_api_key` is the field to
   migrate off env-only reading; revisit this decision at that point rather than treating
   env-var-only as permanent.
+  - **Done.** See `docs/DECISIONS/0005-os-keychain-secret-storage.md`: env-var reading
+    is unchanged (still wins if set), and `visionai.config.secrets.
+    resolve_anthropic_api_key()` adds a Windows Credential Manager fallback via the
+    `keyring` package.

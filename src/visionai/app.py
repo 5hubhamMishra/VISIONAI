@@ -4,16 +4,23 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import getpass
 import threading
 from collections.abc import AsyncIterator, Callable, Sequence
 from typing import TYPE_CHECKING, Protocol, cast
 
 from pydantic import ValidationError
 
-from visionai.config import default_user_settings_store, effective_log_level, get_settings
+from visionai.config import (
+    default_secret_store,
+    default_user_settings_store,
+    effective_log_level,
+    get_settings,
+    resolve_anthropic_api_key,
+)
 from visionai.config.user_settings import effective_wake_word
 from visionai.core.cancellation import CancellationToken
-from visionai.core.errors import ProviderError
+from visionai.core.errors import ProviderError, StorageError
 from visionai.core.events import ActionPlan, ActionRequest, ActionResult, EventBase, GestureEvent
 from visionai.intelligence import (
     DeterministicFallbackProvider,
@@ -86,11 +93,13 @@ def _build_llm_provider() -> LLMProvider:
 
     from visionai.intelligence.anthropic_provider import AnthropicProvider
 
-    if settings.anthropic_api_key is None:
-        raise ValueError("VISIONAI_ANTHROPIC_API_KEY is not set")
-    return AnthropicProvider(
-        api_key=settings.anthropic_api_key.get_secret_value(), model=settings.llm_model
-    )
+    api_key = resolve_anthropic_api_key(settings)
+    if api_key is None:
+        raise ValueError(
+            "No Anthropic API key found. Set VISIONAI_ANTHROPIC_API_KEY or store one "
+            "with `visionai --set-api-key`."
+        )
+    return AnthropicProvider(api_key=api_key, model=settings.llm_model)
 
 
 async def _continuous_transcripts(
@@ -357,7 +366,43 @@ def main() -> int:
         default=None,
         help="Ask the LLM to propose a command, then ask before dispatching it.",
     )
+    parser.add_argument(
+        "--set-api-key",
+        action="store_true",
+        help="Store an Anthropic API key in the OS keychain (prompts, hidden input).",
+    )
+    parser.add_argument(
+        "--delete-api-key",
+        action="store_true",
+        help="Remove any Anthropic API key stored in the OS keychain.",
+    )
     args = parser.parse_args()
+
+    if args.set_api_key:
+        try:
+            key = getpass.getpass("Anthropic API key: ")
+        except (EOFError, KeyboardInterrupt):
+            print("Cancelled.")
+            return 0
+        if not key.strip():
+            print("No key entered. Nothing stored.")
+            return 1
+        try:
+            default_secret_store().set("anthropic_api_key", key.strip())
+        except (ImportError, StorageError) as exc:
+            print(f"Could not store the key: {exc}")
+            return 1
+        print("API key stored in the OS keychain.")
+        return 0
+
+    if args.delete_api_key:
+        try:
+            default_secret_store().delete("anthropic_api_key")
+        except (ImportError, StorageError) as exc:
+            print(f"Could not remove the key: {exc}")
+            return 1
+        print("API key removed from the OS keychain, if it was there.")
+        return 0
 
     if args.ask is not None:
         try:

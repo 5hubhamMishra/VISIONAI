@@ -19,11 +19,13 @@
 # releases drop the offline `solutions.hands` API this module depends on.
 
 # --- Intelligence (Phase 6) ---
-# Provider boundary + one real cloud provider (Anthropic, official SDK) now
-# implemented -- see requirements/intelligence.txt and
-# visionai.intelligence. `visionai --ask` is conversation-only: no
-# structured action planning, clarification, or conversation
-# retention/memory yet, and no OS-keychain secret storage (env var only,
-# same as every other secret-shaped value in this project today). A
-# local/offline provider remains out of scope; `LLMProvider` is
-# provider-agnostic so one can be added later with no interface change.
+# Provider boundary, one real cloud provider (Anthropic, official SDK),
+# LLM-proposed commands with real confirm-then-dispatch execution (CLI and
+# desktop UI), and OS keychain secret storage (Windows Credential Manager
+# via keyring, in addition to the env var) are all now implemented -- see
+# requirements/intelligence.txt and visionai.intelligence /
+# visionai.config.secrets. Still out of scope: conversation memory/
+# retention, a local/offline provider (`LLMProvider` is provider-agnostic
+# so one can be added later with no interface change), and a live
+# prompt-injection test suite against a real LLM (Section 17 -- the
+# existing tests only cover fake-provider unit behavior).
