@@ -51,16 +51,22 @@ from visionai.config import (
 )
 from visionai.config.settings import LogLevel
 from visionai.config.user_settings import UserSettingsStore, effective_wake_word
+from visionai.core.cancellation import CancellationToken
+from visionai.core.event_bus import EventBus
 from visionai.core.events import (
     ActionPlan,
     ActionResult,
     ConfirmationRequest,
     ErrorEvent,
     EventBase,
+    GestureEvent,
     PermissionRequest,
     TranscriptEvent,
 )
 from visionai.observability import configure_logging
+from visionai.orchestration.event_orchestrator import InputAdapter
+from visionai.platform.camera import LandmarkAdapter
+from visionai.recognition import GestureCaptureLoop, GestureListeningLoop, TemporalGestureRecognizer
 from visionai.runtime import Runtime, build_runtime
 
 _LOG_LEVELS: tuple[LogLevel, ...] = ("DEBUG", "INFO", "WARNING", "ERROR")
@@ -73,13 +79,33 @@ _ONBOARDING_TEXT = (
     "- Actions with side effects ask you to confirm each time, showing exactly "
     "what will happen.\n\n"
     "Use Stop to cancel a running action, Diagnostics to check runtime status, "
-    "and Settings to change the log level. This dialog only shows once."
+    "and Settings to change the log level. Gesture Control watches your webcam "
+    "and dispatches recognized hand gestures through those same safety checks. "
+    "This dialog only shows once."
 )
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QCloseEvent
 
     from visionai.platform.microphone import MicrophoneDevice
+    from visionai.platform.webcam import WebcamLandmarkAdapter
+
+
+def _build_landmark_adapter() -> WebcamLandmarkAdapter:
+    """Build the real webcam/mediapipe adapter, mirroring `app._build_landmark_adapter`.
+
+    A free module-level function (not inlined) so tests can inject a
+    `StaticLandmarkAdapter` the same way `visionai.app`'s tests do, with no
+    real camera or the `vision` extra required.
+    """
+
+    from visionai.platform.webcam import WebcamLandmarkAdapter
+
+    return WebcamLandmarkAdapter()
+
+
+def _build_gesture_cancellation_token() -> CancellationToken:
+    return CancellationToken()
 
 
 class _RuntimeWorker(QObject):
@@ -144,6 +170,79 @@ async def _drain_runtime_outputs(runtime: Runtime) -> list[EventBase]:
     while runtime.output_bus.size:
         outputs.append(await runtime.output_bus.next_event())
     return outputs
+
+
+class _GestureListenWorker(QObject):
+    """Run a continuous `GestureListeningLoop` off the GUI thread.
+
+    Mirrors `app._run_gesture_listen`'s worker-thread/asyncio session shape:
+    a real camera has no natural end, so this only ever stops via the
+    `CancellationToken` the caller cancels (the Gesture Control button, or
+    the loop's own "open_palm" stop gesture). Confirmed gestures still only
+    ever reach the runtime as a `GestureEvent` through the real
+    `InputAdapter`/orchestrator/dispatcher path -- this worker adds no
+    planning or dispatch logic of its own, same as `_RuntimeWorker`.
+    """
+
+    gesture_confirmed = Signal(str)
+    dispatched = Signal(str)
+    finished = Signal(int)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        *,
+        runtime: Runtime,
+        landmark_adapter: LandmarkAdapter,
+        recognizer: TemporalGestureRecognizer,
+        cancellation: CancellationToken,
+    ) -> None:
+        super().__init__()
+        self._runtime = runtime
+        self._landmark_adapter = landmark_adapter
+        self._recognizer = recognizer
+        self._cancellation = cancellation
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            confirmed = asyncio.run(self._run_session())
+        except Exception as exc:  # pragma: no cover - defensive GUI boundary
+            self.failed.emit("".join(traceback.format_exception(exc)))
+            return
+        finally:
+            close = getattr(self._landmark_adapter, "close", None)
+            if close is not None:
+                close()
+        self.finished.emit(confirmed)
+
+    async def _run_session(self) -> int:
+        session_input = InputAdapter(EventBus(max_size=100))
+        capture = GestureCaptureLoop(
+            landmark_adapter=self._landmark_adapter,
+            recognizer=self._recognizer,
+            input_adapter=session_input,
+        )
+        listening_loop = GestureListeningLoop(
+            capture=capture,
+            cancellation=self._cancellation,
+            stop_gesture_id="open_palm",
+            on_confirmed=self._on_confirmed,
+        )
+        return await listening_loop.run()
+
+    async def _on_confirmed(self, event: GestureEvent) -> None:
+        await self._runtime.orchestrator.process_event(event)
+        # process_event() publishes to the *real* shared runtime.output_bus
+        # (same bus _process_runtime_text's _drain_runtime_outputs reads).
+        # Draining it here, not just at session end, keeps a gesture's
+        # result from sitting in the bus and leaking into the next
+        # unrelated typed command's _render_result() as a stale ActionResult.
+        outputs = await _drain_runtime_outputs(self._runtime)
+        self.gesture_confirmed.emit(event.gesture_id)
+        result = next((o for o in outputs if isinstance(o, ActionResult)), None)
+        if result is not None:
+            self.dispatched.emit(result.message)
 
 
 class _SettingsDialog(QDialog):
@@ -224,6 +323,10 @@ class MainWindow(QMainWindow):
         self._settings_store = settings_store or default_user_settings_store()
         self._worker_thread: QThread | None = None
         self._worker: _RuntimeWorker | None = None
+        self._gesture_thread: QThread | None = None
+        self._gesture_worker: _GestureListenWorker | None = None
+        self._gesture_cancellation: CancellationToken | None = None
+        self._gesture_confirmed_count = 0
         self.setWindowTitle("VisionAI")
 
         self._status_label = QLabel(self._runtime.state_machine.state.name)
@@ -243,6 +346,12 @@ class MainWindow(QMainWindow):
         self._diagnostics_button.setAccessibleName("Show diagnostics")
         self._settings_button = QPushButton("Settings")
         self._settings_button.setAccessibleName("Show settings")
+        self._gesture_button = QPushButton("Start Gesture Control")
+        self._gesture_button.setAccessibleName("Toggle gesture control")
+        self._gesture_button.setToolTip(
+            "Watch the webcam for hand gestures and dispatch their mapped commands "
+            "through the same policy and confirmation checks as typed commands"
+        )
 
         self._output = QTextEdit()
         self._output.setReadOnly(True)
@@ -258,6 +367,7 @@ class MainWindow(QMainWindow):
         input_row.addWidget(self._stop_button)
         input_row.addWidget(self._diagnostics_button)
         input_row.addWidget(self._settings_button)
+        input_row.addWidget(self._gesture_button)
 
         result_label = QLabel("Result:")
         result_label.setBuddy(self._output)
@@ -281,6 +391,7 @@ class MainWindow(QMainWindow):
         self._stop_button.clicked.connect(self.stop_current_operation)
         self._diagnostics_button.clicked.connect(self.show_diagnostics)
         self._settings_button.clicked.connect(self.show_settings)
+        self._gesture_button.clicked.connect(self.toggle_gesture_listening)
         self._refresh_history()
         self._command_input.setFocus()
 
@@ -440,7 +551,7 @@ class MainWindow(QMainWindow):
             f"System tray: {tray_status}",
             f"State: {self._runtime.state_machine.state.name}",
             "Voice input: not connected (Phase 3 not started)",
-            "Camera/vision input: not connected (Phase 5 not started)",
+            "Camera/vision input: available via the Gesture Control button (needs a webcam)",
             "Speech/vision processing: local only (no cloud provider configured)",
         ]
         return "\n".join(lines)
@@ -473,6 +584,86 @@ class MainWindow(QMainWindow):
         self._command_input.setEnabled(False)
         self._run_button.setEnabled(False)
         self._start_worker(text=text)
+
+    def toggle_gesture_listening(self) -> None:
+        """Start or stop continuous webcam gesture recognition.
+
+        A confirmed gesture reaches the runtime exactly the way a typed
+        command does -- the same `TextCommandPlanner`/policy/dispatcher
+        path, gated by the same confirmation and permission prompts this
+        window already shows -- so gesture recognition carries no extra
+        authority. Runs independently of the text-command worker: dispatch
+        is already safe under concurrent callers (see `PROJECT_STATE.md`'s
+        `StateMachine`/rate-limiter thread-safety fixes), so Run/Stop stay
+        usable while gesture control is listening.
+        """
+
+        if self._gesture_thread is not None:
+            if self._gesture_cancellation is not None:
+                self._gesture_cancellation.cancel()
+            self._gesture_button.setEnabled(False)
+            self._gesture_button.setText("Stopping...")
+            return
+
+        try:
+            landmark_adapter = _build_landmark_adapter()
+        except (ImportError, OSError, RuntimeError, ValueError) as exc:
+            self._output.setPlainText(f"Gesture control unavailable: {exc}")
+            return
+
+        self._gesture_confirmed_count = 0
+        self._gesture_cancellation = _build_gesture_cancellation_token()
+        thread = QThread(self)
+        worker = _GestureListenWorker(
+            runtime=self._runtime,
+            landmark_adapter=landmark_adapter,
+            recognizer=TemporalGestureRecognizer(),
+            cancellation=self._gesture_cancellation,
+        )
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.gesture_confirmed.connect(self._on_gesture_confirmed)
+        worker.dispatched.connect(self._on_gesture_dispatched)
+        worker.finished.connect(self._on_gesture_finished)
+        worker.failed.connect(self._on_gesture_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        self._gesture_thread = thread
+        self._gesture_worker = worker
+        thread.start()
+        self._gesture_button.setText("Stop Gesture Control (0 confirmed)")
+
+    def _on_gesture_confirmed(self, gesture_id: str) -> None:
+        self._gesture_confirmed_count += 1
+        self._gesture_button.setText(
+            f"Stop Gesture Control ({self._gesture_confirmed_count} confirmed)"
+        )
+        self._status_label.setText(self._runtime.state_machine.state.name)
+
+    def _on_gesture_dispatched(self, message: str) -> None:
+        self._output.setPlainText(message)
+        self._refresh_history()
+        self._status_label.setText(self._runtime.state_machine.state.name)
+
+    def _on_gesture_finished(self, confirmed: int) -> None:
+        self._gesture_thread = None
+        self._gesture_worker = None
+        self._gesture_cancellation = None
+        self._gesture_button.setText("Start Gesture Control")
+        self._gesture_button.setEnabled(True)
+        self._output.setPlainText(f"Gesture control stopped. {confirmed} gesture(s) confirmed.")
+        self._status_label.setText(self._runtime.state_machine.state.name)
+        self._refresh_history()
+
+    def _on_gesture_failed(self, message: str) -> None:
+        self._gesture_thread = None
+        self._gesture_worker = None
+        self._gesture_cancellation = None
+        self._gesture_button.setText("Start Gesture Control")
+        self._gesture_button.setEnabled(True)
+        self._output.setPlainText(f"Gesture control error: {message}")
 
     def _start_worker(
         self,

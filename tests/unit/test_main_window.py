@@ -20,6 +20,7 @@ from visionai.core.events import (
 from visionai.core.state import StateMachine
 from visionai.observability import InMemoryAuditSink
 from visionai.orchestration.event_orchestrator import EventOrchestrator
+from visionai.platform.camera import GestureCandidate, StaticLandmarkAdapter
 from visionai.policy import (
     ConfirmationService,
     FixedWindowRateLimiter,
@@ -27,6 +28,7 @@ from visionai.policy import (
     PolicyContext,
     PolicyEngine,
 )
+from visionai.recognition import TemporalGestureRecognizer
 from visionai.runtime import build_runtime
 from visionai.ui.main_window import MainWindow, _SettingsDialog
 
@@ -306,6 +308,84 @@ def test_main_window_stop_button_can_cancel_while_worker_is_running(qtbot: Any) 
     assert window._run_button.isEnabled() is True
 
 
+def test_main_window_gesture_button_dispatches_mapped_command_and_stops_on_open_palm(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    candidates = [
+        GestureCandidate(gesture_id="thumbs_up", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="thumbs_up", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+    ]
+    times = iter([0.0, 0.5, 0.6, 1.1])
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_landmark_adapter",
+        lambda: StaticLandmarkAdapter(candidates=candidates),
+    )
+    monkeypatch.setattr(
+        "visionai.ui.main_window.TemporalGestureRecognizer",
+        lambda: TemporalGestureRecognizer(clock=lambda: next(times)),
+    )
+
+    qtbot.mouseClick(window._gesture_button, Qt.MouseButton.LeftButton)
+    assert window._gesture_thread is not None
+
+    qtbot.waitUntil(lambda: window._gesture_thread is None, timeout=5000)
+
+    assert launched == ["notepad.exe"]
+    assert window._output.toPlainText() == "Gesture control stopped. 2 gesture(s) confirmed."
+    assert window._gesture_button.text() == "Start Gesture Control"
+    assert window._gesture_button.isEnabled() is True
+    assert window._history.count() >= 1
+
+
+def test_main_window_gesture_button_can_be_cancelled_mid_session(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_landmark_adapter",
+        lambda: StaticLandmarkAdapter(candidates=[]),
+    )
+
+    qtbot.mouseClick(window._gesture_button, Qt.MouseButton.LeftButton)
+    assert window._gesture_thread is not None
+
+    qtbot.mouseClick(window._gesture_button, Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(lambda: window._gesture_thread is None, timeout=5000)
+
+    assert window._output.toPlainText() == "Gesture control stopped. 0 gesture(s) confirmed."
+    assert window._gesture_button.text() == "Start Gesture Control"
+    assert window._gesture_button.isEnabled() is True
+
+
+def test_main_window_gesture_button_reports_unavailable_webcam(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    def _broken_adapter() -> object:
+        raise ImportError("mediapipe is not installed")
+
+    monkeypatch.setattr("visionai.ui.main_window._build_landmark_adapter", _broken_adapter)
+
+    qtbot.mouseClick(window._gesture_button, Qt.MouseButton.LeftButton)
+
+    assert window._gesture_thread is None
+    assert window._output.toPlainText() == "Gesture control unavailable: mediapipe is not installed"
+    assert window._gesture_button.text() == "Start Gesture Control"
+
+
 def test_main_window_and_children_inherit_native_os_theming(qtbot: Any) -> None:
     """No widget hardcodes its own colors -- contrast comes from the OS theme.
 
@@ -345,7 +425,7 @@ def test_main_window_diagnostics_text_reports_environment_and_state(qtbot: Any) 
     assert "Registered capabilities: 0" not in text
     assert "State: IDLE" in text
     assert "Voice input: not connected" in text
-    assert "Camera/vision input: not connected" in text
+    assert "Camera/vision input: available via the Gesture Control button" in text
 
 
 def test_main_window_diagnostics_button_opens_a_dialog(qtbot: Any, monkeypatch: Any) -> None:
@@ -515,6 +595,7 @@ def test_main_window_tab_order_reaches_every_control_without_a_trap(qtbot: Any) 
         window._stop_button,
         window._diagnostics_button,
         window._settings_button,
+        window._gesture_button,
         window._output,
         window._history,
         window._command_input,
@@ -534,6 +615,7 @@ def test_main_window_tab_order_reverses_cleanly_with_shift_tab(qtbot: Any) -> No
     expected_reverse_order = [
         window._history,
         window._output,
+        window._gesture_button,
         window._settings_button,
         window._diagnostics_button,
         window._stop_button,
