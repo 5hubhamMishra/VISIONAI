@@ -355,7 +355,7 @@ def main() -> int:
     parser.add_argument(
         "--suggest",
         default=None,
-        help="Ask the LLM to propose a command for free text. Prints it -- never dispatches it.",
+        help="Ask the LLM to propose a command, then ask before dispatching it.",
     )
     args = parser.parse_args()
 
@@ -444,8 +444,16 @@ def main() -> int:
             print("No matching command found.")
             return 0
         print(f"Proposed: {plan.summary}")
-        print(f'Not executed. Run visionai --text "{phrase}" to do this for real.')
-        return 0
+        try:
+            answer = input("Execute this command? [y/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if answer not in {"y", "yes"}:
+            print("Cancelled.")
+            return 0
+        result = runtime.dispatcher.dispatch(plan.steps[0], runtime.policy_context_factory())
+        print(result.message)
+        return 0 if result.success else 1
     if args.text is not None:
         _intent, plan = runtime.planner.plan(args.text)
         if not plan.steps:

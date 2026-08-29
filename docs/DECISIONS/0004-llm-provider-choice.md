@@ -82,6 +82,19 @@ than needing dedicated tests yet.
   proposed plan, prompt/indirect-injection tests (Section 17), and an explicit
   confirmation surface -- none of which this slice needs, since it has no dispatch path
   to defend.
+  - **Done, same session.** `visionai.intelligence.planner.suggest_command()` is the
+    schema-validated layer (its output is always re-checked against
+    `orchestration.text_planner.reviewed_phrases()`, never trusted from the LLM's raw
+    reply -- covered in `tests/unit/test_command_suggestion.py`, including a
+    hallucinated-phrase-outside-the-menu case standing in for a prompt-injection
+    attempt), and `--suggest` gained the confirmation surface: a genuine
+    `input("Execute this command? [y/N]: ")` question, never anything derived from the
+    LLM's own output, gates the exact same unmodified `runtime.dispatcher.dispatch()`
+    call `--text` already uses -- covered by
+    `test_app_suggest_requires_confirmation_before_dispatch` (approve) and
+    `test_app_suggest_cancel_does_not_dispatch` (decline). A capability still needing
+    its own permission grant or fresh confirmation is denied by that unmodified policy
+    check regardless of this new human question, exactly as `--text` already behaves.
 - If OS keychain storage is added later, `Settings.anthropic_api_key` is the field to
   migrate off env-only reading; revisit this decision at that point rather than treating
   env-var-only as permanent.

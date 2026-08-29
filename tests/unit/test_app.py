@@ -421,7 +421,7 @@ def test_app_suggest_uses_the_fallback_by_default(monkeypatch, capsys) -> None:
     assert launched == []
 
 
-def test_app_suggest_prints_a_proposal_and_dispatches_nothing(monkeypatch, capsys) -> None:
+def test_app_suggest_requires_confirmation_before_dispatch(monkeypatch, capsys) -> None:
     launched: list[str] = []
 
     class _FakeProvider:
@@ -435,13 +435,38 @@ def test_app_suggest_prints_a_proposal_and_dispatches_nothing(monkeypatch, capsy
     monkeypatch.setattr(
         "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
     )
+    monkeypatch.setattr("builtins.input", lambda _: "yes")
 
     exit_code = app.main()
     output = capsys.readouterr().out
 
     assert exit_code == 0
     assert "Proposed: Open notepad." in output
-    assert 'Not executed. Run visionai --text "open notepad" to do this for real.' in output
+    assert "Opening notepad." in output
+    assert launched == ["notepad.exe"]
+
+
+def test_app_suggest_cancel_does_not_dispatch(monkeypatch, capsys) -> None:
+    launched: list[str] = []
+
+    class _FakeProvider:
+        def respond(self, query: object) -> object:
+            from visionai.intelligence import LLMReply
+
+            return LLMReply(text="open notepad")
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--suggest", "can you open notepad"])
+    monkeypatch.setattr("visionai.app._build_llm_provider", lambda: _FakeProvider())
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
+    )
+    monkeypatch.setattr("builtins.input", lambda _: "no")
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Cancelled." in output
     assert launched == []
 
 
