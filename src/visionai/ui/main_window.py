@@ -21,6 +21,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 import PySide6
+from pydantic import ValidationError
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication,
@@ -52,6 +53,7 @@ from visionai.config import (
 from visionai.config.settings import LogLevel
 from visionai.config.user_settings import UserSettingsStore, effective_wake_word
 from visionai.core.cancellation import CancellationToken
+from visionai.core.errors import ProviderError
 from visionai.core.event_bus import EventBus
 from visionai.core.events import (
     ActionPlan,
@@ -62,6 +64,12 @@ from visionai.core.events import (
     GestureEvent,
     PermissionRequest,
     TranscriptEvent,
+)
+from visionai.intelligence import (
+    DeterministicFallbackProvider,
+    LLMProvider,
+    LLMQuery,
+    suggest_command,
 )
 from visionai.observability import configure_logging
 from visionai.orchestration.event_orchestrator import InputAdapter
@@ -81,7 +89,10 @@ _ONBOARDING_TEXT = (
     "Use Stop to cancel a running action, Diagnostics to check runtime status, "
     "and Settings to change the log level. Gesture Control watches your webcam "
     "and dispatches recognized hand gestures through those same safety checks. "
-    "This dialog only shows once."
+    "Ask AI sends a question to a configured LLM provider (off by default) and "
+    "only shows the answer; Suggest Command asks the LLM to propose a command "
+    "and still asks you to confirm before running anything. This dialog only "
+    "shows once."
 )
 
 if TYPE_CHECKING:
@@ -124,6 +135,22 @@ def _build_transcriber() -> Callable[[np.ndarray], str]:
     from visionai.platform.stt import default_transcriber
 
     return default_transcriber()
+
+
+def _build_llm_provider() -> LLMProvider:
+    """Mirrors `app._build_llm_provider`, injectable the same way."""
+
+    settings = get_settings()
+    if settings.llm_provider == "none":
+        return DeterministicFallbackProvider()
+
+    from visionai.intelligence.anthropic_provider import AnthropicProvider
+
+    if settings.anthropic_api_key is None:
+        raise ValueError("VISIONAI_ANTHROPIC_API_KEY is not set")
+    return AnthropicProvider(
+        api_key=settings.anthropic_api_key.get_secret_value(), model=settings.llm_model
+    )
 
 
 class _RuntimeWorker(QObject):
@@ -315,6 +342,131 @@ class _GestureListenWorker(QObject):
             self.dispatched.emit(f'Voice command sent: "{transcript.text.strip()}"')
 
 
+class _AskWorker(QObject):
+    """Send one question to the configured LLM provider, off the GUI thread.
+
+    Mirrors `_RuntimeWorker`'s shape but never touches the orchestrator or
+    dispatcher at all -- an LLM reply here is only ever shown, never parsed
+    as a command, matching `app.py`'s `--ask`.
+    """
+
+    finished = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, *, text: str) -> None:
+        super().__init__()
+        self._text = text
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            provider = _build_llm_provider()
+            reply = provider.respond(LLMQuery(text=self._text))
+        except (ImportError, ValueError, ProviderError, ValidationError) as exc:
+            self.failed.emit(f"Could not get an answer: {exc}")
+            return
+        self.finished.emit(reply.text)
+
+
+class _SuggestWorker(QObject):
+    """Propose an LLM-mapped command, or dispatch an already-confirmed one.
+
+    Mirrors `_RuntimeWorker`'s multi-mode-via-constructor shape: `text` (the
+    free-text request) drives the propose phase; `phrase` (an
+    already-reviewed phrase the user has already seen and confirmed) drives
+    the dispatch phase. These are always two separate worker
+    instances/threads, never one paused mid-run, the same way
+    `_handle_confirmation` starts a fresh `_RuntimeWorker` rather than
+    resuming one -- the confirmation dialog itself has to run on the GUI
+    thread in between, exactly matching `app.py`'s `--suggest`: a real,
+    separate human answer (never anything derived from the LLM's own reply)
+    gates the unmodified `runtime.dispatcher.dispatch()` call.
+    """
+
+    proposed = Signal(str, str)
+    message = Signal(str)
+    failed = Signal(str)
+
+    def __init__(
+        self, *, runtime: Runtime, text: str | None = None, phrase: str | None = None
+    ) -> None:
+        super().__init__()
+        self._runtime = runtime
+        self._text = text
+        self._phrase = phrase
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            if self._phrase is not None:
+                self._dispatch(self._phrase)
+            elif self._text is not None:
+                self._propose(self._text)
+        except Exception as exc:  # pragma: no cover - defensive GUI boundary
+            self.failed.emit("".join(traceback.format_exception(exc)))
+
+    def _propose(self, text: str) -> None:
+        try:
+            provider = _build_llm_provider()
+        except (ImportError, ValueError) as exc:
+            self.message.emit(f"Could not get a suggestion: {exc}")
+            return
+        if isinstance(provider, DeterministicFallbackProvider):
+            self.message.emit(provider.respond(LLMQuery(text=text)).text)
+            return
+        try:
+            phrase = suggest_command(provider, text)
+        except (ProviderError, ValidationError) as exc:
+            self.message.emit(f"Could not get a suggestion: {exc}")
+            return
+        if phrase is None:
+            self.message.emit("No matching command found.")
+            return
+        _intent, plan = self._runtime.planner.plan(phrase)
+        if not plan.steps:
+            self.message.emit("No matching command found.")
+            return
+        self.proposed.emit(phrase, plan.summary)
+
+    def _dispatch(self, phrase: str) -> None:
+        _intent, plan = self._runtime.planner.plan(phrase)
+        if not plan.steps:
+            self.message.emit("No matching command found.")
+            return
+        result = self._runtime.dispatcher.dispatch(
+            plan.steps[0], self._runtime.policy_context_factory()
+        )
+        self.message.emit(result.message)
+
+
+class _TextPromptDialog(QDialog):
+    """A single free-text input with OK/Cancel -- reused for Ask AI and Suggest Command."""
+
+    def __init__(self, title: str, label: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(title)
+
+        self._input = QLineEdit()
+        self._input.setAccessibleName(label)
+
+        form = QFormLayout()
+        form.addRow(f"{label}:", self._input)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout()
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+        self.setLayout(layout)
+
+    def text(self) -> str:
+        return self._input.text()
+
+
 class _SettingsDialog(QDialog):
     """Editable settings dialog with closed-choice local preferences.
 
@@ -397,6 +549,10 @@ class MainWindow(QMainWindow):
         self._gesture_worker: _GestureListenWorker | None = None
         self._gesture_cancellation: CancellationToken | None = None
         self._gesture_confirmed_count = 0
+        self._ask_thread: QThread | None = None
+        self._ask_worker: _AskWorker | None = None
+        self._suggest_thread: QThread | None = None
+        self._suggest_worker: _SuggestWorker | None = None
         self.setWindowTitle("VisionAI")
 
         self._status_label = QLabel(self._runtime.state_machine.state.name)
@@ -422,6 +578,18 @@ class MainWindow(QMainWindow):
             "Watch the webcam for hand gestures and dispatch their mapped commands "
             "through the same policy and confirmation checks as typed commands"
         )
+        self._ask_button = QPushButton("Ask AI")
+        self._ask_button.setAccessibleName("Ask AI a question")
+        self._ask_button.setToolTip(
+            "Ask the configured LLM provider one question -- conversation only, "
+            "never dispatches a command"
+        )
+        self._suggest_button = QPushButton("Suggest Command")
+        self._suggest_button.setAccessibleName("Ask AI to suggest a command")
+        self._suggest_button.setToolTip(
+            "Ask the LLM to propose a command for free text, then ask before "
+            "running it through the same policy and dispatcher as a typed command"
+        )
 
         self._output = QTextEdit()
         self._output.setReadOnly(True)
@@ -438,6 +606,8 @@ class MainWindow(QMainWindow):
         input_row.addWidget(self._diagnostics_button)
         input_row.addWidget(self._settings_button)
         input_row.addWidget(self._gesture_button)
+        input_row.addWidget(self._ask_button)
+        input_row.addWidget(self._suggest_button)
 
         result_label = QLabel("Result:")
         result_label.setBuddy(self._output)
@@ -462,6 +632,8 @@ class MainWindow(QMainWindow):
         self._diagnostics_button.clicked.connect(self.show_diagnostics)
         self._settings_button.clicked.connect(self.show_settings)
         self._gesture_button.clicked.connect(self.toggle_gesture_listening)
+        self._ask_button.clicked.connect(self.show_ask_ai)
+        self._suggest_button.clicked.connect(self.show_suggest_command)
         self._refresh_history()
         self._command_input.setFocus()
 
@@ -623,6 +795,7 @@ class MainWindow(QMainWindow):
             "Voice input: not connected (Phase 3 not started)",
             "Camera/vision input: available via the Gesture Control button (needs a webcam)",
             "Speech/vision processing: local only (no cloud provider configured)",
+            f"LLM provider: {get_settings().llm_provider}",
         ]
         return "\n".join(lines)
 
@@ -734,6 +907,115 @@ class MainWindow(QMainWindow):
         self._gesture_button.setText("Start Gesture Control")
         self._gesture_button.setEnabled(True)
         self._output.setPlainText(f"Gesture control error: {message}")
+
+    def _prompt_for_text(self, title: str, label: str) -> str | None:
+        """Show a single free-text prompt, or return None if cancelled/empty."""
+
+        dialog = _TextPromptDialog(title, label, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+        text = dialog.text().strip()
+        return text or None
+
+    def show_ask_ai(self) -> None:
+        """Ask the configured LLM one question. Conversation only -- dispatches nothing."""
+
+        if self._ask_thread is not None:
+            return
+        text = self._prompt_for_text("Ask AI", "Question")
+        if text is None:
+            return
+
+        self._ask_button.setEnabled(False)
+        thread = QThread(self)
+        worker = _AskWorker(text=text)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_ask_finished)
+        worker.failed.connect(self._on_ask_failed)
+        worker.finished.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        self._ask_thread = thread
+        self._ask_worker = worker
+        thread.start()
+
+    def _on_ask_finished(self, message: str) -> None:
+        self._ask_thread = None
+        self._ask_worker = None
+        self._ask_button.setEnabled(True)
+        self._output.setPlainText(message)
+
+    def _on_ask_failed(self, message: str) -> None:
+        self._ask_thread = None
+        self._ask_worker = None
+        self._ask_button.setEnabled(True)
+        self._output.setPlainText(message)
+
+    def show_suggest_command(self) -> None:
+        """Ask the LLM to propose a command, then ask before dispatching it."""
+
+        if self._suggest_thread is not None:
+            return
+        text = self._prompt_for_text("Suggest Command", "Request")
+        if text is None:
+            return
+        self._start_suggest_worker(text=text)
+
+    def _start_suggest_worker(
+        self, *, text: str | None = None, phrase: str | None = None
+    ) -> None:
+        self._suggest_button.setEnabled(False)
+        thread = QThread(self)
+        worker = _SuggestWorker(runtime=self._runtime, text=text, phrase=phrase)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.proposed.connect(self._on_suggest_proposed)
+        worker.message.connect(self._on_suggest_message)
+        worker.failed.connect(self._on_suggest_failed)
+        worker.proposed.connect(thread.quit)
+        worker.message.connect(thread.quit)
+        worker.failed.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        self._suggest_thread = thread
+        self._suggest_worker = worker
+        thread.start()
+
+    def _on_suggest_proposed(self, phrase: str, summary: str) -> None:
+        self._suggest_thread = None
+        self._suggest_worker = None
+        self._output.setPlainText(f"Proposed: {summary}")
+        if self._ask_execute_confirmation(summary):
+            self._start_suggest_worker(phrase=phrase)
+        else:
+            self._suggest_button.setEnabled(True)
+            self._output.setPlainText("Cancelled.")
+
+    def _on_suggest_message(self, message: str) -> None:
+        self._suggest_thread = None
+        self._suggest_worker = None
+        self._suggest_button.setEnabled(True)
+        self._output.setPlainText(message)
+        self._refresh_history()
+        self._status_label.setText(self._runtime.state_machine.state.name)
+
+    def _on_suggest_failed(self, message: str) -> None:
+        self._suggest_thread = None
+        self._suggest_worker = None
+        self._suggest_button.setEnabled(True)
+        self._output.setPlainText(message)
+
+    def _ask_execute_confirmation(self, summary: str) -> bool:
+        answer = QMessageBox.question(
+            self,
+            "Execute this command?",
+            summary,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
 
     def _start_worker(
         self,

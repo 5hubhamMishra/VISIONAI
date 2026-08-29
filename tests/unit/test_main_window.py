@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QWidget
@@ -18,6 +19,7 @@ from visionai.core.events import (
     RiskLevel,
 )
 from visionai.core.state import StateMachine
+from visionai.intelligence import LLMReply
 from visionai.observability import InMemoryAuditSink
 from visionai.orchestration.event_orchestrator import EventOrchestrator
 from visionai.platform.camera import GestureCandidate, StaticLandmarkAdapter
@@ -470,6 +472,147 @@ def test_main_window_gesture_button_reports_when_voice_capture_is_unavailable(
     assert window._output.toPlainText() == "Gesture control stopped. 2 gesture(s) confirmed."
 
 
+def _wait_for_ask_complete(window: MainWindow, qtbot: Any) -> None:
+    qtbot.waitUntil(lambda: window._ask_thread is None, timeout=5000)
+
+
+def _wait_for_suggest_complete(window: MainWindow, qtbot: Any) -> None:
+    qtbot.waitUntil(lambda: window._suggest_thread is None, timeout=5000)
+
+
+class _FixedReplyProvider:
+    def __init__(self, reply_text: str) -> None:
+        self._reply_text = reply_text
+
+    def respond(self, query: object) -> LLMReply:
+        return LLMReply(text=self._reply_text)
+
+
+def test_main_window_ask_ai_shows_the_llm_reply(qtbot: Any, monkeypatch: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: "what is 2+2?")
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_llm_provider", lambda: _FixedReplyProvider("four")
+    )
+
+    qtbot.mouseClick(window._ask_button, Qt.MouseButton.LeftButton)
+    _wait_for_ask_complete(window, qtbot)
+
+    assert window._output.toPlainText() == "four"
+    assert window._ask_button.isEnabled() is True
+    assert window._history.count() == 0
+
+
+def test_main_window_ask_ai_cancel_does_nothing(qtbot: Any, monkeypatch: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: None)
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_llm_provider",
+        lambda: pytest.fail("cancelling the dialog must not build a provider"),
+    )
+
+    qtbot.mouseClick(window._ask_button, Qt.MouseButton.LeftButton)
+
+    assert window._ask_thread is None
+    assert window._output.toPlainText() == ""
+
+
+def test_main_window_suggest_command_executes_after_confirmation(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: "open notepad please")
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_llm_provider",
+        lambda: _FixedReplyProvider("open notepad"),
+    )
+    monkeypatch.setattr(window, "_ask_execute_confirmation", lambda summary: True)
+
+    qtbot.mouseClick(window._suggest_button, Qt.MouseButton.LeftButton)
+    _wait_for_suggest_complete(window, qtbot)
+
+    assert window._output.toPlainText() == "Opening notepad."
+    assert launched == ["notepad.exe"]
+    assert window._suggest_button.isEnabled() is True
+    assert window._history.count() == 1
+
+
+def test_main_window_suggest_command_declined_does_not_execute(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: "open notepad please")
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_llm_provider",
+        lambda: _FixedReplyProvider("open notepad"),
+    )
+    monkeypatch.setattr(window, "_ask_execute_confirmation", lambda summary: False)
+
+    qtbot.mouseClick(window._suggest_button, Qt.MouseButton.LeftButton)
+    _wait_for_suggest_complete(window, qtbot)
+
+    assert window._output.toPlainText() == "Cancelled."
+    assert launched == []
+    assert window._suggest_button.isEnabled() is True
+    assert window._history.count() == 0
+
+
+def test_main_window_ask_ai_reports_a_provider_construction_failure(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    def _broken_provider() -> object:
+        raise ValueError("VISIONAI_ANTHROPIC_API_KEY is not set")
+
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: "what is 2+2?")
+    monkeypatch.setattr("visionai.ui.main_window._build_llm_provider", _broken_provider)
+
+    qtbot.mouseClick(window._ask_button, Qt.MouseButton.LeftButton)
+    _wait_for_ask_complete(window, qtbot)
+
+    assert (
+        window._output.toPlainText()
+        == "Could not get an answer: VISIONAI_ANTHROPIC_API_KEY is not set"
+    )
+    assert window._ask_button.isEnabled() is True
+
+
+def test_main_window_suggest_command_reports_no_match(qtbot: Any, monkeypatch: Any) -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: "order me a pizza")
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_llm_provider", lambda: _FixedReplyProvider("NONE")
+    )
+
+    qtbot.mouseClick(window._suggest_button, Qt.MouseButton.LeftButton)
+    _wait_for_suggest_complete(window, qtbot)
+
+    assert window._output.toPlainText() == "No matching command found."
+    assert launched == []
+    assert window._history.count() == 0
+
+
 def test_main_window_and_children_inherit_native_os_theming(qtbot: Any) -> None:
     """No widget hardcodes its own colors -- contrast comes from the OS theme.
 
@@ -510,6 +653,7 @@ def test_main_window_diagnostics_text_reports_environment_and_state(qtbot: Any) 
     assert "State: IDLE" in text
     assert "Voice input: not connected" in text
     assert "Camera/vision input: available via the Gesture Control button" in text
+    assert "LLM provider: none" in text
 
 
 def test_main_window_diagnostics_button_opens_a_dialog(qtbot: Any, monkeypatch: Any) -> None:
@@ -680,6 +824,8 @@ def test_main_window_tab_order_reaches_every_control_without_a_trap(qtbot: Any) 
         window._diagnostics_button,
         window._settings_button,
         window._gesture_button,
+        window._ask_button,
+        window._suggest_button,
         window._output,
         window._history,
         window._command_input,
@@ -699,6 +845,8 @@ def test_main_window_tab_order_reverses_cleanly_with_shift_tab(qtbot: Any) -> No
     expected_reverse_order = [
         window._history,
         window._output,
+        window._suggest_button,
+        window._ask_button,
         window._gesture_button,
         window._settings_button,
         window._diagnostics_button,
