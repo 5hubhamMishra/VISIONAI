@@ -17,3 +17,13 @@
 # mediapipe, numpy) now implemented -- see requirements/vision.txt and
 # visionai.platform.webcam. mediapipe is pinned exactly, not ranged: newer
 # releases drop the offline `solutions.hands` API this module depends on.
+
+# --- Intelligence (Phase 6) ---
+# Provider boundary + one real cloud provider (Anthropic, official SDK) now
+# implemented -- see requirements/intelligence.txt and
+# visionai.intelligence. `visionai --ask` is conversation-only: no
+# structured action planning, clarification, or conversation
+# retention/memory yet, and no OS-keychain secret storage (env var only,
+# same as every other secret-shaped value in this project today). A
+# local/offline provider remains out of scope; `LLMProvider` is
+# provider-agnostic so one can be added later with no interface change.

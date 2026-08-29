@@ -8,10 +8,14 @@ import threading
 from collections.abc import AsyncIterator, Callable, Sequence
 from typing import TYPE_CHECKING, Protocol, cast
 
-from visionai.config import default_user_settings_store, effective_log_level
+from pydantic import ValidationError
+
+from visionai.config import default_user_settings_store, effective_log_level, get_settings
 from visionai.config.user_settings import effective_wake_word
 from visionai.core.cancellation import CancellationToken
+from visionai.core.errors import ProviderError
 from visionai.core.events import ActionPlan, ActionRequest, ActionResult, EventBase, GestureEvent
+from visionai.intelligence import DeterministicFallbackProvider, LLMProvider, LLMQuery
 from visionai.observability import configure_logging
 from visionai.orchestration import WakeWordGate, WakeWordListeningLoop, WakeWordVoiceRunner
 from visionai.platform.camera import LandmarkAdapter
@@ -60,6 +64,28 @@ def _build_transcriber() -> Callable[[np.ndarray], str]:
     from visionai.platform.stt import default_transcriber
 
     return default_transcriber()
+
+
+def _build_llm_provider() -> LLMProvider:
+    """Build the configured LLM provider, defaulting to the no-network fallback.
+
+    Mirrors the other `_build_*` factories: injectable for tests, and the
+    heavy `anthropic` import only happens inside `AnthropicProvider`'s own
+    constructor, so this function -- and importing `app` at all -- never
+    requires the `intelligence` extra unless a provider is actually configured.
+    """
+
+    settings = get_settings()
+    if settings.llm_provider == "none":
+        return DeterministicFallbackProvider()
+
+    from visionai.intelligence.anthropic_provider import AnthropicProvider
+
+    if settings.anthropic_api_key is None:
+        raise ValueError("VISIONAI_ANTHROPIC_API_KEY is not set")
+    return AnthropicProvider(
+        api_key=settings.anthropic_api_key.get_secret_value(), model=settings.llm_model
+    )
 
 
 async def _continuous_transcripts(
@@ -316,7 +342,22 @@ def main() -> int:
         action="store_true",
         help="Continuously listen for the wake word via the real microphone until Ctrl+C.",
     )
+    parser.add_argument(
+        "--ask",
+        default=None,
+        help="Ask the configured LLM one question. Conversation only -- dispatches nothing.",
+    )
     args = parser.parse_args()
+
+    if args.ask is not None:
+        try:
+            provider = _build_llm_provider()
+            reply = provider.respond(LLMQuery(text=args.ask))
+        except (ImportError, ValueError, ProviderError, ValidationError) as exc:
+            print(f"Could not get an answer: {exc}")
+            return 1
+        print(reply.text)
+        return 0
 
     if args.list_microphones:
         try:

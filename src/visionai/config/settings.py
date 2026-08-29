@@ -8,12 +8,13 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 SttDevice = Literal["cpu", "cuda"]
 SttComputeType = Literal["int8", "float16", "float32"]
+LlmProvider = Literal["none", "anthropic"]
 
 
 class Settings(BaseSettings):
@@ -32,6 +33,9 @@ class Settings(BaseSettings):
     stt_model_size: str = Field(default="base.en", min_length=1)
     stt_device: SttDevice = Field(default="cpu")
     stt_compute_type: SttComputeType = Field(default="int8")
+    llm_provider: LlmProvider = Field(default="none")
+    llm_model: str = Field(default="claude-opus-5", min_length=1)
+    anthropic_api_key: SecretStr | None = Field(default=None)
 
 
 @lru_cache

@@ -26,6 +26,7 @@ visionai --wake-word-text "visionai open notepad"
 visionai --wake-word-listen
 visionai --gesture-frames 15
 visionai --gesture-listen
+visionai --ask "what is the capital of France?"
 ```
 
 `--text` plans and runs one typed command through the same deterministic phrase matching, allowlists, and policy/dispatcher path as the explicit commands above -- it does not add any new capability, just an alternate way to invoke the existing ones. Anything that doesn't match a reviewed phrase, or whose slot isn't allowlisted, is treated as non-executable conversation and nothing runs.
@@ -47,6 +48,8 @@ A wake-word gate and listening loop (`visionai.orchestration.WakeWordGate`, `Wak
 `--gesture-frames N` opens the real webcam and captures up to N frames, reporting the first confirmed gesture (held steady for a moment, the same temporal voting `GestureCaptureLoop` uses) or `"No gesture detected."` if none is confirmed within N frames. It requires the `vision` extra installed and a hand held close to and centered on the camera; a small N (a dozen or so) is normally enough.
 
 `--gesture-listen` continuously watches for gestures over the real webcam until `Ctrl+C` (or an `open_palm` gesture, which stops it on its own), reporting `"Stopped. Confirmed N gesture(s)."` and printing any dispatched action's result. See the gesture cheat sheet below for what each pose does.
+
+`--ask "<question>"` sends one question to the configured LLM provider and prints its answer. This is conversation only: the reply is printed, never parsed as a command, and never reaches the policy engine or dispatcher -- it has no way to open an app, change a setting, or otherwise act, no matter what it says. By default no provider is configured (`VISIONAI_LLM_PROVIDER` unset, same as `"none"`), and `--ask` prints a fixed message explaining how to enable one rather than silently doing nothing or making a network call. To enable the real Anthropic provider, install the `intelligence` extra (`pip install -e ".[intelligence]"`) and set `VISIONAI_LLM_PROVIDER=anthropic` and `VISIONAI_ANTHROPIC_API_KEY=<your key>`; `VISIONAI_LLM_MODEL` optionally overrides the default model (`claude-opus-5`). Each call is a fresh, stateless question -- nothing about it is remembered between calls.
 
 ## Gesture cheat sheet
 

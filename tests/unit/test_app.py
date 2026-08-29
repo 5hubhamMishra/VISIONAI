@@ -361,6 +361,51 @@ def test_app_reports_microphone_listing_failure(monkeypatch, capsys) -> None:
     assert "Could not list microphones: audio backend unavailable" in output
 
 
+def test_app_ask_uses_the_fallback_by_default_and_builds_no_runtime(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("sys.argv", ["visionai", "--ask", "what is 2+2?"])
+    monkeypatch.setattr(
+        "visionai.app.build_runtime",
+        lambda: pytest.fail("--ask must not build the runtime"),
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "No LLM provider is configured" in output
+
+
+def test_app_ask_prints_the_injected_providers_reply(monkeypatch, capsys) -> None:
+    class _FakeProvider:
+        def respond(self, query: object) -> object:
+            from visionai.intelligence import LLMReply
+
+            return LLMReply(text="four")
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--ask", "what is 2+2?"])
+    monkeypatch.setattr("visionai.app._build_llm_provider", lambda: _FakeProvider())
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert output.strip() == "four"
+
+
+def test_app_ask_reports_a_provider_construction_failure(monkeypatch, capsys) -> None:
+    def _broken_provider() -> object:
+        raise ValueError("VISIONAI_ANTHROPIC_API_KEY is not set")
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--ask", "what is 2+2?"])
+    monkeypatch.setattr("visionai.app._build_llm_provider", _broken_provider)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Could not get an answer: VISIONAI_ANTHROPIC_API_KEY is not set" in output
+
+
 def test_app_rejects_unknown_text_command(monkeypatch, capsys) -> None:
     monkeypatch.setattr("sys.argv", ["visionai", "--text", "open calc & powershell"])
 

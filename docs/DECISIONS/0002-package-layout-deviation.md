@@ -26,10 +26,11 @@ Keep the current organic layout for now:
   adapter boundary) and `recognition/gesture.py` / `recognition/capture.py` (temporal voting, capture loop). No
   normalization, calibration, or cursor module exists yet -- those are real, not-yet-built Phase 5 scope, not a
   naming gap.
-- **`intelligence`** -> not created. `orchestration/text_planner.py` (`TextCommandPlanner`) is the closest existing
-  equivalent (deterministic parsing/planning), but there is no conversation module, LLM provider abstraction, or
-  schemas module -- Phase 6 (Intelligence) has not started, and Section 12's LLM behavior remains explicitly
-  unmigrated and untrusted per `docs/PROJECT_STATE.md`.
+- **`intelligence`** -> created (see `docs/DECISIONS/0004-llm-provider-choice.md`), the trigger this entry
+  originally deferred to. `orchestration/text_planner.py` (`TextCommandPlanner`) remains the deterministic-parsing
+  half of Section 12; `intelligence/provider.py`/`intelligence/anthropic_provider.py` are the first slice of the LLM
+  provider half. Still no `schemas` module or structured-planner/conversation-memory code -- Phase 6 has only its
+  first, conversation-only, zero-execution-authority slice done so far.
 - **`storage`** -> not created. Persistence is currently three small, independent JSON stores
   (`config/user_settings.py`, `policy/permissions.py`, `observability/audit.py`'s `JsonlAuditSink`), each already
   scoped to what it owns. There is not yet enough shared storage logic to justify a common package.
@@ -47,7 +48,8 @@ outgrown one reasonably sized, well-tested module (see `docs/TESTING.md`'s `Main
   integration should extract an `audio` package at that point rather than continuing to grow `platform`/
   `orchestration` indefinitely -- that is the natural trigger to revisit this decision, not a fixed phase number.
 - Likewise, `vision` should be extracted when real webcam/landmark work (approved next task 4 in
-  `docs/PROJECT_STATE.md`) lands, and `intelligence` when Phase 6 starts.
+  `docs/PROJECT_STATE.md`) lands -- done. `intelligence` was extracted when Phase 6 started -- see
+  `docs/DECISIONS/0004-llm-provider-choice.md`.
 - `MainWindow` should be split into the target's per-concern UI modules if or when it grows enough that one file
   materially hurts readability or test isolation -- not preemptively.
 - This decision does not authorize skipping any package permanently; it only defers creating an empty or
