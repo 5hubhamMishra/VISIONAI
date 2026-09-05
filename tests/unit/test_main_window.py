@@ -951,7 +951,7 @@ def test_main_window_diagnostics_text_reports_environment_and_state(qtbot: Any) 
     assert "Registered capabilities: " in text
     assert "Registered capabilities: 0" not in text
     assert "State: IDLE" in text
-    assert "Voice input: not connected" in text
+    assert "Voice input: available via Gesture Control and CLI wake-word listening" in text
     assert "Camera/vision input: available via the Gesture Control button" in text
     assert "LLM provider: none" in text
     assert "Ask AI conversation memory: 0 turn(s) retained this session" in text

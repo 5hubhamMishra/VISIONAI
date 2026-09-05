@@ -151,6 +151,7 @@ def _run_wake_word_listen(
 
     runner = WakeWordVoiceRunner(runtime.input_adapter, gate=WakeWordGate(wake_word))
     result: dict[str, int] = {}
+    failure: list[Exception] = []
 
     def _worker() -> None:
         async def run_session() -> int:
@@ -170,7 +171,10 @@ def _run_wake_word_listen(
                     if isinstance(output, ActionResult):
                         print(output.message)
 
-        result["accepted"] = asyncio.run(run_session())
+        try:
+            result["accepted"] = asyncio.run(run_session())
+        except Exception as exc:
+            failure.append(exc)
 
     worker = threading.Thread(target=_worker, daemon=True)
     worker.start()
@@ -180,6 +184,8 @@ def _run_wake_word_listen(
     except KeyboardInterrupt:
         cancellation.cancel()
         worker.join()
+    if failure:
+        raise RuntimeError(f"wake-word listener failed: {failure[0]}") from failure[0]
     return result.get("accepted", 0)
 
 
@@ -206,6 +212,7 @@ def _run_gesture_listen(
         capture=capture, cancellation=cancellation, stop_gesture_id="open_palm"
     )
     result: dict[str, int] = {}
+    failure: list[Exception] = []
 
     def _worker() -> None:
         try:
@@ -255,7 +262,10 @@ def _run_gesture_listen(
                         if isinstance(output, ActionResult):
                             print(output.message)
 
-            result["confirmed"] = asyncio.run(run_session())
+            try:
+                result["confirmed"] = asyncio.run(run_session())
+            except Exception as exc:
+                failure.append(exc)
         finally:
             close = getattr(landmark_adapter, "close", None)
             if close is not None:
@@ -269,6 +279,8 @@ def _run_gesture_listen(
     except KeyboardInterrupt:
         cancellation.cancel()
         worker.join()
+    if failure:
+        raise RuntimeError(f"gesture listener failed: {failure[0]}") from failure[0]
     return result.get("confirmed", 0)
 
 
@@ -443,23 +455,31 @@ def main() -> int:
     if args.wake_word_listen:
         wake_word = effective_wake_word(settings_store)
         print(f"Listening for the wake word ('{wake_word}'). Press Ctrl+C to stop.")
-        accepted = _run_wake_word_listen(
-            runtime,
-            _build_microphone_capture(),
-            _build_transcriber(),
-            wake_word,
-            _build_cancellation_token(),
-        )
+        try:
+            accepted = _run_wake_word_listen(
+                runtime,
+                _build_microphone_capture(),
+                _build_transcriber(),
+                wake_word,
+                _build_cancellation_token(),
+            )
+        except Exception as exc:
+            print(f"Listening failed: {exc}")
+            return 1
         print(f"Stopped. Accepted {accepted} command(s).")
         return 0
     if args.gesture_listen:
         print("Listening for gestures. Press Ctrl+C to stop.")
-        confirmed = _run_gesture_listen(
-            runtime,
-            _build_landmark_adapter(),
-            TemporalGestureRecognizer(),
-            _build_cancellation_token(),
-        )
+        try:
+            confirmed = _run_gesture_listen(
+                runtime,
+                _build_landmark_adapter(),
+                TemporalGestureRecognizer(),
+                _build_cancellation_token(),
+            )
+        except Exception as exc:
+            print(f"Listening failed: {exc}")
+            return 1
         print(f"Stopped. Confirmed {confirmed} gesture(s).")
         return 0
     if args.gesture_frames is not None:

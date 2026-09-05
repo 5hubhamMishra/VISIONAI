@@ -909,7 +909,7 @@ class MainWindow(QMainWindow):
             f"Registered capabilities: {len(self._runtime.registry.list())}",
             f"System tray: {tray_status}",
             f"State: {self._runtime.state_machine.state.name}",
-            "Voice input: not connected (Phase 3 not started)",
+            "Voice input: available via Gesture Control and CLI wake-word listening",
             "Camera/vision input: available via the Gesture Control button (needs a webcam)",
             "Speech/vision processing: local only (no cloud provider configured)",
             f"LLM provider: {get_settings().llm_provider}",

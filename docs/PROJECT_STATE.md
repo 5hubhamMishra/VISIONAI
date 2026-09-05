@@ -14,8 +14,10 @@ conversation clearing are also verified. Earlier contributor checkpoints follow.
 
 Standing instructions are discoverable in AGENTS.md. Phone pairing remains
 unverified; the owner-only setup is in [REMOTE_CONTROL.md](REMOTE_CONTROL.md).
-Next bounded reliability task: propagate background CLI listening errors to a
-nonzero exit and recovery message, then reconcile stale voice diagnostics.
+The next bounded reliability task is complete: background CLI listening errors
+now propagate to a nonzero exit and recovery message, and stale voice
+diagnostics have been reconciled. See
+[the next-cycle report](AUTONOMOUS_HOUR_2026-09-05_NEXT.md).
 
 2026-09-05 autonomous cycle (Linux sandbox, rate limiter test coverage):
 baseline verified clean and unchanged from the prior session's documented

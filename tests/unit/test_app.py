@@ -129,6 +129,29 @@ class _FakeMicrophoneCapture:
         return None
 
 
+class _FailingMicrophoneCapture(_FakeMicrophoneCapture):
+    def stop(self) -> None:
+        raise OSError("microphone read failed")
+
+
+def test_app_reports_wake_word_worker_failure(monkeypatch, capsys, tmp_path) -> None:
+    store = UserSettingsStore(tmp_path / "settings.json")
+    monkeypatch.setattr("visionai.app.default_user_settings_store", lambda: store)
+    monkeypatch.setattr("sys.argv", ["visionai", "--wake-word-listen"])
+    monkeypatch.setattr("visionai.app._build_microphone_capture", _FailingMicrophoneCapture)
+    monkeypatch.setattr("visionai.app._build_transcriber", lambda: (lambda audio: ""))
+    monkeypatch.setattr("visionai.app._WAKE_WORD_LISTEN_CHUNK_SECONDS", 0.0)
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=lambda _: None)
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Listening failed: wake-word listener failed: microphone read failed" in output
+
+
 def test_app_wake_word_listen_accepts_matching_commands_until_cancelled(
     monkeypatch, capsys, tmp_path
 ) -> None:
