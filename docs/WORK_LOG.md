@@ -1,5 +1,23 @@
 # Work Log
 
+## 2026-09-05 cycle closing checkpoint
+
+- Requested one hour; started 10:08:32 UTC. A closing clock/goal reading at
+  16:19:07 UTC reported 22,235 seconds elapsed. The one-hour limit was not
+  met; the intervening timing gap is not explained by available evidence.
+  Stopped adding features and limited subsequent work to integration,
+  verification, and the report.
+- A non-fast-forward push rejection preserved another contributor's six
+  new commits. Merged those as 4aa60c6, retaining both histories and resolving
+  only documentation conflicts. Local provider/Unicode/coverage work keeps
+  its original authorship and is not counted as newly authored in this cycle.
+- Merged Windows verification: 450 passed, 91% coverage, Ruff and mypy clean
+  for 53 files; Bandit and requirements-scoped pip-audit passed. Previous
+  desktop code commit e12d470 has hosted CI success.
+- Detailed owner report: AUTONOMOUS_HOUR_2026-09-05.md. Phone connection is
+  not verified; REMOTE_CONTROL.md records the minimal authentication/pairing
+  step the owner must perform. No security approvals were bypassed.
+
 ## 2026-09-05 autonomous hour: microphone recovery and cancellation
 
 - Reproduced raw buffers retained after stop and failure paths that left the

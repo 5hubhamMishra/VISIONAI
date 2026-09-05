@@ -2,13 +2,20 @@
 
 ## Current Phase
 
-Latest local Windows verification (2026-09-05 autonomous hour): 398 tests
-passed, 89% coverage, Ruff, mypy, Bandit, and requirements-scoped audit clean.
+Latest local Windows verification (2026-09-05 cycle, merge 4aa60c6): 450 tests
+passed, 91% coverage, Ruff, mypy (53 files), Bandit, and scoped dependency audit clean. See
+[the cycle report](AUTONOMOUS_HOUR_2026-09-05.md) for verification scope,
+contributor attribution, and the recorded overrun of the requested hour.
 Microphone start/stop failures release buffers and permit retry. Retained
 capture has a 120-second default sample budget; overlong recordings are
 discarded. Cancelling gesture listening discards unfinished speech rather
 than dispatching it. Desktop thread cleanup, graceful shutdown, and in-flight
 conversation clearing are also verified. Earlier contributor checkpoints follow.
+
+Standing instructions are discoverable in AGENTS.md. Phone pairing remains
+unverified; the owner-only setup is in [REMOTE_CONTROL.md](REMOTE_CONTROL.md).
+Next bounded reliability task: propagate background CLI listening errors to a
+nonzero exit and recovery message, then reconcile stale voice diagnostics.
 
 2026-09-05 autonomous cycle (Linux sandbox, rate limiter test coverage):
 baseline verified clean and unchanged from the prior session's documented

@@ -37,6 +37,9 @@ dependency installation, and verification commands.
 
 ## Documentation
 
+- [Autonomous cycle report](docs/AUTONOMOUS_HOUR_2026-09-05.md) — changes, checks, timing, and remaining work
+- [Phone remote control](docs/REMOTE_CONTROL.md) — one-time pairing and connection check
+
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — components and data flow
 - [docs/SECURITY.md](docs/SECURITY.md) — threat model and controls
 - [docs/TESTING.md](docs/TESTING.md) — test strategy and verified results
