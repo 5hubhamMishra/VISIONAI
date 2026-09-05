@@ -30,6 +30,40 @@ The current Phase 6 clarification slice is implemented on CLI and desktop
 Suggest Command: ambiguous requests may receive one validated follow-up
 question, then one final mapping attempt before normal confirmation and policy.
 
+2026-09-05 autonomous cycle (Linux sandbox, capability manifest risk-control
+coverage): started against local commit `5720727`; baseline verified clean
+and unchanged from the prior session's documented sandbox state before any
+work started (fresh `.venv312` built from `requirements/dev.txt` in a new
+container, again needing `libegl1`/`libopengl0`/`libportaudio2` via
+`apt-get` -- `libgl1` was already present -- before pytest-qt/sounddevice
+would import; Ruff clean; mypy clean for 53 files except the same
+sandbox-only `ctypes.windll` false positive every session shows; Bandit
+clean; pip-audit clean; pytest 464 tests -- 436 passed, 27 failed, 1
+skipped, 91% coverage -- all 27 failures confirmed by message to be the
+same `WindowsLockStateAdapter` fail-closed pattern every prior sandbox
+session has documented, not a regression). Scanned the coverage report for
+a real, narrow, hardware-free gap and found one in
+`visionai.capabilities.manifest.CapabilityManifest.enforce_risk_controls()`
+(95% covered, no dedicated test file existed for this module at all): both
+of its `model_validator` branches were completely untested -- the rejection
+of a `SENSITIVE`-or-higher-risk manifest missing `permission_required`, and
+the rejection of a `DESTRUCTIVE`-or-higher-risk manifest missing
+`confirmation_required`. This is a real security-relevant gap, not
+incidental: this validator is the single place that enforces every
+capability manifest actually carries the permission/confirmation controls
+its declared risk tier requires, and it had zero coverage of either
+rejection path, only of manifests that happened to already satisfy it.
+Added `tests/unit/test_manifest.py` with four tests: the two rejection
+branches (each asserting `pydantic.ValidationError` with the expected
+message) and, for symmetry, one acceptance test per risk tier confirming a
+correctly-declared manifest is not rejected by the validator it is meant to
+satisfy. No application code changed -- this was a pure test gap, not a
+bug. `capabilities/manifest.py` reached 100% line coverage (was 95%). Full
+verification after the change: 468 tests (440 passed, 27 failed --
+identical failing-test names to the pre-change baseline, confirming no
+regressions -- 1 skipped), 91% coverage, Ruff/mypy(one known false
+positive)/Bandit/pip-audit all clean.
+
 2026-09-05 autonomous cycle (Linux sandbox, permission store test coverage):
 started against local commit `6441429`; baseline verified clean before any
 work started (fresh `.venv312` built from `requirements/dev.txt` in a new
@@ -608,10 +642,10 @@ cd visionai
 
 ## Last Verification Result
 
-- Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libopengl0`/`libgl1`/`libportaudio2` -- headless `pytest-qt` could not import `QtGui` at all without `libEGL.so.1`, and `sounddevice`'s real-backend smoke test would raise `OSError: PortAudio library not found` -- all installed via `apt-get` before the suite would run to completion. None of this is a Python/project dependency change -- it is a container-image setup gap, not application code.
+- Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libopengl0`/`libportaudio2` (`libgl1` was already present) -- headless `pytest-qt` could not import `QtGui` at all without `libEGL.so.1`, and `sounddevice`'s real-backend smoke test would raise `OSError: PortAudio library not found` -- all installed via `apt-get` before the suite would run to completion. None of this is a Python/project dependency change -- it is a container-image setup gap, not application code.
 - Ruff: passed (whole repo)
 - mypy: passed for 53 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing).
-- pytest: this session's baseline check against `6441429` (before any change) showed 460 tests -- 432 passed, 27 failed (all confirmed by message to be the documented `WindowsLockStateAdapter` fail-closed pattern; the count grew from the previously-documented 25 only because intervening commits added more mutating-capability tests, not a regression), 1 skipped, 91% coverage. After adding two `JsonPermissionStore` coverage tests (see the Current Phase entry above): 462 tests (434 passed, 27 failed -- identical failing-test names to the pre-change baseline -- 1 skipped), 91% coverage, `policy/permissions.py` at 100% line coverage (was 94%).
+- pytest: this session's baseline check against `5720727` (before any change) showed 464 tests -- 436 passed, 27 failed (all confirmed by message to be the documented `WindowsLockStateAdapter` fail-closed pattern, not a regression), 1 skipped, 91% coverage. After adding `tests/unit/test_manifest.py`'s four `CapabilityManifest.enforce_risk_controls()` coverage tests: 468 tests (440 passed, 27 failed -- identical failing-test names to the pre-change baseline -- 1 skipped), 91% coverage, `capabilities/manifest.py` at 100% line coverage (was 95%). A rebase before committing brought in a concurrent commit (`f76f616`, the live prompt-injection test suite) with no conflicts; final verification against the merged tree: 477 tests (440 passed, 27 failed -- identical failing-test names -- 10 skipped, the 9 new self-gated live-LLM tests plus the pre-existing skip), 91% coverage, `capabilities/manifest.py` still at 100%.
 - Bandit: passed (whole repo, `src`)
 - pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv; no dependency changes this session)
 
