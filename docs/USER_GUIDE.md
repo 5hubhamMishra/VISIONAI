@@ -60,6 +60,12 @@ The API key itself can come from either of two places. Setting `VISIONAI_ANTHROP
 
 ## Gesture cheat sheet
 
+Final transcripts below `VISIONAI_MIN_TRANSCRIPT_CONFIDENCE` (default `0.7`,
+valid range greater than zero through one) produce a retry/type message
+without planning or dispatch. This is an input acceptance threshold, not a
+measured recognition accuracy. The current microphone adapter supplies a
+fixed confidence value; live speech confidence calibration remains pending.
+
 Use the same hand and hold each pose briefly:
 
 | Gesture | Easy name | Planned command |

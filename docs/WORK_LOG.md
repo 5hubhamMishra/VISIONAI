@@ -1,5 +1,18 @@
 # Work Log
 
+## 2026-09-05 Autonomous cycle: transcript confidence gate
+
+- Reproduced low-confidence final transcripts dispatching an app launch at
+  confidence 0.0, 0.2, and 0.69 through an injected launcher.
+- Added an orchestrator gate before planning, configured by
+  VISIONAI_MIN_TRANSCRIPT_CONFIDENCE (default 0.7). Rejects with ErrorEvent;
+  partial transcripts remain ignored. Threshold boundary and confident
+  commands still dispatch through policy. Unknown-text test now uses high
+  confidence to test parsing independently of recognition acceptance.
+- Full suite: 360 tests passed, 88% coverage, Ruff and mypy clean.
+- Limitation: microphone capture still supplies a fixed confidence; this is
+  not a claim of measured STT accuracy or replay/echo protection.
+
 ## 2026-09-05 Autonomous cycle: strict intelligence contracts
 
 - Reproduced four failures before the fix: query/reply silently accepted

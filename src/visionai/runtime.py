@@ -141,6 +141,7 @@ def build_runtime(
         permission_store=permissions,
         state_machine=state,
         policy_context_factory=policy_context_factory,
+        min_transcript_confidence=get_settings().min_transcript_confidence,
     )
     return Runtime(
         registry=registry,

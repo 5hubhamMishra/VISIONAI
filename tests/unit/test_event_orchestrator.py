@@ -41,6 +41,33 @@ async def _drain_available(bus: EventBus):
     return events
 
 
+@pytest.mark.parametrize("confidence", [0.0, 0.2, 0.69])
+async def test_low_confidence_transcript_never_dispatches(confidence: float) -> None:
+    launched: list[str] = []
+    runtime = build_runtime(
+        launcher=launched.append, lock_state=StaticLockStateAdapter(locked=False)
+    )
+    await runtime.orchestrator.process_event(
+        TranscriptEvent(text="open notepad", confidence=confidence, language="en", is_final=True)
+    )
+    outputs = await _drain_available(runtime.output_bus)
+    assert launched == []
+    assert any(isinstance(event, ErrorEvent) and "confidence" in event.message for event in outputs)
+    assert not any(isinstance(event, ActionPlan) and event.steps for event in outputs)
+
+
+@pytest.mark.parametrize("confidence", [0.7, 1.0])
+async def test_confident_transcript_still_dispatches(confidence: float) -> None:
+    launched: list[str] = []
+    runtime = build_runtime(
+        launcher=launched.append, lock_state=StaticLockStateAdapter(locked=False)
+    )
+    await runtime.orchestrator.process_event(
+        TranscriptEvent(text="open notepad", confidence=confidence, language="en", is_final=True)
+    )
+    assert launched == ["notepad.exe"]
+
+
 def _sensitive_manifest() -> CapabilityManifest:
     return CapabilityManifest(
         id="test.sensitive",
@@ -475,7 +502,7 @@ async def test_orchestrator_denies_mutating_command_while_screen_is_locked() -> 
 @pytest.mark.asyncio
 async def test_orchestrator_publishes_non_executable_plan_for_unknown_text() -> None:
     runtime = build_runtime()
-    event = TranscriptEvent(text="do something vague", confidence=0.5, language="en", is_final=True)
+    event = TranscriptEvent(text="do something vague", confidence=1.0, language="en", is_final=True)
 
     await runtime.orchestrator.process_event(event)
     outputs = await _drain_available(runtime.output_bus)

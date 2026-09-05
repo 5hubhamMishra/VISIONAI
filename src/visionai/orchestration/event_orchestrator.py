@@ -170,7 +170,10 @@ class EventOrchestrator:
         permission_store: JsonPermissionStore | None = None,
         state_machine: StateMachine | None = None,
         policy_context_factory: PolicyContextFactory = PolicyContext,
+        min_transcript_confidence: float = 0.7,
     ) -> None:
+        if not 0.0 < min_transcript_confidence <= 1.0:
+            raise ValueError("minimum transcript confidence must be between 0 (exclusive) and 1")
         self._input_bus = input_bus
         self._output_bus = output_bus
         self._planner = planner
@@ -182,6 +185,7 @@ class EventOrchestrator:
         self._policy_context_factory = policy_context_factory
         self._pending_confirmations: dict[UUID, ActionRequest] = {}
         self._pending_permissions: dict[UUID, tuple[ActionRequest, str]] = {}
+        self._min_transcript_confidence = min_transcript_confidence
 
     @property
     def state_machine(self) -> StateMachine:
@@ -299,6 +303,9 @@ class EventOrchestrator:
 
     async def _process_transcript(self, event: TranscriptEvent) -> None:
         if not event.is_final:
+            return
+        if event.confidence < self._min_transcript_confidence:
+            await self._publish_error("Transcript confidence is too low. Please repeat or type it.")
             return
 
         try:

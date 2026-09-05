@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     stt_model_size: str = Field(default="base.en", min_length=1)
     stt_device: SttDevice = Field(default="cpu")
     stt_compute_type: SttComputeType = Field(default="int8")
+    min_transcript_confidence: float = Field(default=0.7, gt=0.0, le=1.0)
     llm_provider: LlmProvider = Field(default="none")
     llm_model: str = Field(default="claude-opus-5", min_length=1)
     anthropic_api_key: SecretStr | None = Field(default=None)
