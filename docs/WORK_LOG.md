@@ -1,5 +1,23 @@
 # Work Log
 
+## 2026-09-05 One-Hour Cycle: Local Provider Constructor Coverage
+
+- User requested the next autonomous one-hour cycle. The repository was clean
+  at `8f77082` except for that local commit being one ahead of `origin/main`.
+  The documented remaining feature work needs owner hardware, live network/API
+  access, or a product decision, so this cycle selected a narrow deterministic
+  coverage gap.
+- Added one unit test for `LocalLlamaProvider`'s real constructor wiring. It
+  verifies the model filename and parent directory are passed to `gpt4all` and
+  `allow_download=False` prevents an implicit network fetch. No production code
+  changed.
+- Focused verification: 6 tests passed. Full `scripts/verify.ps1`: 454 tests
+  passed, 91% coverage, Ruff, mypy, Bandit, and requirements-scoped pip-audit
+  passed.
+- Remaining work is unchanged: owner-only live microphone/camera and phone
+  pairing checks, live LLM prompt-injection testing, and a product decision on
+  clarification behavior.
+
 ## 2026-09-05 One-Hour Cycle: Handoff Reconciliation
 
 - User requested a one-hour autonomous cycle. The repository was clean at

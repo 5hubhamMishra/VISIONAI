@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+import visionai.intelligence.local_provider as local_provider
 from visionai.core.errors import ProviderError
 from visionai.intelligence.local_provider import LocalLlamaProvider
 from visionai.intelligence.provider import LLMQuery
@@ -26,6 +27,30 @@ class _FakeModel:
 class _BrokenModel:
     def generate(self, prompt: str, **kwargs: Any) -> str:
         raise RuntimeError("model failed to load")
+
+
+def test_constructor_loads_existing_model_without_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class _Gpt4All:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        def generate(self, prompt: str, **kwargs: Any) -> str:
+            return "ok"
+
+    class _Gpt4AllModule:
+        GPT4All = _Gpt4All
+
+    monkeypatch.setattr(local_provider, "import_module", lambda name: _Gpt4AllModule())
+
+    LocalLlamaProvider(model_path=r"C:\models\assistant.gguf")
+
+    assert captured == {
+        "model_name": "assistant.gguf",
+        "model_path": r"C:\models",
+        "allow_download": False,
+    }
 
 
 def test_respond_returns_the_generated_text() -> None:
