@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from threading import Lock
 from typing import TYPE_CHECKING
 
@@ -31,12 +32,14 @@ class SerializedDispatcher:
         policy: PolicyEngine,
         audit: InMemoryAuditSink,
         handlers: dict[str, CapabilityHandler] | None = None,
+        policy_context_factory: Callable[[], PolicyContext] | None = None,
     ) -> None:
         self._registry = registry
         self._policy = policy
         self._audit = audit
         self._handlers = handlers or {}
         self._lock = Lock()
+        self._policy_context_factory = policy_context_factory
 
     def register_handler(self, handler_id: str, handler: CapabilityHandler) -> None:
         if handler_id in self._handlers:
@@ -68,7 +71,7 @@ class SerializedDispatcher:
         # malicious or buggy request understate its true risk in the log.
         manifest = self._registry.get(request.capability_id)
 
-        decision = self._policy.evaluate(request, context)
+        decision = self._policy.evaluate(request, context, consume_rate_limit=False)
         if not decision.allowed:
             self._audit.record(
                 AuditEvent(
@@ -98,7 +101,24 @@ class SerializedDispatcher:
                     message="Operation was cancelled before it started.",
                 )
             else:
-                result = handler(request, token)
+                if self._policy_context_factory is not None:
+                    # Waiting for another action must not preserve a revoked
+                    # grant or an earlier unlocked-screen snapshot.
+                    fresh = self._policy_context_factory()
+                    context = replace(
+                        context,
+                        platform=fresh.platform,
+                        locked_screen=context.locked_screen or fresh.locked_screen,
+                        granted_capabilities=(
+                            context.granted_capabilities & fresh.granted_capabilities
+                        ),
+                    )
+                decision = self._policy.evaluate(request, context)
+                result = (
+                    handler(request, token)
+                    if decision.allowed
+                    else ActionResult(request_id=request.id, success=False, message=decision.reason)
+                )
 
         self._audit.record(
             AuditEvent(

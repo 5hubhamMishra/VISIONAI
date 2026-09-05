@@ -114,19 +114,21 @@ def build_runtime(
         **media_handlers(key_presser),
         **meta_handlers(registry, operations, audit),
     }
-    dispatcher = SerializedDispatcher(
-        registry=registry,
-        policy=policy,
-        audit=audit,
-        handlers=handlers,
-    )
-    planner = TextCommandPlanner(registry)
 
     def policy_context_factory() -> PolicyContext:
         return PolicyContext(
             locked_screen=lock.is_locked(),
             granted_capabilities=permissions.granted_capabilities(),
         )
+
+    dispatcher = SerializedDispatcher(
+        registry=registry,
+        policy=policy,
+        audit=audit,
+        handlers=handlers,
+        policy_context_factory=policy_context_factory,
+    )
+    planner = TextCommandPlanner(registry)
 
     inputs = input_bus or EventBus(max_size=100)
     input_adapter = InputAdapter(inputs)

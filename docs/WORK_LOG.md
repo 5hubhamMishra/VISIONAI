@@ -1,5 +1,23 @@
 # Work Log
 
+## 2026-09-05 10:08 UTC autonomous hour: queued policy freshness
+
+- Owner reaffirmed the one-hour autonomous cycle and persistent minimal-effort
+  preference. Added discoverable workspace and repository AGENTS.md instructions.
+- Preserved and completed inherited dispatcher/runtime changes that re-evaluate
+  policy after acquiring the execution lock. Fresh lock state and revoked
+  permissions narrow the original context; confirmation IDs remain intact.
+- Added regressions for queued permission revocation and successful confirmed
+  execution with unchanged permissions. Existing queued screen-lock regression
+  retained. Focused runtime/dispatcher/meta checks: 39 passed.
+- Baseline full verification including the inherited change: 365 passed,
+  88% coverage, Ruff, mypy, Bandit, and requirements-scoped pip-audit passed.
+- Completed-slice full suite: 367 passed, 88% coverage on retry. First run
+  crashed inside the UI suite (Windows exit -1073740791); isolated UI suite
+  passed 45 tests. Track worker-thread lifetime as the next investigation.
+- GitHub has independent CI and conversation-memory commits; preserve both
+  histories when integrating this slice. Phone pairing is not yet verified.
+
 ## 2026-09-05 Autonomous cycle: exact confirmation binding
 
 - Reproduced approval reuse after changing arguments, capability, or risk

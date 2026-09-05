@@ -2,6 +2,13 @@
 
 ## Current Phase
 
+2026-09-05 10:08 UTC cycle: queued actions now refresh workstation lock state
+and permissions after acquiring the dispatcher lock. Focused regressions
+cover screen locking, permission revocation, and preservation of confirmed
+execution. Full suite: 367 passed, 88% coverage on retry; an intermittent Qt
+process crash occurred on the first run and remains under investigation.
+Repository AGENTS.md now exposes the standing autonomous-work preference.
+
 Intelligence contracts now reject unknown fields and malformed multiline or
 placeholder suggestions. Latest full unit suite: 355 passed, 88% coverage.
 

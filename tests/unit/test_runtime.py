@@ -1,3 +1,7 @@
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from threading import Event
+
 import pytest
 from pydantic import ValidationError
 
@@ -62,6 +66,31 @@ def test_runtime_denies_mutating_capability_while_screen_is_locked() -> None:
     assert "locked" in result.message
 
 
+def test_queued_mutation_rechecks_lock_state_before_execution() -> None:
+    lock = _MutableLock()
+    launched: list[str] = []
+    runtime = build_runtime(lock_state=lock, launcher=launched.append)
+    request = ActionRequest(
+        capability_id="app.open", arguments={"app": "notepad"}, risk_level=RiskLevel.REVERSIBLE
+    )
+    context_read = Event()
+
+    def dispatch() -> ActionResult:
+        context = runtime.policy_context_factory()
+        context_read.set()
+        return runtime.dispatcher.dispatch(request, context)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with runtime.dispatcher._lock:
+            pending = pool.submit(dispatch)
+            assert context_read.wait(5)
+            lock.locked = True
+        result = pending.result(timeout=5)
+    assert launched == []
+    assert not result.success
+    assert "locked" in result.message
+
+
 def test_runtime_still_allows_read_only_capability_while_screen_is_locked() -> None:
     runtime = build_runtime(lock_state=StaticLockStateAdapter(locked=True))
     request = ActionRequest(capability_id="system.time", risk_level=RiskLevel.READ_ONLY)
@@ -69,6 +98,43 @@ def test_runtime_still_allows_read_only_capability_while_screen_is_locked() -> N
     result = runtime.dispatcher.dispatch(request, runtime.policy_context_factory())
 
     assert result.success is True
+
+
+@pytest.mark.parametrize("revoke", [False, True])
+def test_queued_sensitive_action_rechecks_permission_and_preserves_confirmation(
+    tmp_path, revoke: bool
+) -> None:
+    runtime = build_runtime(
+        lock_state=StaticLockStateAdapter(locked=False),
+        permission_store=JsonPermissionStore(tmp_path / "permissions.json"),
+    )
+    runtime.permissions.grant("system.clear_history")
+    time_request = ActionRequest(capability_id="system.time", risk_level=RiskLevel.READ_ONLY)
+    runtime.dispatcher.dispatch(time_request, runtime.policy_context_factory())
+    request = ActionRequest(capability_id="system.clear_history", risk_level=RiskLevel.SENSITIVE)
+    context_read = Event()
+
+    def dispatch() -> ActionResult:
+        context = replace(
+            runtime.policy_context_factory(), confirmed_request_ids=frozenset({request.id})
+        )
+        context_read.set()
+        return runtime.dispatcher.dispatch(request, context)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with runtime.dispatcher._lock:
+            pending = pool.submit(dispatch)
+            assert context_read.wait(5)
+            if revoke:
+                runtime.permissions.revoke("system.clear_history")
+        result = pending.result(timeout=5)
+
+    assert result.success is not revoke
+    if revoke:
+        assert "permission" in result.message
+        assert len(runtime.audit.list()) == 2  # Original history survives the denial.
+    else:
+        assert len(runtime.audit.list()) == 1  # Cleared, then the fresh audit marker.
 
 
 def test_runtime_exposes_injected_permission_store(tmp_path) -> None:
