@@ -26,7 +26,7 @@ from visionai.intelligence import (
     DeterministicFallbackProvider,
     LLMProvider,
     LLMQuery,
-    suggest_command,
+    suggest_command_result,
 )
 from visionai.observability import configure_logging
 from visionai.orchestration import WakeWordGate, WakeWordListeningLoop, WakeWordVoiceRunner
@@ -508,8 +508,19 @@ def main() -> int:
         if isinstance(provider, DeterministicFallbackProvider):
             print(provider.respond(LLMQuery(text=args.suggest)).text)
             return 0
+        utterance = args.suggest
         try:
-            phrase = suggest_command(provider, args.suggest)
+            suggestion = suggest_command_result(provider, utterance)
+            if suggestion.clarification is not None:
+                print(suggestion.clarification)
+                try:
+                    answer = input("> ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    answer = ""
+                if answer:
+                    utterance = f"{utterance} {answer}"
+                    suggestion = suggest_command_result(provider, utterance)
+            phrase = suggestion.phrase
         except (ProviderError, ValidationError) as exc:
             print(f"Could not get a suggestion: {exc}")
             return 1

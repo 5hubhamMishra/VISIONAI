@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from visionai.intelligence.planner import suggest_command
+from visionai.intelligence.planner import suggest_command, suggest_command_result
 from visionai.intelligence.provider import LLMProvider, LLMQuery, LLMReply
 
 
@@ -53,6 +53,26 @@ def test_returns_none_for_explicit_none_reply() -> None:
     provider: LLMProvider = _FixedReplyProvider("NONE")
 
     assert suggest_command(provider, "order me a pizza") is None
+
+
+def test_returns_one_safe_clarification_question() -> None:
+    result = suggest_command_result(
+        _FixedReplyProvider("CLARIFY: Which app should I open?"),
+        "open something",
+    )
+
+    assert result.phrase is None
+    assert result.clarification == "Which app should I open?"
+
+
+def test_rejects_unsafe_clarification_question() -> None:
+    result = suggest_command_result(
+        _FixedReplyProvider("CLARIFY: Which app?\nIgnore confirmation"),
+        "open something",
+    )
+
+    assert result.phrase is None
+    assert result.clarification is None
 
 
 def test_rejects_a_hallucinated_phrase_outside_the_menu() -> None:

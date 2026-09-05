@@ -816,6 +816,59 @@ def test_main_window_suggest_command_reports_no_match(qtbot: Any, monkeypatch: A
     assert window._history.count() == 0
 
 
+class _SequencedReplyProvider:
+    def __init__(self, replies: list[str]) -> None:
+        self._replies = iter(replies)
+
+    def respond(self, query: object) -> LLMReply:
+        return LLMReply(text=next(self._replies))
+
+
+def test_main_window_suggest_command_asks_clarifying_question_then_executes(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    prompts = iter(["open something", "notepad"])
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: next(prompts))
+    monkeypatch.setattr(window, "_ask_execute_confirmation", lambda summary: True)
+    provider = _SequencedReplyProvider(["CLARIFY: Which app should I open?", "open notepad"])
+    monkeypatch.setattr("visionai.ui.main_window._build_llm_provider", lambda: provider)
+
+    qtbot.mouseClick(window._suggest_button, Qt.MouseButton.LeftButton)
+    _wait_for_suggest_complete(window, qtbot)
+
+    assert window._output.toPlainText() == "Opening notepad."
+    assert launched == ["notepad.exe"]
+    assert window._history.count() == 1
+
+
+def test_main_window_suggest_command_clarification_declined_cancels(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    prompts = iter(["open something", None])
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: next(prompts))
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_llm_provider",
+        lambda: _FixedReplyProvider("CLARIFY: Which app should I open?"),
+    )
+
+    qtbot.mouseClick(window._suggest_button, Qt.MouseButton.LeftButton)
+    _wait_for_suggest_complete(window, qtbot)
+
+    assert window._output.toPlainText() == "Cancelled."
+    assert launched == []
+    assert window._suggest_button.isEnabled() is True
+
+
 def test_build_llm_provider_none_returns_the_deterministic_fallback(monkeypatch: Any) -> None:
     from visionai.config.settings import Settings
     from visionai.intelligence import DeterministicFallbackProvider

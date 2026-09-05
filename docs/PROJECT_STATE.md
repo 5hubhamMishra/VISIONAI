@@ -26,6 +26,10 @@ flag are now directly tested. No runtime behavior changed.
 The next cycle adds deterministic coverage for `ConfirmationService`'s
 non-positive TTL rejection. No runtime behavior changed.
 
+The current Phase 6 clarification slice is implemented on CLI and desktop
+Suggest Command: ambiguous requests may receive one validated follow-up
+question, then one final mapping attempt before normal confirmation and policy.
+
 2026-09-05 autonomous cycle (Linux sandbox, baseline fix -- local provider
 path splitting): started against local commit `6ab7771`; this session found
 the sandbox baseline was not clean as documented -- 26 failures instead of

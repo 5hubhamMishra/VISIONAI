@@ -15,21 +15,41 @@ attempt -- always returns `None` here, the same as an explicit "no match."
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from visionai.core.events import contains_unsafe_characters
 from visionai.intelligence.provider import LLMProvider, LLMQuery
 from visionai.orchestration.text_planner import reviewed_phrases
 
 _SEARCH_TEMPLATE = "search for <your query>"
 _SEARCH_PREFIX = "search for "
+_CLARIFY_PREFIX = "CLARIFY:"
+
+
+@dataclass(frozen=True, slots=True)
+class CommandSuggestion:
+    phrase: str | None = None
+    clarification: str | None = None
+
+
+def suggest_command_result(provider: LLMProvider, utterance: str) -> CommandSuggestion:
+    """Return one reviewed phrase, or one human-facing clarification question."""
+
+    phrases = reviewed_phrases()
+    query = LLMQuery(text=_build_prompt(phrases, utterance))
+    reply = provider.respond(query).text.strip()
+    if reply.upper().startswith(_CLARIFY_PREFIX):
+        question = reply[len(_CLARIFY_PREFIX) :].strip()
+        if question and not contains_unsafe_characters(question, allow_line_breaks=False):
+            return CommandSuggestion(clarification=question)
+        return CommandSuggestion()
+    return CommandSuggestion(phrase=_validate_reply(reply, phrases))
 
 
 def suggest_command(provider: LLMProvider, utterance: str) -> str | None:
     """Ask the LLM to map `utterance` onto one reviewed phrase, or nothing."""
 
-    phrases = reviewed_phrases()
-    query = LLMQuery(text=_build_prompt(phrases, utterance))
-    reply = provider.respond(query).text.strip()
-    return _validate_reply(reply, phrases)
+    return suggest_command_result(provider, utterance).phrase
 
 
 def _build_prompt(phrases: tuple[str, ...], utterance: str) -> str:
@@ -40,9 +60,10 @@ def _build_prompt(phrases: tuple[str, ...], utterance: str) -> str:
         f"{menu}\n\n"
         "Reply with exactly one of the phrases above, verbatim, if the request "
         "clearly matches one -- for the search phrase, replace <your query> with "
-        "the actual thing to search for. Otherwise reply with exactly the word "
-        "NONE. Do not explain, do not add punctuation, do not invent a phrase not "
-        "in the list.\n\n"
+        "the actual thing to search for. If the request is ambiguous, reply with "
+        "exactly CLARIFY: followed by one concise question for the human. Otherwise "
+        "reply with exactly the word NONE. Do not explain, do not add punctuation, "
+        "do not invent a phrase not in the list.\n\n"
         f"Request: {utterance}"
     )
 

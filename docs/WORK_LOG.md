@@ -1,5 +1,17 @@
 # Work Log
 
+## 2026-09-05 Phase 6 Clarification
+
+- Implemented one bounded clarification question for ambiguous LLM command
+  suggestions on both CLI and desktop Suggest Command surfaces. The answer is
+  combined with the original request and mapped exactly once more before the
+  existing human confirmation, policy, and dispatcher gates.
+- Validated model clarification output as safe single-line text; malformed or
+  unsafe clarification does not reach dispatch. Added CLI, desktop, and planner
+  regression tests.
+- Full verification: 458 tests passed, 91% coverage, Ruff, mypy, Bandit, and
+  requirements-scoped pip-audit passed. Live LLM behavior remains unverified.
+
 ## 2026-09-05 Autonomous Cycle: Baseline Fix -- Local Provider Path Splitting (Linux sandbox)
 
 - Followed the standing protocol in a fresh sandbox container: pulled `main`

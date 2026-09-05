@@ -4,6 +4,9 @@ VisionAI is being rebuilt around an explicit safety-first pipeline:
 
 Input adapters -> bounded event bus -> recognition services -> intent orchestrator -> typed action plan -> policy and permission engine -> confirmation gate -> serialized action dispatcher -> platform capability adapter -> result event -> UI, TTS, and audit history.
 
+Ambiguous LLM command suggestions may ask one validated clarification question
+on the CLI or desktop surface, then retry mapping once after the human answers.
+
 ## Components (Phase 0 foundation + Phase 1 safety + Phase 4 capabilities + first Phase 2 UI slice)
 
 - `visionai.core.events`: typed contracts for inputs, transcripts, gestures, intents, action plans, confirmations, pending permission requests, permission decisions, audit events, and error events.

@@ -8,7 +8,11 @@ mirroring `visionai.platform.__init__` not re-exporting `webcam`/
 """
 
 from visionai.intelligence.memory import ConversationMemory, ConversationTurn
-from visionai.intelligence.planner import suggest_command
+from visionai.intelligence.planner import (
+    CommandSuggestion,
+    suggest_command,
+    suggest_command_result,
+)
 from visionai.intelligence.provider import (
     DeterministicFallbackProvider,
     LLMProvider,
@@ -24,4 +28,6 @@ __all__ = [
     "LLMQuery",
     "LLMReply",
     "suggest_command",
+    "CommandSuggestion",
+    "suggest_command_result",
 ]

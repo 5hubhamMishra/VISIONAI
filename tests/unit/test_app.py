@@ -706,6 +706,33 @@ def test_app_suggest_reports_no_match(monkeypatch, capsys) -> None:
     assert launched == []
 
 
+def test_app_suggest_asks_once_then_confirms_the_resolved_command(monkeypatch, capsys) -> None:
+    launched: list[str] = []
+    replies = iter(["CLARIFY: Which app should I open?", "open notepad"])
+
+    class _FakeProvider:
+        def respond(self, query: object) -> object:
+            from visionai.intelligence import LLMReply
+
+            return LLMReply(text=next(replies))
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--suggest", "open something"])
+    monkeypatch.setattr("visionai.app._build_llm_provider", lambda: _FakeProvider())
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
+    )
+    answers = iter(["notepad", "yes"])
+    monkeypatch.setattr("builtins.input", lambda _: next(answers))
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Which app should I open?" in output
+    assert "Proposed: Open notepad." in output
+    assert launched == ["notepad.exe"]
+
+
 def test_app_rejects_unknown_text_command(monkeypatch, capsys) -> None:
     monkeypatch.setattr("sys.argv", ["visionai", "--text", "open calc & powershell"])
 

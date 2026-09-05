@@ -73,7 +73,7 @@ from visionai.intelligence import (
     DeterministicFallbackProvider,
     LLMProvider,
     LLMQuery,
-    suggest_command,
+    suggest_command_result,
 )
 from visionai.observability import configure_logging
 from visionai.orchestration.event_orchestrator import InputAdapter
@@ -405,14 +405,21 @@ class _SuggestWorker(QObject):
     proposed = Signal(str, str)
     message = Signal(str)
     failed = Signal(str)
+    clarification_needed = Signal(str, str)
 
     def __init__(
-        self, *, runtime: Runtime, text: str | None = None, phrase: str | None = None
+        self,
+        *,
+        runtime: Runtime,
+        text: str | None = None,
+        phrase: str | None = None,
+        allow_clarification: bool = True,
     ) -> None:
         super().__init__()
         self._runtime = runtime
         self._text = text
         self._phrase = phrase
+        self._allow_clarification = allow_clarification
 
     @Slot()
     def run(self) -> None:
@@ -434,10 +441,14 @@ class _SuggestWorker(QObject):
             self.message.emit(provider.respond(LLMQuery(text=text)).text)
             return
         try:
-            phrase = suggest_command(provider, text)
+            suggestion = suggest_command_result(provider, text)
         except (ProviderError, ValidationError) as exc:
             self.message.emit(f"Could not get a suggestion: {exc}")
             return
+        if suggestion.clarification is not None and self._allow_clarification:
+            self.clarification_needed.emit(text, suggestion.clarification)
+            return
+        phrase = suggestion.phrase
         if phrase is None:
             self.message.emit("No matching command found.")
             return
@@ -1105,24 +1116,50 @@ class MainWindow(QMainWindow):
         self._start_suggest_worker(text=text)
 
     def _start_suggest_worker(
-        self, *, text: str | None = None, phrase: str | None = None
+        self,
+        *,
+        text: str | None = None,
+        phrase: str | None = None,
+        allow_clarification: bool = True,
     ) -> None:
         self._suggest_button.setEnabled(False)
         thread = QThread(self)
-        worker = _SuggestWorker(runtime=self._runtime, text=text, phrase=phrase)
+        worker = _SuggestWorker(
+            runtime=self._runtime,
+            text=text,
+            phrase=phrase,
+            allow_clarification=allow_clarification,
+        )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.proposed.connect(self._on_suggest_proposed)
         worker.message.connect(self._on_suggest_message)
         worker.failed.connect(self._on_suggest_failed)
+        worker.clarification_needed.connect(self._on_suggest_clarification_needed)
         worker.proposed.connect(thread.quit)
         worker.message.connect(thread.quit)
         worker.failed.connect(thread.quit)
+        worker.clarification_needed.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
         self._suggest_thread = thread
         self._suggest_worker = worker
         thread.start()
+
+    def _on_suggest_clarification_needed(self, original_text: str, question: str) -> None:
+        _finish_thread(self._suggest_thread)
+        self._suggest_thread = None
+        self._suggest_worker = None
+        if self._closing:
+            return
+        answer = self._prompt_for_text("Suggest Command", question)
+        if not answer:
+            self._suggest_button.setEnabled(True)
+            self._output.setPlainText("Cancelled.")
+            return
+        self._start_suggest_worker(
+            text=f"{original_text} {answer}", allow_clarification=False
+        )
 
     def _on_suggest_proposed(self, phrase: str, summary: str) -> None:
         _finish_thread(self._suggest_thread)
