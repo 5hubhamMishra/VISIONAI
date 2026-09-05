@@ -21,6 +21,19 @@ discarded. Cancelling gesture listening discards unfinished speech rather
 than dispatching it. Desktop thread cleanup, graceful shutdown, and in-flight
 conversation clearing are also verified. Earlier contributor checkpoints follow.
 
+2026-09-06 autonomous cycle (Linux sandbox): started against local commit
+`be5816a` (Phase 7's routines-first-slice, already merged by a prior session).
+This session did not touch Phase 7 itself -- it closed a pure test-coverage
+gap in the already-merged `visionai.config.routines.RoutineStore` (91% -> 100%
+line coverage): the unsafe-name early-return branches of `get()`/`delete()`,
+`_read()`'s non-object-JSON-root rejection, `_write()`'s `OSError` handling,
+and `default_routine_store()` itself were all untested. Added five tests to
+`tests/unit/test_routines.py`. No application behavior changed. Full
+verification: 500 tests (462 passed, 28 failed -- identical failing-test
+names to the pre-change baseline, the documented `WindowsLockStateAdapter`
+fail-closed pattern, not a regression -- 10 skipped), 91% coverage, Ruff,
+mypy (one known sandbox-only false positive), Bandit, pip-audit all clean.
+
 Standing instructions are discoverable in AGENTS.md. Phone pairing remains
 unverified; the owner-only setup is in [REMOTE_CONTROL.md](REMOTE_CONTROL.md).
 The next bounded reliability task is complete: background CLI listening errors
@@ -660,6 +673,13 @@ cd visionai
 
 ## Last Verification Result
 
+- 2026-09-06, Linux sandbox (this session, `config/routines.py` coverage
+  cycle): 500 tests -- 462 passed, 28 failed (all the documented
+  `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
+  regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
+  source files except the one documented sandbox-only `ctypes.windll` false
+  positive, Bandit clean, pip-audit clean. `config/routines.py` now at 100%
+  line coverage (was 91%).
 - 2026-09-06, real Windows (this machine's `.venv312`, not a sandbox): 481 passed, 10 skipped (9 self-gated live-LLM prompt-injection tests, 1 pre-existing), 91% coverage, Ruff clean, mypy clean for 54 source files (real `WindowsLockStateAdapter` typing resolves correctly here, unlike the Linux sandbox note below), Bandit clean, pip-audit clean. Includes this session's Phase 7 routines-first-slice addition.
 - Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libopengl0`/`libportaudio2` (`libgl1` was already present) -- headless `pytest-qt` could not import `QtGui` at all without `libEGL.so.1`, and `sounddevice`'s real-backend smoke test would raise `OSError: PortAudio library not found` -- all installed via `apt-get` before the suite would run to completion. None of this is a Python/project dependency change -- it is a container-image setup gap, not application code.
 - Ruff: passed (whole repo)
@@ -670,4 +690,4 @@ cd visionai
 
 ## Last Updated
 
-2026-09-06
+2026-09-06 (Linux sandbox coverage cycle)

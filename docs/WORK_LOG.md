@@ -1,5 +1,41 @@
 # Work Log
 
+## 2026-09-06 RoutineStore Test Coverage (Linux Sandbox Cycle)
+
+- Started against local commit `be5816a` (Phase 7 first slice, routines
+  restricted to Risk 0/1 phrases); baseline verified clean before any work
+  started (fresh `.venv312` built from `requirements/dev.txt` in a new
+  container, again needing `libegl1`/`libopengl0`/`libportaudio2` via
+  `apt-get`; Ruff clean; mypy clean for 54 files except the same sandbox-only
+  `ctypes.windll` false positive every session shows; Bandit clean; pip-audit
+  clean; pytest 495 tests -- 457 passed, 28 failed, 10 skipped, 91% coverage;
+  all 28 failures confirmed by message to be the same `WindowsLockStateAdapter`
+  fail-closed pattern every prior sandbox session has documented, not a
+  regression).
+- This session did not start, extend, or verify any part of Phase 7 itself --
+  that was already committed by a prior session (commit `be5816a`, authored
+  under the repository owner's own git identity rather than a Claude-attributed
+  one, with `docs/DECISIONS/0007-phase7-routines-first-slice.md` recording the
+  approval). This session only closed a pure test-coverage gap in the
+  already-merged `visionai.config.routines` module, per the standing
+  hardware-free-coverage-gap pattern; no application behavior changed.
+- `visionai.config.routines.RoutineStore` was 91% covered (65 statements, 6
+  missing: `get()`'s and `delete()`'s unsafe-name-returns-early branches,
+  `_read()`'s non-object-JSON-root rejection, `_write()`'s `OSError` handling,
+  and `default_routine_store()` itself -- every existing test either used a
+  safe name or monkeypatched `default_routine_store` away at the `app.py`
+  level). Added five tests to `tests/unit/test_routines.py`: `get()`/`delete()`
+  with a control-character name, a JSON array as the store root, a
+  monkeypatched `NamedTemporaryFile` raising `OSError` (mirroring the
+  existing `JsonPermissionStore` write-failure test), and a direct test of
+  `default_routine_store()` against a monkeypatched `get_settings()`.
+  `config/routines.py` reached 100% line coverage (was 91%). No application
+  code changed -- this was a pure test gap, not a bug.
+- Full verification after the change: 500 tests (462 passed, 28 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 10 skipped), 91% coverage, Ruff/mypy(one known false
+  positive)/Bandit/pip-audit all clean.
+
 ## 2026-09-06 Phase 7 First Slice: Routines Restricted to Risk 0/1
 
 - Started Phase 7 (Advanced), with explicit user approval, on the smallest
