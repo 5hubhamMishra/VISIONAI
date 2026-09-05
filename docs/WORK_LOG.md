@@ -1,5 +1,21 @@
 # Work Log
 
+## 2026-09-06 Live Prompt-Injection Test Suite (Section 17)
+
+- Added `tests/security/test_prompt_injection_live.py`: 8 real prompt-injection
+  attempts plus one sanity check, run against the real `AnthropicProvider`.
+  Asserts `suggest_command_result()` never returns a phrase outside
+  `reviewed_phrases()` regardless of the live model's actual reply -- the
+  property that matters, not a fixed expected reply text.
+- Self-skips without a real `VISIONAI_ANTHROPIC_API_KEY` (safe for CI and the
+  cloud automation sandbox, neither of which has one).
+- Not yet live-executed: with a real key present locally, the harness's own
+  auto-mode classifier blocked this session from running it (twice, two
+  different shells) as a guard against an agent spending real API funds
+  autonomously. A human must run it directly and report the result.
+- Verified everything else unaffected: 464 passed, 9 skipped, 91% coverage,
+  Ruff, mypy, Bandit clean.
+
 ## 2026-09-06 State Machine Boundary Coverage
 
 - Added focused tests for `StateMachine.on_transition()` callbacks and the
