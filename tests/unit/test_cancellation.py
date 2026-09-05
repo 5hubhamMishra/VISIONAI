@@ -18,6 +18,19 @@ def test_cancellation_token_signals_and_raises() -> None:
         token.raise_if_cancelled()
 
 
+def test_cancellation_token_wait_returns_true_when_already_cancelled() -> None:
+    token = CancellationToken()
+    token.cancel()
+
+    assert token.wait(timeout=1) is True
+
+
+def test_cancellation_token_wait_returns_false_on_timeout_when_not_cancelled() -> None:
+    token = CancellationToken()
+
+    assert token.wait(timeout=0.01) is False
+
+
 def test_operation_controller_cancels_active_token() -> None:
     controller = OperationController()
     token = controller.begin_operation()

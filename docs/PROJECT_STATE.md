@@ -85,6 +85,29 @@ names to the pre-change baseline, the documented `WindowsLockStateAdapter`
 fail-closed pattern, not a regression -- 10 skipped), 91% coverage, Ruff,
 mypy (one known sandbox-only false positive), Bandit, pip-audit all clean.
 
+2026-09-06 autonomous cycle (Linux sandbox, core/cancellation.py coverage):
+started against local commit `39f7231`; baseline verified clean and unchanged
+from the prior session's documented state before any work started (fresh
+`.venv312` built from `requirements/dev.txt` in a new container, again
+needing `libegl1`/`libopengl0`/`libportaudio2` via `apt-get` -- `libgl1` was
+already present -- before pytest-qt/sounddevice would import; Ruff clean;
+mypy clean for 54 files except the same sandbox-only `ctypes.windll` false
+positive every session shows; Bandit clean; pip-audit clean; pytest 505
+tests -- 467 passed, 28 failed, 10 skipped, 91% coverage -- all 28 failures
+confirmed by message to be the documented `WindowsLockStateAdapter`
+fail-closed pattern, not a regression, exactly matching the prior session's
+recorded result). The prior session's report flagged `core/cancellation.py`
+(97% covered, line 30) as a remaining hardware-free coverage gap. Confirmed
+it was real: `CancellationToken.wait()`, the blocking half of this project's
+core cooperative-cancellation primitive, had zero test coverage and zero
+callers anywhere in the codebase. Added two tests to
+`tests/unit/test_cancellation.py` covering both return branches (`True`
+when already cancelled, `False` on a real timeout). No application code
+changed. `core/cancellation.py` reached 100% line coverage (was 97%). Full
+verification after the change: 507 tests (469 passed, 28 failed -- identical
+failing-test names, no regressions -- 10 skipped), 91% coverage,
+Ruff/mypy(one known false positive)/Bandit/pip-audit all clean.
+
 Standing instructions are discoverable in AGENTS.md. Phone pairing remains
 unverified; the owner-only setup is in [REMOTE_CONTROL.md](REMOTE_CONTROL.md).
 The next bounded reliability task is complete: background CLI listening errors
@@ -724,7 +747,14 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `observability/audit.py` coverage
+- 2026-09-06, Linux sandbox (this session, `core/cancellation.py` coverage
+  cycle): 507 tests -- 469 passed, 28 failed (all the documented
+  `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
+  regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
+  source files except the one documented sandbox-only `ctypes.windll` false
+  positive, Bandit clean, pip-audit clean. `core/cancellation.py` now at
+  100% line coverage (was 97%).
+- 2026-09-06, Linux sandbox (prior session, `observability/audit.py` coverage
   cycle): 505 tests -- 467 passed, 28 failed (all the documented
   `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
   regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
@@ -755,4 +785,4 @@ cd visionai
 
 ## Last Updated
 
-2026-09-06 (Linux sandbox coverage cycle: `observability/audit.py`)
+2026-09-06 (Linux sandbox coverage cycle: `core/cancellation.py`)
