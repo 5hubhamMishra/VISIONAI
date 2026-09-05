@@ -2,6 +2,7 @@ import pytest
 
 from visionai.core.errors import StorageError
 from visionai.policy import JsonPermissionStore
+from visionai.policy import permissions as permissions_module
 
 
 def test_permission_store_persists_grants_and_revocations(tmp_path) -> None:
@@ -38,3 +39,23 @@ def test_permission_store_rejects_invalid_entries(tmp_path) -> None:
 
     with pytest.raises(StorageError):
         JsonPermissionStore(path).granted_capabilities()
+
+
+def test_permission_store_rejects_non_object_json_root(tmp_path) -> None:
+    path = tmp_path / "permissions.json"
+    path.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(StorageError, match="root must be an object"):
+        JsonPermissionStore(path).granted_capabilities()
+
+
+def test_permission_store_raises_storage_error_on_write_failure(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "permissions.json"
+
+    def _raise_os_error(*args: object, **kwargs: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(permissions_module, "NamedTemporaryFile", _raise_os_error)
+
+    with pytest.raises(StorageError, match="could not be written"):
+        JsonPermissionStore(path).grant("clipboard.read")

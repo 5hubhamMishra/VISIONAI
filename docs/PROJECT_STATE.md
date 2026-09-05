@@ -30,6 +30,43 @@ The current Phase 6 clarification slice is implemented on CLI and desktop
 Suggest Command: ambiguous requests may receive one validated follow-up
 question, then one final mapping attempt before normal confirmation and policy.
 
+2026-09-05 autonomous cycle (Linux sandbox, permission store test coverage):
+started against local commit `6441429`; baseline verified clean before any
+work started (fresh `.venv312` built from `requirements/dev.txt` in a new
+container, again needing `libegl1`/`libopengl0`/`libgl1`/`libportaudio2` via
+`apt-get` before pytest-qt/sounddevice would import; Ruff clean; mypy clean
+for 53 files except the same sandbox-only `ctypes.windll` false positive
+every session shows; Bandit clean; pip-audit clean; pytest 460 tests -- 432
+passed, 27 failed, 1 skipped, 91% coverage. The 27 failures are all the same
+`WindowsLockStateAdapter` fail-closed pattern every prior sandbox session has
+documented -- verified by reading every failure message, all "mutating
+actions are blocked while the screen is locked" -- not a regression; the
+count grew from the previously-documented 25 only because commits since the
+last coverage snapshot added more tests that exercise mutating capabilities,
+not because new capabilities started failing). `Approved Next Tasks` items 3
+and 5's remaining entries all need real hardware, a live network/model, or a
+human product decision this sandbox cannot provide, so this session picked
+one of the specific hardware-free coverage gaps the prior session's report
+flagged but had not yet inspected: `visionai.policy.permissions.
+JsonPermissionStore` (94% covered). Confirmed both untested lines were real
+gaps, not incidental: `_read()`'s rejection of a syntactically valid JSON
+document whose root is not an object (e.g. `[]`) -- the existing malformed-
+JSON test only covered a JSON *parse* failure, never a valid-JSON-wrong-shape
+one -- and `_write()`'s `OSError` handling, which had no test forcing a write
+failure at all. Added two tests to `tests/unit/test_permissions.py`: one
+writing a JSON array as the store file and asserting `StorageError` with the
+"root must be an object" message; one monkeypatching the module's imported
+`NamedTemporaryFile` to raise `OSError` (chosen over a filesystem-permission
+trick since this sandbox runs as root, which bypasses normal file-permission
+enforcement and would not have reliably reproduced a write failure) and
+asserting `grant()` raises `StorageError` with the "could not be written"
+message instead of letting the raw `OSError` propagate. No application code
+changed -- this was a pure test gap, not a bug. `policy/permissions.py`
+reached 100% line coverage (was 94%). Full verification after the change:
+462 tests (434 passed, 27 failed -- identical failing-test names to the
+pre-change baseline, confirming no regressions -- 1 skipped), 91% coverage,
+Ruff/mypy(one known false positive)/Bandit/pip-audit all clean.
+
 2026-09-05 autonomous cycle (Linux sandbox, baseline fix -- local provider
 path splitting): started against local commit `6ab7771`; this session found
 the sandbox baseline was not clean as documented -- 26 failures instead of
@@ -572,7 +609,7 @@ cd visionai
 - Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libopengl0`/`libgl1`/`libportaudio2` -- headless `pytest-qt` could not import `QtGui` at all without `libEGL.so.1`, and `sounddevice`'s real-backend smoke test would raise `OSError: PortAudio library not found` -- all installed via `apt-get` before the suite would run to completion. None of this is a Python/project dependency change -- it is a container-image setup gap, not application code.
 - Ruff: passed (whole repo)
 - mypy: passed for 53 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing).
-- pytest: this session's baseline check against `6ab7771` (before any change) showed 455 tests but **26 failures, not the documented 25** -- one new failure, `tests/unit/test_local_provider.py::test_constructor_loads_existing_model_without_download`, was a genuine platform-dependent bug in already-shipped code (see the Current Phase entry above), not the accepted `WindowsLockStateAdapter` pattern. Fixed by switching `LocalLlamaProvider`'s path split from `pathlib.Path` to `pathlib.PureWindowsPath` and updating the test's expectation to match. After the fix: 455 tests (429 passed, 25 failed -- back to exactly the documented `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop set, confirmed by name -- 1 skipped), 91% coverage.
+- pytest: this session's baseline check against `6441429` (before any change) showed 460 tests -- 432 passed, 27 failed (all confirmed by message to be the documented `WindowsLockStateAdapter` fail-closed pattern; the count grew from the previously-documented 25 only because intervening commits added more mutating-capability tests, not a regression), 1 skipped, 91% coverage. After adding two `JsonPermissionStore` coverage tests (see the Current Phase entry above): 462 tests (434 passed, 27 failed -- identical failing-test names to the pre-change baseline -- 1 skipped), 91% coverage, `policy/permissions.py` at 100% line coverage (was 94%).
 - Bandit: passed (whole repo, `src`)
 - pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv; no dependency changes this session)
 
