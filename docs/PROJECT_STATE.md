@@ -2,6 +2,36 @@
 
 ## Current Phase
 
+2026-09-05 autonomous cycle (Linux sandbox, secret-store test coverage):
+baseline verified clean and unchanged from the prior session's documented
+sandbox state before any work started (ruff/bandit/pip-audit clean; mypy
+clean for 52 files except the same sandbox-only `ctypes.windll` false
+positive every session shows; pytest 373 passed/25 failed/1 skipped, the
+same exclusively `WindowsLockStateAdapter` fail-closed pattern, not a
+regression; this session's own fresh `.venv312` needed two missing system
+shared libraries installed via `apt-get` before the suite would even
+collect -- `libegl1`/`libgl1`/`libopengl0` for headless `pytest-qt`, and
+`libportaudio2` for `sounddevice`'s real-backend import -- neither is a
+Python dependency change, both are container-only setup gaps, and pytest
+was otherwise unable to start at all without them). Found a real,
+previously untested gap while looking for a well-scoped, hardware-free
+task: `visionai.config.secrets.KeyringSecretStore.set()` and `.delete()` --
+the OS-keychain write/delete paths `--set-api-key`/`--delete-api-key` and
+the desktop Settings dialog both depend on -- had zero test coverage
+(`config/secrets.py` was 70% covered; only `.get()`'s read/fail-soft path
+was exercised, by the existing real-backend smoke test). Both methods'
+`StorageError`-wrapping failure branches, `set()`'s success path, and
+`delete()`'s `keyring.errors.PasswordDeleteError`-is-idempotent branch were
+all unverified by any test. Added six focused tests to
+`tests/unit/test_secrets.py` using `monkeypatch` on the already-imported
+`keyring` module (mirroring how `WindowsLockStateAdapter`'s mocked
+locked/failure branches are tested) -- no real OS keychain touched, no
+hardware or live Windows behavior claimed. `config/secrets.py` is now 100%
+covered; no application code changed, no regressions (identical 25-test
+failure set to the pre-change baseline). Full verification after the
+change: 404 tests (378 passed/25 failed/1 skipped), 88% coverage,
+ruff/mypy(one known false positive)/bandit/pip-audit all clean.
+
 2026-09-05 autonomous cycle (Linux sandbox, text-safety hardening): baseline
 verified clean and unchanged from the prior session's documented sandbox
 state before any work started (ruff/bandit/pip-audit clean; mypy clean for
@@ -282,10 +312,10 @@ cd visionai
 
 ## Last Verification Result
 
-- Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run -- not yet re-checked against this session's own push at the time of writing this entry, since verification here was all local)
+- Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run -- not yet re-checked against this session's own push at the time of writing this entry, since verification here was all local). This container was also missing `libegl1`/`libgl1`/`libopengl0` (headless `pytest-qt` could not import `QtGui` at all -- `ImportError: libEGL.so.1`) and `libportaudio2` (`sounddevice`'s real-backend smoke test raised `OSError: PortAudio library not found`); both were installed via `apt-get` before the suite would run to completion. Neither is a Python/project dependency change -- both are container-image setup gaps, not application code -- and installing them only lets the existing tests actually execute; it does not constitute claiming any real display, camera, or microphone hardware.
 - Ruff: passed (whole repo)
-- mypy: passed for 52 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing). Note: `mypy src tests` (not the project's actual gate -- `scripts/verify.ps1` only runs `mypy src`) shows many pre-existing untyped-test-function/`list.append`-return errors across `test_app.py`/`test_browser.py`/`test_main_window.py`; these predate this session, are not part of the verification command this project actually runs, and were left untouched.
-- pytest: 399 tests total (25 more than the prior session's 374 -- 11 new in `test_events.py`, 1 new in `test_anthropic_provider.py`, plus this run did not otherwise add/remove tests). In this Linux sandbox: 373 passed, 25 failed, 1 skipped, 88% coverage -- this session's baseline check (before any change) already showed 25 of these failures, all the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change, confirming no regressions were introduced. This full `--cov` run did not segfault in this container (unlike a prior session's documented sandbox-only coverage/QThread interaction) -- run cleanly in a single pass with no workaround needed this time. `src/visionai/core/events.py` (this session's hardened module) has 100% line coverage, confirmed directly in the whole-suite report, not inferred.
+- mypy: passed for 52 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing).
+- pytest: 404 tests total (5 more than the prior session's 399 -- 6 new in `test_secrets.py` covering `KeyringSecretStore.set()`/`.delete()`, minus this run did not otherwise add/remove tests). In this Linux sandbox: 378 passed, 25 failed, 1 skipped, 88% coverage -- this session's baseline check (before any change) showed the identical 25 failures, all the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/config/secrets.py` (this session's newly-tested module) has 100% line coverage, confirmed directly in the whole-suite report, up from 70% at session start.
 - Bandit: passed (whole repo, `src`)
 - pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv)
 

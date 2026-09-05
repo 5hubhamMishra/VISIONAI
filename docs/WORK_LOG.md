@@ -1,5 +1,53 @@
 # Work Log
 
+## 2026-09-05 autonomous cycle: KeyringSecretStore write-path test coverage (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`
+  (already up to date at `4728bc9`), read the docs and recent git log, built
+  a Python 3.12 virtualenv from `requirements/dev.txt`, and ran the baseline
+  verification suite before touching anything. The container was again
+  missing the headless Qt/PortAudio system libraries (`libegl1`, `libgl1`,
+  `libopengl0`, `libportaudio2` -- a fresh container each run, so this setup
+  step recurs); installed them via `apt-get` (container-only setup, not a
+  Python dependency change) so the suite could even collect. Baseline then
+  matched the documented sandbox state exactly: ruff/bandit/pip-audit clean,
+  mypy clean except the known `ctypes.windll` false positive, pytest 373
+  passed/25 failed/1 skipped, 88% coverage -- all 25 failures confirmed by
+  name to be the same `WindowsLockStateAdapter` fail-closed pattern every
+  prior sandbox session has documented, not a regression.
+- Scanned the coverage report for a real, narrow, hardware-free gap rather
+  than inventing new scope. `visionai.config.secrets.KeyringSecretStore`
+  (backing `--set-api-key`/`--delete-api-key` and the desktop Settings
+  dialog's masked API-key entry/deletion) was only 70% covered: `.get()`'s
+  read/fail-soft path had a real-backend smoke test, but `.set()` and
+  `.delete()` -- including both methods' `StorageError`-wrapping failure
+  branches, `.set()`'s success path, and `.delete()`'s
+  `keyring.errors.PasswordDeleteError`-means-idempotent branch -- had zero
+  test coverage at all.
+- Added six tests to `tests/unit/test_secrets.py` using `pytest`'s
+  `monkeypatch` fixture on the already-imported `keyring` module (the same
+  "mock the external OS boundary" approach already used for
+  `WindowsLockStateAdapter`'s locked/failure branches): a success-path test
+  and a `StorageError`-wrapping failure test for each of `.set()`/`.delete()`,
+  plus one confirming `.delete()` swallows `PasswordDeleteError` rather than
+  raising. No real OS keychain is touched by these tests, and no hardware or
+  live Windows behavior is claimed. `config/secrets.py` reached 100% line
+  coverage.
+- Files changed: `tests/unit/test_secrets.py`, `docs/PROJECT_STATE.md`,
+  `docs/WORK_LOG.md`. No application/production code changed.
+- Commands/tests run: `ruff check .` (clean); `mypy src` (clean except the
+  known sandbox-only false positive); `pytest --cov=src/visionai
+  --cov-report=term-missing` (404 tests: 378 passed, 25 failed -- identical
+  by name to the pre-change baseline, confirming no regressions -- 1
+  skipped, 88% coverage); `bandit -q -r src` (clean); `pip-audit -r
+  requirements/base.txt -r requirements/dev.txt` (no known vulnerabilities).
+- Next task: this closes a real coverage gap but adds no new capability.
+  Approved Next Tasks item 5's remaining scoped options (LLM clarification,
+  a local/offline provider) both still need a human product/design decision
+  before implementation, per that section's own wording -- a future session
+  should either get that decision or keep mining coverage gaps / property
+  tests / documentation reconciliation for hardware-free work.
+
 ## 2026-09-05 autonomous cycle: Unicode text-safety hardening (Linux sandbox)
 
 - Followed the standing protocol in a fresh sandbox container: pulled `main`,
