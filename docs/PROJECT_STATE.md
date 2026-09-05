@@ -2,6 +2,19 @@
 
 ## Current Phase
 
+2026-09-05 update: desktop Settings now supports masked API-key entry and
+keychain deletion. The inherited UI/test change was completed, including
+missing-keyring handling, conflicting-choice rejection, and noninteractive
+tests. Full verification passed: 347 tests, 88% coverage, Ruff, mypy,
+Bandit, and requirements-scoped dependency audit. The Python runtime is
+available in an approved shell; restricted-shell lookup failure alone is
+not evidence that Python needs reinstalling. Standing autonomous development
+preferences are recorded in AGENT_COORDINATION.md.
+
+The phase closures below refer to previously approved slices, not every
+requirement in the PDF. TTS/VAD/echo coordination, full vision calibration
+and benchmarks, intelligence clarification/memory, and release gates remain.
+
 Phase 1 safety foundation locally verified; Phase 4 capability migration
 complete for all four of Section 13's initial safe capabilities; Phase 2
 desktop UI's core slice complete (user decision), including editable

@@ -2,6 +2,10 @@
 
 ## 0.1.0
 
+- Finished desktop API-key Settings: masked entry, keychain save/delete,
+  unchanged-on-blank behavior, and conflict rejection. Settings remains
+  accessible when the optional keyring dependency is missing.
+
 - Started Phase 0 foundation.
 - Added neutral VisionAI package structure, docs, typed contracts, state machine, event bus, logging redaction, and unit tests.
 - Added initial Phase 1 capability registry, policy engine, confirmation service, and related unit tests.

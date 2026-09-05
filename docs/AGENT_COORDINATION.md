@@ -4,6 +4,23 @@ This repository is shared by Codex and Claude Code. `main` is the single
 source of truth; there are no private parallel implementation branches for
 project progress.
 
+## Standing Owner Preference (2026-09-05)
+
+Until VisionAI is complete or the owner changes this preference, continue
+approved project work autonomously in bounded, reviewable slices. Choose the
+next task from the master prompt and current evidence, implement and verify
+it, update the handoff, and prepare coherent commits without repeatedly
+asking the owner to choose routine implementation details. During an active
+one-hour cycle, track elapsed time and finish with a detailed report of
+changes, tests, limitations, and the next task. This preference persists in
+the repository; it does not schedule unattended future sessions by itself.
+
+Minimize owner involvement. Platform approval prompts, account sign-in,
+phone pairing, and physical hardware checks still require the owner when
+the tools cannot perform them. Do not interpret this development preference
+as permission to bypass VisionAI's runtime action confirmations or disable
+security controls. Preserve existing user work and do not force-push.
+
 ## Product Reference
 
 The product reference is the original master prompt:
@@ -64,8 +81,8 @@ After editing:
 
 ## Current Boundary
 
-The latest pushed slice is the wake-word gate (`06e0b28`). It is deterministic
-text matching over already-transcribed input, not continuous microphone
-capture or a hotword engine. The next implementation must choose one slice,
-pull/check `main`, and preserve that boundary unless the user explicitly asks
-for the full live voice path.
+Phase 6 Intelligence is active. Read PROJECT_STATE.md and the latest Git
+commit for the current slice; this document intentionally does not duplicate
+the changing commit identifier. Voice and gesture inputs already feed the
+trusted runtime. Preserve the policy boundary while completing the remaining
+intelligence, verification, and release requirements.

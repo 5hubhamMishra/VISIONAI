@@ -1,5 +1,11 @@
 # Testing
 
+2026-09-05 desktop keychain slice: full verification passed with 347 tests
+and 88% coverage. Settings regressions cover missing optional keyring,
+conflicting key choices without writes, save/delete, and storage failures.
+Two inherited tests were fixed to replace the modal success dialog so they
+can finish unattended. Python 3.12.10 works in the approved shell.
+
 ## Strategy
 
 Phase 0 tests cover core contracts and invariants:

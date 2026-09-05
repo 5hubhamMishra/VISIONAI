@@ -1,5 +1,23 @@
 # Work Log
 
+## 2026-09-05 Autonomous cycle: desktop keychain completion
+
+- Owner requested one hour of autonomous implementation and a detailed report,
+  with the preference retained until project completion. Recorded in
+  AGENT_COORDINATION.md; normal runtime confirmations remain enforced.
+- Cycle began 07:24:21 UTC (12:54:21 IST). Baseline local and live GitHub main
+  both c51536f; inherited changes were main_window.py and its tests.
+- Completed Settings key save/delete UI, retained password masking and
+  blank-means-unchanged, added optional-dependency and conflicting-input guards.
+  Corrected two tests that waited indefinitely for a real success dialog.
+- Full verify.ps1 passed: Ruff, mypy (51 files), 347 pytest, 88% coverage,
+  Bandit, and requirements-scoped pip-audit. Two protobuf deprecation warnings.
+- Remote control research: official Remote setup requires desktop Settings >
+  Connections > Control this PC and authenticated QR pairing on the owner's
+  phone. No tool in this session can perform phone pairing; not claimed connected.
+- Updated stale README and coordination boundary. Next slice: strict LLM
+  contracts and malformed suggestion regression coverage.
+
 This file records durable project checkpoints so future sessions can resume
 from the documented state instead of re-inspecting the whole workspace.
 

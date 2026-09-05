@@ -8,8 +8,10 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QWidge
 
 from visionai.capabilities import CapabilityManifest, CapabilityRegistry, IdempotencyMode
 from visionai.capabilities.dispatcher import SerializedDispatcher
+from visionai.config.secrets import InMemorySecretStore
 from visionai.config.user_settings import UserSettingsStore
 from visionai.core.cancellation import OperationController
+from visionai.core.errors import StorageError
 from visionai.core.event_bus import EventBus
 from visionai.core.events import (
     ActionPlan,
@@ -703,7 +705,13 @@ def test_main_window_settings_button_saves_a_chosen_log_level(
     monkeypatch.setattr(
         window,
         "_ask_new_settings",
-        lambda current, device, devices, wake_word: ("DEBUG", 2, "friday"),
+        lambda current, device, devices, wake_word, api_key_configured=False: (
+            "DEBUG",
+            2,
+            "friday",
+            "",
+            False,
+        ),
     )
     configured: list[str] = []
     monkeypatch.setattr(
@@ -734,7 +742,9 @@ def test_main_window_settings_button_does_nothing_when_dialog_is_cancelled(
     qtbot.addWidget(window)
 
     monkeypatch.setattr(
-        window, "_ask_new_settings", lambda current, device, devices, wake_word: None
+        window,
+        "_ask_new_settings",
+        lambda current, device, devices, wake_word, api_key_configured=False: None,
     )
     shown: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -758,7 +768,15 @@ def test_main_window_settings_rejects_an_invalid_wake_word(
     qtbot.addWidget(window)
 
     monkeypatch.setattr(
-        window, "_ask_new_settings", lambda current, device, devices, wake_word: ("INFO", None, " ")
+        window,
+        "_ask_new_settings",
+        lambda current, device, devices, wake_word, api_key_configured=False: (
+            "INFO",
+            None,
+            " ",
+            "",
+            False,
+        ),
     )
     shown: list[tuple[str, str]] = []
     monkeypatch.setattr(
@@ -786,6 +804,153 @@ def test_settings_dialog_preselects_a_listed_microphone(qtbot: Any) -> None:
     qtbot.addWidget(dialog)
 
     assert dialog.selected_microphone_device_index() == 2
+
+
+def test_settings_dialog_reports_api_key_status(qtbot: Any) -> None:
+    unset = _SettingsDialog("INFO", None, [], wake_word="visionai", api_key_configured=False)
+    qtbot.addWidget(unset)
+    configured = _SettingsDialog("INFO", None, [], wake_word="visionai", api_key_configured=True)
+    qtbot.addWidget(configured)
+
+    assert unset._api_key_status_label.text() == "Anthropic API key: not set"
+    assert configured._api_key_status_label.text() == "Anthropic API key: configured"
+    assert unset.entered_api_key() == ""
+    assert unset.clear_api_key_requested() is False
+
+
+def test_main_window_settings_button_stores_a_new_api_key(
+    qtbot: Any, monkeypatch: Any, tmp_path: Any
+) -> None:
+    runtime = build_runtime()
+    store = UserSettingsStore(tmp_path / "settings.json")
+    window = MainWindow(runtime, settings_store=store)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+
+    secret_store = InMemorySecretStore()
+    monkeypatch.setattr("visionai.ui.main_window.default_secret_store", lambda: secret_store)
+    monkeypatch.setattr(
+        window,
+        "_ask_new_settings",
+        lambda current, device, devices, wake_word, api_key_configured=False: (
+            "INFO",
+            None,
+            "visionai",
+            "sk-ant-fake-key",
+            False,
+        ),
+    )
+
+    qtbot.mouseClick(window._settings_button, Qt.MouseButton.LeftButton)
+
+    assert secret_store.get("anthropic_api_key") == "sk-ant-fake-key"
+
+
+def test_main_window_settings_button_clears_the_stored_api_key(
+    qtbot: Any, monkeypatch: Any, tmp_path: Any
+) -> None:
+    runtime = build_runtime()
+    store = UserSettingsStore(tmp_path / "settings.json")
+    window = MainWindow(runtime, settings_store=store)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(QMessageBox, "information", lambda *args: None)
+
+    secret_store = InMemorySecretStore()
+    secret_store.set("anthropic_api_key", "sk-ant-fake-key")
+    monkeypatch.setattr("visionai.ui.main_window.default_secret_store", lambda: secret_store)
+    monkeypatch.setattr(
+        window,
+        "_ask_new_settings",
+        lambda current, device, devices, wake_word, api_key_configured=False: (
+            "INFO",
+            None,
+            "visionai",
+            "",
+            True,
+        ),
+    )
+
+    qtbot.mouseClick(window._settings_button, Qt.MouseButton.LeftButton)
+
+    assert secret_store.get("anthropic_api_key") is None
+
+
+def test_main_window_settings_button_reports_a_key_storage_failure(
+    qtbot: Any, monkeypatch: Any, tmp_path: Any
+) -> None:
+    runtime = build_runtime()
+    store = UserSettingsStore(tmp_path / "settings.json")
+    window = MainWindow(runtime, settings_store=store)
+    qtbot.addWidget(window)
+
+    class _FailingSecretStore:
+        def set(self, key: str, value: str) -> None:
+            raise StorageError("keychain unavailable")
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window.default_secret_store", lambda: _FailingSecretStore()
+    )
+    monkeypatch.setattr(
+        window,
+        "_ask_new_settings",
+        lambda current, device, devices, wake_word, api_key_configured=False: (
+            "INFO",
+            None,
+            "visionai",
+            "sk-ant-fake-key",
+            False,
+        ),
+    )
+    shown: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda parent, title, text: shown.append((title, text))
+    )
+
+    qtbot.mouseClick(window._settings_button, Qt.MouseButton.LeftButton)
+
+    assert shown == [("Settings", "Could not store the key: keychain unavailable")]
+    assert store.get_log_level() is None
+
+
+def test_settings_remains_usable_without_keyring(
+    qtbot: Any, monkeypatch: Any, tmp_path: Any
+) -> None:
+    store = UserSettingsStore(tmp_path / "settings.json")
+    window = MainWindow(build_runtime(), settings_store=store)
+    qtbot.addWidget(window)
+
+    def unavailable(*args: Any) -> None:
+        raise ImportError("keyring is not installed")
+
+    monkeypatch.setattr("visionai.ui.main_window.resolve_anthropic_api_key", unavailable)
+    shown: list[bool] = []
+    monkeypatch.setattr(
+        window, "_ask_new_settings", lambda *args: shown.append(args[-1])
+    )
+    window.show_settings()
+    assert shown == [False]
+
+
+def test_settings_rejects_conflicting_key_changes(
+    qtbot: Any, monkeypatch: Any, tmp_path: Any
+) -> None:
+    store = UserSettingsStore(tmp_path / "settings.json")
+    window = MainWindow(build_runtime(), settings_store=store)
+    qtbot.addWidget(window)
+    monkeypatch.setattr("visionai.ui.main_window.resolve_anthropic_api_key", lambda *args: None)
+    monkeypatch.setattr(
+        window, "_ask_new_settings", lambda *args: ("DEBUG", None, "friday", "new-key", True)
+    )
+    warnings: list[str] = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda parent, title, text: warnings.append(text))
+    monkeypatch.setattr(
+        "visionai.ui.main_window.default_secret_store",
+        lambda: pytest.fail("conflicting choices must not touch the keychain"),
+    )
+    window.show_settings()
+    assert warnings == ["Choose either a new key or clear stored key."]
+    assert store.get_wake_word() is None
+    assert store.get_log_level() is None
 
 
 def test_main_window_shows_onboarding_once(qtbot: Any, monkeypatch: Any, tmp_path: Any) -> None:

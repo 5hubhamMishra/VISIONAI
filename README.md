@@ -7,13 +7,13 @@ capabilities, and returns clear visual and spoken feedback.
 
 ## Status
 
-This project has a locally verified safety foundation plus a small trusted
-runtime. Voice and gesture input are not connected yet, but the console entry
-point can run policy-gated capabilities for system information, capability
-help/listing, cooperative stop requests, opening one allowlisted desktop app,
-and opening allowlisted browser/search destinations, plus allowlisted media
-controls. A minimal desktop window (`visionai-ui`, the first Phase 2 UI
-slice) can run the same commands through the same policy-gated path. See
+VisionAI has a safety foundation and a desktop/console runtime for system
+information, help, cancellation, allowlisted apps and websites, browser
+search, and media controls. Webcam gestures and local speech transcription
+are connected; real voice accuracy and broader gesture benchmarks remain
+unverified. Phase 6 adds optional AI answers and reviewed command suggestions
+with human confirmation, plus OS keychain storage and desktop Settings key
+controls. It is a development build, not a production release. See
 [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) for the current phase, verified
 functionality, and next steps.
 

@@ -25,6 +25,7 @@ from pydantic import ValidationError
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -46,6 +47,7 @@ from PySide6.QtWidgets import (
 
 import visionai
 from visionai.config import (
+    default_secret_store,
     default_user_settings_store,
     effective_log_level,
     get_settings,
@@ -54,7 +56,7 @@ from visionai.config import (
 from visionai.config.settings import LogLevel
 from visionai.config.user_settings import UserSettingsStore, effective_wake_word
 from visionai.core.cancellation import CancellationToken
-from visionai.core.errors import ProviderError
+from visionai.core.errors import ProviderError, StorageError
 from visionai.core.event_bus import EventBus
 from visionai.core.events import (
     ActionPlan,
@@ -484,6 +486,7 @@ class _SettingsDialog(QDialog):
         microphone_devices: Sequence[MicrophoneDevice] = (),
         parent: QWidget | None = None,
         wake_word: str = "visionai",
+        api_key_configured: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -506,10 +509,28 @@ class _SettingsDialog(QDialog):
         self._wake_word_input = QLineEdit(wake_word)
         self._wake_word_input.setAccessibleName("Wake word")
 
+        status = "configured" if api_key_configured else "not set"
+        self._api_key_status_label = QLabel(f"Anthropic API key: {status}")
+        self._api_key_input = QLineEdit()
+        self._api_key_input.setAccessibleName("Anthropic API key")
+        self._api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self._api_key_input.setPlaceholderText("Leave blank to keep unchanged")
+        self._clear_api_key_checkbox = QCheckBox("Clear stored API key")
+        self._clear_api_key_checkbox.toggled.connect(self._api_key_input.setDisabled)
+
         form = QFormLayout()
         form.addRow("Log level:", self._log_level_combo)
         form.addRow("Microphone:", self._microphone_combo)
         form.addRow("Wake word:", self._wake_word_input)
+        form.addRow(self._api_key_status_label)
+        form.addRow("New API key:", self._api_key_input)
+        form.addRow(self._clear_api_key_checkbox)
+        key_note = QLabel(
+            "Keys are stored in the OS keychain. An environment API key takes priority "
+            "and is not removed by clearing the stored key."
+        )
+        key_note.setWordWrap(True)
+        form.addRow(key_note)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -531,6 +552,12 @@ class _SettingsDialog(QDialog):
 
     def selected_wake_word(self) -> str:
         return self._wake_word_input.text()
+
+    def entered_api_key(self) -> str:
+        return self._api_key_input.text().strip()
+
+    def clear_api_key_requested(self) -> bool:
+        return self._clear_api_key_checkbox.isChecked()
 
 
 class MainWindow(QMainWindow):
@@ -710,16 +737,37 @@ class MainWindow(QMainWindow):
             devices = list_input_devices()
         except Exception:
             devices = []
-        chosen = self._ask_new_settings(current, current_device, devices, current_wake_word)
+        try:
+            api_key_configured = resolve_anthropic_api_key(get_settings()) is not None
+        except (ImportError, StorageError):
+            api_key_configured = False
+        chosen = self._ask_new_settings(
+            current, current_device, devices, current_wake_word, api_key_configured
+        )
         if chosen is None:
             return
-        chosen_level, chosen_device, chosen_wake_word = chosen
+        chosen_level, chosen_device, chosen_wake_word, api_key_input, clear_api_key = chosen
 
+        if clear_api_key and api_key_input:
+            QMessageBox.warning(self, "Settings", "Choose either a new key or clear stored key.")
+            return
         if chosen_wake_word != current_wake_word:
             try:
                 self._settings_store.set_wake_word(chosen_wake_word)
-            except ValueError as exc:
+            except (ValueError, StorageError) as exc:
                 QMessageBox.warning(self, "Settings", str(exc))
+                return
+        if clear_api_key:
+            try:
+                default_secret_store().delete("anthropic_api_key")
+            except (ImportError, StorageError) as exc:
+                QMessageBox.warning(self, "Settings", f"Could not remove the key: {exc}")
+                return
+        elif api_key_input:
+            try:
+                default_secret_store().set("anthropic_api_key", api_key_input)
+            except (ImportError, StorageError) as exc:
+                QMessageBox.warning(self, "Settings", f"Could not store the key: {exc}")
                 return
         if chosen_level != current:
             self._settings_store.set_log_level(chosen_level)
@@ -736,11 +784,17 @@ class MainWindow(QMainWindow):
         current_device: int | None,
         devices: Sequence[MicrophoneDevice],
         current_wake_word: str,
-    ) -> tuple[LogLevel, int | None, str] | None:
+        api_key_configured: bool = False,
+    ) -> tuple[LogLevel, int | None, str, str, bool] | None:
         """Show the editable settings dialog, or return None when cancelled."""
 
         dialog = _SettingsDialog(
-            current, current_device, devices, self, wake_word=current_wake_word
+            current,
+            current_device,
+            devices,
+            self,
+            wake_word=current_wake_word,
+            api_key_configured=api_key_configured,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return None
@@ -748,6 +802,8 @@ class MainWindow(QMainWindow):
             dialog.selected_log_level(),
             dialog.selected_microphone_device_index(),
             dialog.selected_wake_word(),
+            dialog.entered_api_key(),
+            dialog.clear_api_key_requested(),
         )
 
     def _settings_text(self) -> str:

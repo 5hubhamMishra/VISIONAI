@@ -89,6 +89,13 @@ Real microphone capture uses the local `faster-whisper` provider when `Microphon
 
 ## Desktop window
 
+Settings also supports an Anthropic API key: enter a new key in the masked
+field to store it in the OS keychain, leave it blank to keep it unchanged,
+or select Clear stored API key to remove it. Cancel leaves the key unchanged.
+An environment-variable key still takes priority and is not removed by this
+control. The optional `intelligence` dependencies are required for keychain
+operations; the other Settings controls remain usable without them.
+
 ```bash
 visionai-ui
 ```
