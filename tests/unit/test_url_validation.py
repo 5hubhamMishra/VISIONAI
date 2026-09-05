@@ -18,6 +18,13 @@ def test_url_policy_drops_fragments_and_trailing_dot_host() -> None:
     assert policy.normalize_url("https://example.com./a#token") == "https://example.com/a"
 
 
+def test_url_policy_rejects_control_characters_in_the_raw_url() -> None:
+    policy = UrlPolicy(allowed_hosts=frozenset({"example.com"}))
+
+    with pytest.raises(UrlValidationError, match="control characters"):
+        policy.normalize_url("https://example.com/\x00path")
+
+
 def test_url_policy_rejects_unsafe_scheme() -> None:
     policy = UrlPolicy(allowed_hosts=frozenset({"example.com"}))
 
@@ -67,14 +74,29 @@ def test_url_policy_rejects_unapproved_ports() -> None:
         policy.normalize_url("https://example.com:444/")
 
 
-def test_url_policy_rejects_host_confusion_and_redirect_host_changes() -> None:
+def test_url_policy_rejects_host_confusion() -> None:
     policy = UrlPolicy(allowed_hosts=frozenset({"example.com"}))
 
     with pytest.raises(UrlValidationError):
         policy.normalize_url("https://example.com.evil.test/")
 
-    with pytest.raises(UrlValidationError):
-        policy.validate_redirect("https://example.com/start", "https://evil.test/end")
+
+def test_validate_redirect_rejects_a_redirect_to_a_different_allowlisted_host() -> None:
+    """A redirect must land on the original host, even if the target is itself allowlisted."""
+    policy = UrlPolicy(allowed_hosts=frozenset({"example.com", "other.example"}))
+
+    with pytest.raises(UrlValidationError, match="redirect host changed"):
+        policy.validate_redirect(
+            "https://example.com/start", "https://other.example/end"
+        )
+
+
+def test_validate_redirect_accepts_a_same_host_redirect() -> None:
+    policy = UrlPolicy(allowed_hosts=frozenset({"example.com"}))
+
+    assert policy.validate_redirect(
+        "https://example.com/start", "https://example.com/end"
+    ) == "https://example.com/end"
 
 
 def test_url_policy_normalizes_idn_hosts_before_allowlist_check() -> None:
@@ -92,3 +114,25 @@ def test_search_url_encodes_query_and_rejects_empty_query() -> None:
 
     with pytest.raises(UrlValidationError):
         policy.build_search_url("  ")
+
+
+def test_search_url_rejects_an_overly_long_query() -> None:
+    policy = UrlPolicy(allowed_hosts=frozenset({"www.google.com"}))
+
+    with pytest.raises(UrlValidationError, match="too long"):
+        policy.build_search_url("a" * 501)
+
+
+def test_normalize_host_rejects_a_missing_hostname() -> None:
+    policy = UrlPolicy(allowed_hosts=frozenset({"example.com"}))
+
+    with pytest.raises(UrlValidationError, match="host is required"):
+        policy.normalize_url("https:///path")
+
+
+def test_normalize_host_rejects_a_host_that_idna_encoding_cannot_represent() -> None:
+    policy = UrlPolicy(allowed_hosts=frozenset({"example.com"}))
+    oversized_label = "a" * 64 + ".com"
+
+    with pytest.raises(UrlValidationError, match="host is invalid"):
+        policy.normalize_url(f"https://{oversized_label}/")

@@ -51,6 +51,13 @@ intelligence = [
     "anthropic>=1.2,<2",
     "keyring>=25,<26",
 ]
+# gpt4all ships prebuilt wheels (win_amd64/manylinux/macOS) for real offline
+# GGUF inference, so no compiler is needed on the end-user's Windows machine
+# -- unlike e.g. llama-cpp-python, which publishes source-only releases to
+# PyPI and would need a local C++ build toolchain.
+local_llm = [
+    "gpt4all>=2.8,<3",
+]
 
 [project.scripts]
 visionai = "visionai.app:main"

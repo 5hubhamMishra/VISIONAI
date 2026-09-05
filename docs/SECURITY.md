@@ -9,6 +9,43 @@ tests validate local rejection rules; they do not measure a live model's
 resistance to prompt injection. A malicious but allowlisted suggestion still
 requires the user's review and the normal dispatcher policy checks.
 
+2026-09-05 text-safety hardening: `SafeText` (and every other independent
+control-character check across the codebase) previously only rejected ASCII
+control characters, leaving Unicode bidirectional-override characters
+(the "Trojan Source" set, CVE-2021-42574), zero-width/invisible format
+characters, and the Unicode line/paragraph separators completely unchecked.
+Since `SafeText` backs the exact text a human reads to decide whether to
+approve a proposed action -- an LLM-suggested search query, a `--suggest`/
+Suggest Command "Proposed: ..." line, a confirmation summary -- a value
+containing one of these characters could make displayed text misrepresent
+what it actually contains, undermining Section 9's "must display exact
+normalized action, target and effect" and Section 12's "may not confirm
+itself" guarantees even though every downstream allowlist/dispatch check
+was already correct. `visionai.core.events.contains_unsafe_characters()`/
+`strip_unsafe_characters()` are now the one shared implementation (an
+`allow_line_breaks=False` mode additionally blocks tab/newline/CR for
+values, like a URL, a search query, a suggested command phrase, or a wake
+word, that must always be a single line); `SafeText`'s own pattern, and
+five previously independent, weaker ord-based checks in
+`orchestration/text_planner.py`, `orchestration/wake_word.py`,
+`config/user_settings.py`, `policy/url_validation.py` (both `normalize_url`
+and `build_search_url`), and `intelligence/planner.py`'s `suggest_command()`
+reply validator, now all reuse it instead of drifting independently. Tab,
+newline, and carriage return remain intentionally allowed wherever
+`SafeText`'s default applies, since `ConversationMemory.build_query_text()`
+depends on real newlines between turns. Found and fixed one real
+consequence of the hardening itself, not just of the vulnerability it
+closes: `AnthropicProvider.respond()` constructed `LLMReply` from the raw
+API response text *outside* its own broad try/except, so a real reply
+containing one of these newly-rejected characters would have raised an
+uncaught `pydantic.ValidationError` instead of the intended `ProviderError`
+this boundary already promises for every other failure mode; moved the
+construction inside the existing try block (the CLI/desktop call sites
+already caught `ValidationError` too, so this was not a live end-user
+crash, but the provider's own contract was inconsistent). See
+`tests/unit/test_events.py` and
+`tests/unit/test_anthropic_provider.py::test_respond_wraps_an_unsafe_reply_as_provider_error_not_a_raw_validation_error`.
+
 ## Threat Model
 
 VisionAI processes local voice, camera, keyboard, and pointer input. Relevant threats include replayed audio, nearby speakers, malicious webpage audio, prompt or indirect injection, malicious URLs, event floods, unauthorized local users, compromised dependencies, secret leakage, and misuse of microphone or camera access.
@@ -17,7 +54,7 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 
 - Deny-by-default foundation: every capability must be explicitly registered with a manifest before it is reachable, and the one capability with a real side effect (`app.open`) uses an exact-executable allowlist rather than trusting caller-supplied input.
 - The application state machine is safe under concurrent access from multiple recognition threads (voice, gesture): transitions are serialized so only one of several racing callers can ever succeed, and the audit trail cannot be corrupted by interleaved transitions.
-- Typed contracts reject control characters, oversized text, invalid confidence values, and malformed mappings.
+- Typed contracts reject control characters, oversized text, invalid confidence values, and malformed mappings. `SafeText` also rejects Unicode bidirectional-override characters, invisible zero-width format characters, and line/paragraph separators -- the "Trojan Source" character set that can make a human-facing confirmation/proposal string display differently from what it actually contains -- via one shared `contains_unsafe_characters()`/`strip_unsafe_characters()` implementation reused across every independent control-character check in the codebase, not five separately drifting ones.
 - Event bus is bounded to provide backpressure; closing it is guaranteed to be observed by consumers (via a separate close signal) even if the bounded queue is full at that moment, after draining any already-queued events.
 - Raw media retention defaults to disabled.
 - Log redaction covers common key-value secret patterns, including secrets passed as lazy %-style logging arguments rather than baked into the message template; the filter is attached to every configured handler so it applies to all named application loggers, not only the root logger.
@@ -47,6 +84,7 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 - `MainWindow`'s Settings view is read-only introspection: it reports the loaded log level and data/log paths, plus the current disabled media-retention posture. It does not write environment variables, write config files, grant or revoke permissions, confirm actions, call handlers, or transition the state machine.
 - `MainWindow`'s Ask AI and Suggest Command buttons bring Phase 6's `--ask`/`--suggest` safety properties into the desktop window unchanged, not weakened for the GUI: Ask AI's reply is only ever shown in the result pane, with no path into policy, permissions, the dispatcher, or the audit sink -- the same as `--ask`. Suggest Command's LLM reply is independently re-validated against `TextCommandPlanner`'s own reviewed phrase vocabulary before anything is shown (a hallucinated or prompt-injected reply outside it is indistinguishable from "no match"), and dispatch only happens after a genuine `QMessageBox` yes/no answer -- a real, separate GUI event, never anything derived from the LLM's own reply, satisfying Section 12's "may not confirm itself" the same way the CLI's `input()` prompt does. That confirmation gates the exact same unmodified `runtime.dispatcher.dispatch()` call every other command in this window uses, so a capability still requiring its own permission grant or fresh confirmation is denied the same way it always is -- this dialog is an additional gate in front of policy, not a substitute for it.
 - `visionai.intelligence` (Phase 6's first slice) has no path into policy, permissions, capabilities, or the dispatcher: `LLMProvider.respond()` returns free text that is only ever printed by `visionai --ask`, never parsed as a command, and `--ask` never touches `runtime.orchestrator`/`runtime.dispatcher`/the event buses at all. `AnthropicProvider`'s system prompt is a fixed, code-owned constant that states the assistant cannot take actions -- it never includes user- or model-derived content as an instruction, so there is no indirect-injection surface into it. The default provider (`Settings.llm_provider == "none"`) makes no network call at all; a real provider is opt-in. `Settings.anthropic_api_key` is a `pydantic.SecretStr`, sourced only from an explicit `VISIONAI_ANTHROPIC_API_KEY` environment variable (never the SDK's own implicit env-var auto-detection), and is never written to `UserSettingsStore`'s plaintext-on-disk JSON. See `docs/DECISIONS/0004-llm-provider-choice.md`.
+- `visionai.intelligence.local_provider.LocalLlamaProvider` (Phase 6's local/offline provider) carries no extra authority over `AnthropicProvider`: `respond()` returns free text only ever printed by `--ask`/Ask AI, and its system prompt is the same fixed, code-owned string stating the assistant cannot take actions. Its one distinct security property is that it never makes a network call: the real client is always constructed with `allow_download=False`, so a missing or misconfigured `VISIONAI_LOCAL_MODEL_PATH` fails with a clear `ValueError` from `_build_llm_provider()` in both `app.py` and `main_window.py` rather than silently fetching a model from the network -- the one behavior that would make a "local/offline" provider indistinguishable from a cloud one from a privacy standpoint. Client failures and `LLMReply`'s own `SafeText` validation failures are both caught broadly and converted to `core.errors.ProviderError`, matching `AnthropicProvider.respond()`'s exact precedent, including the same unsafe-reply-becomes-a-clean-domain-error regression test (`tests/unit/test_local_provider.py::test_respond_wraps_an_unsafe_reply_as_provider_error_not_a_raw_validation_error`). Not live-verified with a real model file in this Linux sandbox -- see `docs/DECISIONS/0006-local-offline-llm-provider.md`.
 - `visionai.config.secrets` closes the OS-keychain gap `0004` deferred, without weakening it: `resolve_anthropic_api_key()` still checks the explicit `VISIONAI_ANTHROPIC_API_KEY` env var first (unchanged), only falling back to `KeyringSecretStore` (real Windows Credential Manager access, via the optional `intelligence` extra's `keyring` package) when that's unset -- so the existing env-var behavior is never silently overridden by a stale stored value. The key is never written to `UserSettingsStore`'s plaintext JSON, and `--set-api-key` prompts via `getpass.getpass()` (hidden input) rather than accepting the key as a plain CLI argument, so it never appears in shell history or a process listing. `set()`/`delete()` failures raise `core.errors.StorageError` rather than being silently swallowed, so a user is never told a key was saved when it wasn't. See `docs/DECISIONS/0005-os-keychain-secret-storage.md`.
 - `visionai.intelligence.planner.suggest_command()` (Phase 6's second slice) itself still has no path into policy, permissions, capabilities, or the dispatcher: it never builds an `ActionRequest`, just a validated phrase string. The LLM's raw reply is never trusted just because it claims to have followed instructions -- `suggest_command()` independently re-validates it against `TextCommandPlanner`'s own reviewed phrase vocabulary (`orchestration.text_planner.reviewed_phrases()`, built from the exact allowlists `plan()` itself matches against) before returning anything; a hallucinated phrase outside that vocabulary, including a deliberate prompt-injection attempt, is indistinguishable from an explicit "no match" to every caller. This satisfies Section 8's "reject unknown action names... never execute raw model output" and Section 12's "may not invent capabilities" by construction: there is no code path from an arbitrary LLM reply to an executable request, validated or not.
 - `visionai --suggest` (Phase 6's third slice) is the first place an LLM's output can lead to a real dispatch, and it is gated by a genuine human decision, never the LLM's own: after printing the exact real proposed action (`"Proposed: <plan.summary>"`, computed by the unchanged `TextCommandPlanner`), it asks `input("Execute this command? [y/N]: ")` -- a real keypress read from the terminal, never text derived from or influenced by the LLM's reply -- satisfying Section 12's "may not confirm itself." Only an explicit "y"/"yes" answer proceeds to `runtime.dispatcher.dispatch(plan.steps[0], runtime.policy_context_factory())`, the exact same unmodified call `--text` makes with no special-casing for LLM provenance: `SerializedDispatcher.dispatch()` re-evaluates policy itself regardless of caller, so a capability still requiring a permission grant or a fresh confirmation that hasn't been separately obtained (e.g. `system.clear_history`) is denied the same way `--text` already denies it -- this human question is an additional gate in front of policy, not a substitute for it, and cannot itself grant a permission or satisfy a capability's own confirmation requirement. Any other answer, including no answer at all (`EOFError`/`KeyboardInterrupt` on the prompt), is treated as decline and dispatches nothing.

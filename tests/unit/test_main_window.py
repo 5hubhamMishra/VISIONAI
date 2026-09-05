@@ -35,6 +35,7 @@ from visionai.policy import (
 )
 from visionai.recognition import TemporalGestureRecognizer
 from visionai.runtime import build_runtime
+from visionai.ui import main_window as main_window_module
 from visionai.ui.main_window import MainWindow, _SettingsDialog
 
 
@@ -813,6 +814,103 @@ def test_main_window_suggest_command_reports_no_match(qtbot: Any, monkeypatch: A
     assert window._output.toPlainText() == "No matching command found."
     assert launched == []
     assert window._history.count() == 0
+
+
+def test_build_llm_provider_none_returns_the_deterministic_fallback(monkeypatch: Any) -> None:
+    from visionai.config.settings import Settings
+    from visionai.intelligence import DeterministicFallbackProvider
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window.get_settings", lambda: Settings(llm_provider="none")
+    )
+
+    provider = main_window_module._build_llm_provider()
+
+    assert isinstance(provider, DeterministicFallbackProvider)
+
+
+def test_build_llm_provider_local_without_a_configured_path_raises(monkeypatch: Any) -> None:
+    from visionai.config.settings import Settings
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window.get_settings", lambda: Settings(llm_provider="local")
+    )
+
+    with pytest.raises(ValueError, match="No local model path configured"):
+        main_window_module._build_llm_provider()
+
+
+def test_build_llm_provider_local_with_a_missing_file_raises(
+    monkeypatch: Any, tmp_path: Any
+) -> None:
+    from visionai.config.settings import Settings
+
+    missing = tmp_path / "does-not-exist.gguf"
+    monkeypatch.setattr(
+        "visionai.ui.main_window.get_settings",
+        lambda: Settings(llm_provider="local", local_model_path=missing),
+    )
+
+    with pytest.raises(ValueError, match="Local model file not found"):
+        main_window_module._build_llm_provider()
+
+
+def test_build_llm_provider_local_with_a_real_file_builds_a_local_provider(
+    monkeypatch: Any, tmp_path: Any
+) -> None:
+    from visionai.config.settings import Settings
+
+    model_file = tmp_path / "model.gguf"
+    model_file.write_text("not a real model, just a path that exists")
+
+    class _FakeLocalProvider:
+        def __init__(self, *, model_path: str) -> None:
+            self.model_path = model_path
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window.get_settings",
+        lambda: Settings(llm_provider="local", local_model_path=model_file),
+    )
+    monkeypatch.setattr(
+        "visionai.intelligence.local_provider.LocalLlamaProvider", _FakeLocalProvider
+    )
+
+    provider = main_window_module._build_llm_provider()
+
+    assert isinstance(provider, _FakeLocalProvider)
+    assert provider.model_path == str(model_file)
+
+
+def test_build_llm_provider_anthropic_without_a_key_raises(monkeypatch: Any) -> None:
+    from visionai.config.settings import Settings
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window.get_settings", lambda: Settings(llm_provider="anthropic")
+    )
+    monkeypatch.setattr(
+        "visionai.ui.main_window.resolve_anthropic_api_key", lambda settings: None
+    )
+
+    with pytest.raises(ValueError, match="No Anthropic API key found"):
+        main_window_module._build_llm_provider()
+
+
+def test_build_llm_provider_anthropic_with_a_key_builds_the_real_provider(
+    monkeypatch: Any,
+) -> None:
+    from visionai.config.settings import Settings
+    from visionai.intelligence.anthropic_provider import AnthropicProvider
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window.get_settings", lambda: Settings(llm_provider="anthropic")
+    )
+    monkeypatch.setattr(
+        "visionai.ui.main_window.resolve_anthropic_api_key", lambda settings: "fake-key"
+    )
+
+    provider = main_window_module._build_llm_provider()
+
+    assert isinstance(provider, AnthropicProvider)
 
 
 def test_main_window_and_children_inherit_native_os_theming(qtbot: Any) -> None:

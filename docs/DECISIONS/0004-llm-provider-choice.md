@@ -88,6 +88,11 @@ than needing dedicated tests yet.
   behind `LLMProvider`, plus a `Settings.llm_provider` literal value and a branch in
   `app._build_llm_provider()` -- no changes to `LLMQuery`/`LLMReply`, `--ask`, or any
   test that exercises the `LLMProvider` Protocol itself.
+  - **Done.** See `docs/DECISIONS/0006-local-offline-llm-provider.md`:
+    `visionai.intelligence.local_provider.LocalLlamaProvider` adds a real, offline
+    provider backed by `gpt4all` (the optional `local_llm` extra), configured via
+    `Settings.llm_provider == "local"` and `VISIONAI_LOCAL_MODEL_PATH` -- exactly as
+    predicted here, with no changes to `LLMQuery`/`LLMReply`/`--ask`.
 - Before an LLM's output is ever allowed to influence a capability dispatch (the
   structured-planner slice), that slice must add: strict schema validation of any
   proposed plan, prompt/indirect-injection tests (Section 17), and an explicit

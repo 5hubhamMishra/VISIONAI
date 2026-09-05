@@ -17,6 +17,407 @@
 - Verified hosted CI for e12d470: success, run 33960773301. No microphone
   recording or live speech accuracy claim was needed for these regressions.
 
+## 2026-09-05 autonomous cycle: rate limiter test coverage (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`
+  (already up to date at `9a5551a`), read the docs and recent git log, built a
+  Python 3.12 virtualenv from `requirements/dev.txt`, installed the headless
+  Qt/PortAudio system libraries (`libegl1`, `libopengl0`, `libgl1`,
+  `libportaudio2` -- a fresh container each run, so this setup step recurs),
+  and ran the baseline verification suite before touching anything. Baseline
+  matched the documented sandbox state exactly: ruff/bandit/pip-audit clean,
+  mypy clean except the known `ctypes.windll` false positive, pytest 409
+  passed/25 failed/1 skipped, 90% coverage -- all 25 failures the same
+  exclusively `WindowsLockStateAdapter` fail-closed pattern every prior
+  sandbox session has documented, not a regression.
+- `Approved Next Tasks` item 5's only remaining items (LLM clarification, a
+  live prompt-injection suite against a real model) both need a human product
+  decision or real network/API access this sandbox does not have; item 3's
+  remaining items (a real hotword engine, live mic verification) need real
+  hardware. Scanned the coverage report instead for a real, narrow,
+  hardware-free gap, continuing the pattern of prior sessions
+  (`policy/engine.py`, `policy/url_validation.py`, `config/secrets.py`), and
+  found one in `visionai.policy.rate_limit.FixedWindowRateLimiter` -- the
+  concurrency-hardened rate limiter every capability dispatch's rate check
+  goes through -- at 83% covered. Three real gaps, not incidental: `allow()`'s
+  and `would_allow()`'s `limit_per_minute <= 0` rejection branches had no
+  test (a manifest with a non-positive limit, whether from a data error or a
+  future capability, would silently allow/deny based on untested logic), and
+  `reset()` -- a public method re-exported from `visionai.policy` -- had zero
+  callers anywhere in the codebase or test suite, meaning a regression in its
+  single-key or clear-all behavior could ship completely unnoticed.
+- Added five tests to `tests/unit/test_rate_limit.py`: non-positive-limit
+  rejection for both `allow()` and `would_allow()`, `reset(key)` clearing only
+  that key's window while leaving others untouched, and `reset()` with no key
+  clearing every tracked window. No application code changed -- this was a
+  pure test gap, not a bug. `policy/rate_limit.py` reached 100% line coverage
+  (was 83%).
+- Full verification after the change: 439 tests (413 passed, 25 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 1 skipped), 90% coverage (unchanged, since the module was
+  already small relative to the whole suite), ruff/mypy (one known false
+  positive)/bandit/pip-audit all clean.
+- Noted but out of scope for this run: `AGENTS.md` exists at the repository
+  root (added by a prior session per this file's own 2026-09-05 10:08 UTC
+  entry below), which conflicts with the master development prompt's
+  standing rule to never add an `AGENTS.md`/`CLAUDE.md` file to this repo.
+  This session did not create it and left it untouched rather than take an
+  unrequested destructive action on another session's committed file;
+  flagging it here for a human decision on whether to remove it.
+
+## 2026-09-05 autonomous cycle: local/offline LLM provider (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`
+  (already up to date at `73c6f4b`), read the docs and recent git log, built a
+  Python 3.12 virtualenv from `requirements/dev.txt`, installed the headless
+  Qt/PortAudio system libraries (`libegl1`, `libopengl0`, `libgl1`,
+  `libportaudio2` -- a fresh container each run, so this setup step recurs),
+  and ran the baseline verification suite before touching anything. Baseline
+  matched the documented sandbox state exactly: ruff/bandit/pip-audit clean,
+  mypy clean except the known `ctypes.windll` false positive, pytest 392
+  passed/25 failed/1 skipped, 89% coverage -- all 25 failures the same
+  exclusively `WindowsLockStateAdapter` fail-closed pattern every prior
+  sandbox session has documented, not a regression.
+- The prior session's own log entry (below) had framed every option under
+  Approved Next Tasks item 5 as needing "either a human product decision or
+  real network/hardware access this sandbox does not have," including the
+  local/offline LLM provider, and picked a coverage-gap task instead. Revisited
+  that framing: like `WebcamLandmarkAdapter`'s original slice, the provider's
+  *boundary layer* (an injectable-client class behind the unmodified
+  `LLMProvider` Protocol, wired into `Settings`/`_build_llm_provider()`) does
+  not itself need real hardware or a live model to implement and unit-test --
+  only the final real-model live inference does, which is exactly the
+  "not yet live-verified" shape this project already accepts for `--gesture-
+  frames`/`--gesture-listen` before their first live camera check. Picked this
+  as the one narrow, well-scoped task for this run instead.
+- Chose `gpt4all` over the more obvious `llama-cpp-python` after actually
+  checking real PyPI release metadata for both (matching how
+  `docs/DECISIONS/0003-accepted-protobuf-cve.md` checked mediapipe's actual
+  wheel support before pinning it, rather than assuming): `llama-cpp-python`
+  0.3.35 ships only an sdist on PyPI, meaning every install -- including a
+  Windows end user's -- would need a working C++ build toolchain; `gpt4all`
+  2.8.2 ships prebuilt `py3-none` wheels for `win_amd64`, `manylinux1_x86_64`,
+  and macOS, MIT-licensed, no compiler needed.
+- Added `visionai.intelligence.local_provider.LocalLlamaProvider`, mirroring
+  `AnthropicProvider`'s exact shape: an injectable client (a `_LocalModel`
+  Protocol exposing gpt4all's real `generate(prompt, max_tokens=...)` method),
+  a broad catch-and-wrap of both client failures and `LLMReply`'s own
+  `SafeText` validation failures into `core.errors.ProviderError`, and the
+  identical fixed, code-owned no-execution-authority system prompt folded
+  into one prompt string (gpt4all's `generate()` takes one prompt, not a
+  separate system-role message the way Anthropic's Messages API does). The
+  real client is always constructed with `allow_download=False` -- the one
+  property that actually makes this "local/offline" rather than just another
+  cloud vendor, since a local provider that could reach the network to fetch
+  a model on first use would defeat the point. `gpt4all` itself is imported
+  via `importlib.import_module()`, not a static import, mirroring
+  `webcam.py`'s pattern for `cv2`/`mediapipe` -- required for mypy to pass,
+  since (deliberately, like `vision`/mediapipe) the new `local_llm` extra is
+  not added to `requirements/dev.txt`.
+- Extended `Settings.llm_provider` with a `"local"` value and added
+  `Settings.local_model_path` (`VISIONAI_LOCAL_MODEL_PATH`); wired an
+  identical new branch into both `app._build_llm_provider()` and
+  `main_window._build_llm_provider()` that raises a clear `ValueError` for an
+  unset or nonexistent model path before ever constructing the real provider.
+- While writing tests for this, found a real, unrelated, pre-existing
+  coverage gap in the exact two functions this task touched: neither
+  `app._build_llm_provider()` nor `main_window._build_llm_provider()` had
+  ever been tested for its own real branch logic -- every existing test in
+  both `tests/unit/test_app.py` and `tests/unit/test_main_window.py`
+  monkeypatched the whole function out with a fake provider instead, so the
+  "none"/"anthropic" branches (and, for `main_window.py`, the entire
+  function) were never directly exercised. Added six tests to each file
+  covering every branch (none/local-missing-path/local-missing-file/
+  local-happy-path/anthropic-missing-key/anthropic-happy-path); the
+  local-happy-path tests substitute a fake `LocalLlamaProvider` class so the
+  real `gpt4all` import is never required. The anthropic-happy-path test
+  needed no such substitute, since `anthropic` is already part of
+  `requirements/dev.txt` (via `intelligence.txt`) and constructing
+  `anthropic.Anthropic(api_key=...)` makes no network call -- this
+  incidentally brought `anthropic_provider.py` itself to 100% coverage (was
+  89%, missing exactly its own real-`anthropic`-import branch), since it is
+  the first test anywhere in this suite to reach that branch with `anthropic`
+  actually installed.
+- Added `tests/unit/test_local_provider.py` (5 tests), mirroring
+  `tests/unit/test_anthropic_provider.py` exactly, including the
+  unsafe-reply-becomes-`ProviderError` regression case (a bidi-override
+  character in a fake model's reply must raise the same domain error every
+  other failure at this boundary does, not a raw `pydantic.ValidationError`).
+- Documented the decision in `docs/DECISIONS/0006-local-offline-llm-provider.md`
+  and appended a "Done" note to `0004-llm-provider-choice.md`'s Consequences
+  section; updated `docs/ARCHITECTURE.md`'s `visionai.intelligence` bullet,
+  `docs/SECURITY.md` (a new bullet matching `AnthropicProvider`'s existing
+  one), `docs/USER_GUIDE.md`'s `--ask` paragraph, and `docs/RELEASE_NOTES.md`.
+  No application behavior outside `visionai.intelligence`/`_build_llm_provider()`
+  changed.
+- Full verification after the change: 435 tests (409 passed, 25 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 1 skipped), 90% coverage (up from 89%),
+  ruff/mypy(one known false positive)/bandit/pip-audit all clean. Separately
+  ran `pip-audit -r requirements/local_llm.txt` alone: no known
+  vulnerabilities found for `gpt4all==2.8.2` either, though it remains
+  outside the standard audited/tested dependency surface (not installed in
+  this session's `.venv312`, matching the `vision` extra's precedent) --
+  `local_provider.py`'s real `import_module("gpt4all")` construction path is
+  therefore genuinely untested in this sandbox, an explicit accepted gap, not
+  a claimed live verification.
+
+## 2026-09-05 autonomous cycle: UrlPolicy redirect and edge-case test coverage (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`
+  (already up to date at `e613787`), read the docs and recent git log, built a
+  Python 3.12 virtualenv from `requirements/dev.txt`, installed the headless
+  Qt/PortAudio system libraries (`libegl1`, `libopengl0`, `libportaudio2` --
+  `libgl1` was already present -- a fresh container each run, so this setup
+  step recurs), and ran the baseline verification suite before touching
+  anything. Baseline matched the documented sandbox state exactly:
+  ruff/bandit/pip-audit clean, mypy clean except the known `ctypes.windll`
+  false positive, pytest 386 passed/25 failed/1 skipped, 89% coverage --
+  reproduced one failure directly (`test_app_runs_a_wake_word_text_command`)
+  to confirm it is still the same `WindowsLockStateAdapter` fail-closed
+  pattern every prior sandbox session has documented, not a regression.
+- Checked `docs/PROJECT_STATE.md`'s Approved Next Tasks: every remaining
+  scoped option under item 5 (LLM clarification, a local/offline provider, a
+  live prompt-injection suite) needs either a human product decision or real
+  network/hardware access this sandbox does not have, and items 2-4 need live
+  Windows/hardware verification. Scanned the coverage report for a real gap
+  in existing, already-shipped logic instead, the same approach prior
+  sandbox sessions used successfully.
+- Found a genuine gap in `visionai.policy.url_validation.UrlPolicy`: 85%
+  covered, and the missing lines were not incidental. `validate_redirect()`
+  -- the method that enforces a redirect must land on the same host it
+  started from -- had a test that called it, but the test's redirect target
+  was not itself allowlisted, so it always failed one line earlier inside
+  `normalize_url()`'s own allowlist check and never actually exercised the
+  host-comparison branch (`original_host != redirect_host`) the method
+  exists for; a real regression to that comparison would have shipped with
+  nothing to catch it. `_normalize_host()`'s "host is required" branch (an
+  empty/missing hostname), its IDNA-encoding-failure branch (a host label
+  too long for `str.encode("idna")` to represent), `normalize_url()`'s own
+  control-character rejection, and `build_search_url()`'s overly-long-query
+  rejection were also all untested.
+- Added six new tests to `tests/unit/test_url_validation.py`: two for
+  `validate_redirect()` (a redirect to a different, but still allowlisted,
+  host is rejected with "redirect host changed"; a same-host redirect
+  succeeds and returns the normalized URL), plus one each for the four
+  previously-untested branches above. Split the old combined test (which
+  bundled an unrelated host-confusion check with the ineffective redirect
+  assertion) into a single-purpose `test_url_policy_rejects_host_confusion`
+  so each test now proves one thing. No application code changed -- this was
+  a pure test gap, not a bug. `policy/url_validation.py` reached 100% line
+  coverage (was 85%).
+- Full verification after the change: 418 tests (392 passed, 25 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 1 skipped), 89% coverage (unchanged at the whole-repo
+  rounding, since `url_validation.py` is a small module), ruff/mypy(one known
+  false positive)/bandit/pip-audit all clean.
+- Next task: the same set of remaining Approved Next Tasks options still
+  apply (clarification is a product decision; local/offline provider and
+  live prompt-injection need real network/hardware); another well-scoped
+  option for a future sandbox session is `policy/rate_limit.py` (83%
+  covered, three untested branches) or `capabilities/media.py` (85%
+  covered).
+
+## 2026-09-05 autonomous cycle: PolicyEngine argument-type and defense-in-depth test coverage (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`
+  (already up to date at `86a547d`), read the docs and recent git log, built
+  a Python 3.12 virtualenv from `requirements/dev.txt`, installed the
+  headless Qt/PortAudio system libraries (`libegl1`, `libgl1`, `libopengl0`,
+  `libportaudio2` -- a fresh container each run, so this setup step recurs),
+  and ran the baseline verification suite before touching anything. Baseline
+  matched the documented sandbox state exactly: ruff/bandit/pip-audit clean,
+  mypy clean except the known `ctypes.windll` false positive, pytest 378
+  passed/25 failed/1 skipped, 88% coverage -- all 25 failures confirmed by
+  reproducing one directly (`test_app_runs_browser_search`, message "mutating
+  actions are blocked while the screen is locked") to be the same
+  `WindowsLockStateAdapter` fail-closed pattern every prior sandbox session
+  has documented, not a regression.
+- Checked `docs/PROJECT_STATE.md`'s Approved Next Tasks first, per protocol:
+  every remaining scoped option under item 5 (LLM clarification, a
+  local/offline provider, a live prompt-injection suite) needs either a human
+  product decision or real network/hardware access this sandbox does not
+  have, and items 2-4 need live Windows/hardware verification. Rather than
+  inventing new scope, scanned the coverage report for a real gap in
+  existing, already-shipped logic instead -- the same approach the two prior
+  sandbox sessions used successfully.
+- Found `visionai.policy.engine.PolicyEngine.evaluate()` -- the deterministic
+  policy gate every capability dispatch passes through -- at only 93%
+  coverage, and the missing lines were not incidental: they were whole
+  branches with zero test coverage. The platform-mismatch rejection had none.
+  The prohibited-capability rejection (`evaluate()`'s own independent check,
+  separate from `CapabilityRegistry.register()`'s already-tested refusal to
+  register a `PROHIBITED` manifest in the first place -- genuine defense in
+  depth, not a duplicate check) had none. Three of the four argument-type
+  branches in `_first_argument_error()` -- `INTEGER`, `NUMBER`, `BOOLEAN` --
+  had none; only `STRING` was tested, and no built-in capability manifest
+  currently declares a non-`STRING` parameter, but `ParameterType` is public
+  schema surface a future capability will use, so this validation logic
+  guards a real future attack surface it just has not been exercised yet.
+- Added eight tests to `tests/unit/test_policy.py`: unsupported-platform
+  rejection; the prohibited-capability defense-in-depth branch (registered a
+  normal manifest, then used `monkeypatch` to make `registry.get` return a
+  `model_copy`-mutated `PROHIBITED` copy of it -- the real registry cannot
+  reach this state through its own public API, so this is the only way to
+  exercise `evaluate()`'s own check directly; the `model_copy` technique
+  mirrors `test_capability_registry.py`'s existing use of it for the same
+  reason); wrong-type rejection for `INTEGER`/`NUMBER`/`BOOLEAN` individually;
+  a targeted regression test for a real Python subtlety the code already
+  handles correctly but had never been proven to -- `bool` is a subclass of
+  `int`, and both the `INTEGER` and `NUMBER` checks deliberately exclude it
+  with a separate `isinstance(value, bool)` clause, so a stray `True`/`False`
+  is never silently accepted as a numeric argument; and one positive-path
+  test proving a fully valid `INTEGER`/`NUMBER`/`BOOLEAN` argument set still
+  passes. No application code changed -- `policy/engine.py`'s logic was
+  already correct; this closes a test gap, not a bug.
+- Files changed: `tests/unit/test_policy.py`, `docs/PROJECT_STATE.md`,
+  `docs/WORK_LOG.md`. No application/production code changed.
+- Commands/tests run: `ruff check .` (clean); `mypy src` (clean except the
+  known sandbox-only false positive); `pytest --cov=src/visionai
+  --cov-report=term-missing` (412 tests: 386 passed, 25 failed -- identical
+  by name to the pre-change baseline, confirming no regressions -- 1
+  skipped, 89% coverage, up from 88%; `policy/engine.py` at 100% line
+  coverage, up from 93%); `bandit -q -r src` (clean); `pip-audit -r
+  requirements/base.txt -r requirements/dev.txt` (no known vulnerabilities).
+- Next task: this closes a real coverage gap in a security-critical module
+  but adds no new capability. Approved Next Tasks item 5's remaining scoped
+  options still need a human product/design decision (clarification) or
+  real hardware/network access this sandbox lacks (local/offline provider,
+  live prompt-injection suite). A future sandbox session should keep mining
+  coverage gaps in other policy/validation modules (e.g. `policy/
+  url_validation.py` at 85%, `policy/rate_limit.py` at 83%,
+  `observability/audit.py` at 92%) or documentation reconciliation, or get
+  a human decision to unblock the remaining Phase 6 options.
+
+## 2026-09-05 autonomous cycle: KeyringSecretStore write-path test coverage (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`
+  (already up to date at `4728bc9`), read the docs and recent git log, built
+  a Python 3.12 virtualenv from `requirements/dev.txt`, and ran the baseline
+  verification suite before touching anything. The container was again
+  missing the headless Qt/PortAudio system libraries (`libegl1`, `libgl1`,
+  `libopengl0`, `libportaudio2` -- a fresh container each run, so this setup
+  step recurs); installed them via `apt-get` (container-only setup, not a
+  Python dependency change) so the suite could even collect. Baseline then
+  matched the documented sandbox state exactly: ruff/bandit/pip-audit clean,
+  mypy clean except the known `ctypes.windll` false positive, pytest 373
+  passed/25 failed/1 skipped, 88% coverage -- all 25 failures confirmed by
+  name to be the same `WindowsLockStateAdapter` fail-closed pattern every
+  prior sandbox session has documented, not a regression.
+- Scanned the coverage report for a real, narrow, hardware-free gap rather
+  than inventing new scope. `visionai.config.secrets.KeyringSecretStore`
+  (backing `--set-api-key`/`--delete-api-key` and the desktop Settings
+  dialog's masked API-key entry/deletion) was only 70% covered: `.get()`'s
+  read/fail-soft path had a real-backend smoke test, but `.set()` and
+  `.delete()` -- including both methods' `StorageError`-wrapping failure
+  branches, `.set()`'s success path, and `.delete()`'s
+  `keyring.errors.PasswordDeleteError`-means-idempotent branch -- had zero
+  test coverage at all.
+- Added six tests to `tests/unit/test_secrets.py` using `pytest`'s
+  `monkeypatch` fixture on the already-imported `keyring` module (the same
+  "mock the external OS boundary" approach already used for
+  `WindowsLockStateAdapter`'s locked/failure branches): a success-path test
+  and a `StorageError`-wrapping failure test for each of `.set()`/`.delete()`,
+  plus one confirming `.delete()` swallows `PasswordDeleteError` rather than
+  raising. No real OS keychain is touched by these tests, and no hardware or
+  live Windows behavior is claimed. `config/secrets.py` reached 100% line
+  coverage.
+- Files changed: `tests/unit/test_secrets.py`, `docs/PROJECT_STATE.md`,
+  `docs/WORK_LOG.md`. No application/production code changed.
+- Commands/tests run: `ruff check .` (clean); `mypy src` (clean except the
+  known sandbox-only false positive); `pytest --cov=src/visionai
+  --cov-report=term-missing` (404 tests: 378 passed, 25 failed -- identical
+  by name to the pre-change baseline, confirming no regressions -- 1
+  skipped, 88% coverage); `bandit -q -r src` (clean); `pip-audit -r
+  requirements/base.txt -r requirements/dev.txt` (no known vulnerabilities).
+- Next task: this closes a real coverage gap but adds no new capability.
+  Approved Next Tasks item 5's remaining scoped options (LLM clarification,
+  a local/offline provider) both still need a human product/design decision
+  before implementation, per that section's own wording -- a future session
+  should either get that decision or keep mining coverage gaps / property
+  tests / documentation reconciliation for hardware-free work.
+
+## 2026-09-05 autonomous cycle: Unicode text-safety hardening (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`,
+  read the docs and recent git log, built a Python 3.12 virtualenv from
+  `requirements/dev.txt`, installed the headless Qt/PortAudio system
+  libraries (`libegl1`, `libgl1-mesa-dri`, `libportaudio2`), and ran the
+  baseline verification suite before touching anything. Baseline matched the
+  documented sandbox state exactly: ruff/bandit/pip-audit clean, mypy clean
+  except the known `ctypes.windll` false positive, pytest 361 passed/25
+  failed/1 skipped -- all 25 failures confirmed by inspection to be the same
+  `WindowsLockStateAdapter` fail-closed-with-no-real-Windows-desktop pattern
+  every prior sandbox session has documented, not a regression.
+- Checked `docs/PROJECT_STATE.md`'s Approved Next Tasks for a well-scoped
+  item; found item 5 (Phase 6 Intelligence) was itself stale -- it still
+  listed "a desktop Settings control for the keychain secret" as CLI-only
+  and remaining, but that was already shipped in an earlier session (the
+  "2026-09-05 update" bullet in Implemented and Tested). Corrected the
+  wording rather than re-implementing already-done work.
+- With nothing genuinely well-scoped left unclaimed in that list for this
+  hardware-less environment, looked for a real bug instead (this run's
+  instructions call out schema/validation hardening and security tests as
+  good fits) and traced `SafeText` (`visionai.core.events`, backing
+  `LLMQuery`/`LLMReply`, `Intent`, `ActionRequest.arguments`,
+  `ActionPlan.summary`, both prompt types) end to end. Found it -- and five
+  other independent, duplicated control-character checks across the
+  codebase -- rejected only ASCII control characters, leaving Unicode
+  bidirectional-override characters (the "Trojan Source" set,
+  CVE-2021-42574), invisible zero-width format characters, and the Unicode
+  line/paragraph separators completely unchecked. Traced a concrete path:
+  `orchestration/text_planner.py::_plan_browser_search` and
+  `intelligence/planner.py::suggest_command()` both let such characters
+  through into a `browser.search` query, which then appears verbatim in the
+  `summary` a human reads in `--suggest`/Suggest Command's proposal line --
+  exactly the text Section 9's "must display exact normalized action,
+  target and effect" depends on being trustworthy.
+- Added `contains_unsafe_characters()`/`strip_unsafe_characters()` to
+  `core/events.py` (an `allow_line_breaks=False` mode additionally blocks
+  tab/newline/CR for single-line-only values -- a URL, a search query, a
+  suggested command phrase, a wake word) as the one shared implementation,
+  then replaced the five independently drifting checks in
+  `orchestration/text_planner.py` (twice), `orchestration/wake_word.py`,
+  `config/user_settings.py`, `policy/url_validation.py` (twice), and
+  `intelligence/planner.py` with calls to it. Caught and fixed a real
+  regression from my own first pass before it was ever committed: naively
+  swapping `browser.search`'s control-character check to the new helper's
+  default (which permits tab/newline/CR, matching `SafeText`'s
+  `ConversationMemory`-driven exemption) broke an existing test expecting a
+  newline-containing search query to be rejected -- fixed by using
+  `allow_line_breaks=False` for every single-line-only context instead of
+  applying the exemption everywhere.
+- Running the full suite after the change (not just reviewing it) surfaced
+  a second real bug the hardening itself introduced: `AnthropicProvider.
+  respond()` constructed `LLMReply` from the raw API response text outside
+  its own broad try/except, so a real reply containing a newly-rejected
+  character would raise an uncaught `pydantic.ValidationError` instead of
+  the `ProviderError` this boundary already promises for every other
+  failure. The CLI/desktop call sites already caught `ValidationError` too,
+  so this was not a live end-user crash, but the provider's own contract
+  was inconsistent -- fixed by moving the construction inside the existing
+  try block, in the same session.
+- Verified: a parametrized `test_events.py` corpus (right-to-left override,
+  zero-width space, zero-width non-joiner, bidi isolate, line separator,
+  paragraph separator, byte-order mark, word joiner) proves each is
+  rejected by both `SafeText` and `contains_unsafe_characters()`; a
+  companion test proves tab/newline/CR remain accepted; `allow_line_breaks=
+  False` is proven to additionally reject line breaks; `strip_unsafe_
+  characters()` is proven to remove exactly the flagged characters and
+  nothing else; a new `test_anthropic_provider.py` test proves the
+  unsafe-reply-to-`ProviderError` fix. All new Unicode test literals use
+  explicit `\uXXXX` escapes rather than embedded literal characters, to
+  keep the source files reviewable and avoid the exact class of
+  editor/diff-mangling risk this fix is about.
+- Full verification after the change: 399 tests (373 passed, 25 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 1 skipped), 88% coverage, ruff clean, mypy clean (one known
+  sandbox-only false positive), Bandit clean, pip-audit clean.
+- Updated `docs/SECURITY.md`, `docs/TESTING.md`, and `docs/PROJECT_STATE.md`
+  (Current Phase, a new Implemented and Tested bullet, the corrected
+  Approved Next Tasks item 5, Last Verification Result, Last Updated) in
+  the same commit as the code change.
+
 ## 2026-09-05 autonomous hour: desktop thread lifetime and privacy
 
 - Integrated remote CI/memory commits through merge 3ca75c0, retaining the

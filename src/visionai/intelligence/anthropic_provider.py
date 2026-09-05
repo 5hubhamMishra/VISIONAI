@@ -42,11 +42,13 @@ class AnthropicProvider:
         # precedent: this is the true external-I/O boundary (a network call
         # to a third-party API), not application logic, so any failure --
         # including one from an injected fake client in tests, which may not
-        # even be an `anthropic` exception type -- becomes a domain error
-        # rather than a raw SDK exception leaking past this class. Catching
-        # only `anthropic.APIError` would also force importing `anthropic`
-        # here even when a fake client is injected, defeating the point of
-        # the injection seam.
+        # even be an `anthropic` exception type, and including `LLMReply`
+        # rejecting a reply that fails `SafeText` validation (e.g. an
+        # embedded bidi-override or invisible character) -- becomes a
+        # domain error rather than a raw exception leaking past this class.
+        # Catching only `anthropic.APIError` would also force importing
+        # `anthropic` here even when a fake client is injected, defeating
+        # the point of the injection seam.
         try:
             response = self._client.messages.create(
                 model=self._model,
@@ -54,7 +56,7 @@ class AnthropicProvider:
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": query.text}],
             )
+            text = next((block.text for block in response.content if block.type == "text"), "")
+            return LLMReply(text=text)
         except Exception as exc:
             raise ProviderError(f"LLM provider request failed: {exc}") from exc
-        text = next((block.text for block in response.content if block.type == "text"), "")
-        return LLMReply(text=text)

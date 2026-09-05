@@ -7,6 +7,7 @@ from ipaddress import ip_address
 from urllib.parse import quote_plus, urlparse, urlunparse
 
 from visionai.core.errors import UrlValidationError
+from visionai.core.events import contains_unsafe_characters
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,7 +20,7 @@ class UrlPolicy:
     allowed_ports: frozenset[int] = field(default_factory=lambda: frozenset({443}))
 
     def normalize_url(self, raw_url: str) -> str:
-        if any(ord(char) < 32 or ord(char) == 127 for char in raw_url):
+        if contains_unsafe_characters(raw_url, allow_line_breaks=False):
             raise UrlValidationError("URL contains control characters")
         parsed = urlparse(raw_url.strip())
         if parsed.scheme.lower() not in self.allowed_schemes:
@@ -55,7 +56,7 @@ class UrlPolicy:
         return normalized_redirect
 
     def build_search_url(self, query: str, *, host: str = "www.google.com") -> str:
-        if any(ord(char) < 32 or ord(char) == 127 for char in query):
+        if contains_unsafe_characters(query, allow_line_breaks=False):
             raise UrlValidationError("search query contains control characters")
         if len(query) > 500:
             raise UrlValidationError("search query is too long")

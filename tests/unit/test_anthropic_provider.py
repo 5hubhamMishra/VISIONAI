@@ -61,3 +61,16 @@ def test_respond_wraps_a_client_failure_as_provider_error() -> None:
 
     with pytest.raises(ProviderError):
         provider.respond(LLMQuery(text="hello"))
+
+
+def test_respond_wraps_an_unsafe_reply_as_provider_error_not_a_raw_validation_error() -> None:
+    """A real API response containing a bidi-override or other character
+    `LLMReply`'s `SafeText` field rejects must become the same domain error
+    every other failure at this boundary does, not a raw `pydantic.
+    ValidationError` leaking out of this one provider implementation."""
+
+    client = _FakeClient(messages=_FakeMessages(reply_text="cats\u202ereversed"))
+    provider = AnthropicProvider(api_key="unused", model="claude-opus-5", client=client)
+
+    with pytest.raises(ProviderError):
+        provider.respond(LLMQuery(text="hello"))

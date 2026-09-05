@@ -25,12 +25,52 @@ from pydantic import (
     model_validator,
 )
 
-_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# Blocks C0/C1 control characters (tab, newline, and carriage return are
+# deliberately exempt -- `ConversationMemory.build_query_text()` joins
+# multi-turn LLM context with real newlines) plus Unicode bidirectional
+# override/isolate characters, invisible zero-width format characters, and
+# the line/paragraph separators -- the "Trojan Source"-style character set
+# (CVE-2021-42574) that can make displayed text misrepresent its real
+# content or hide payload from a human reader. This matters here
+# specifically because `SafeText` values (an LLM-suggested search query, a
+# confirmation/proposal summary) are the exact text Section 9's "must
+# display exact normalized action, target and effect" and Section 12's "may
+# not confirm itself" human-review gates rely on being what they appear to
+# be -- see docs/SECURITY.md.
+_UNSAFE_CHAR_CLASS = (
+    r"\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f"
+    r"\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff"
+)
+_CONTROL_CHARS = re.compile(f"[{_UNSAFE_CHAR_CLASS}]")
+# Same class, but also blocking tab/newline/CR -- for values that must never
+# span multiple lines (a URL, a search query, a single command phrase),
+# unlike `SafeText` itself, which exempts them for multi-turn LLM context.
+_UNSAFE_CHARS_SINGLE_LINE = re.compile(f"[\t\n\r{_UNSAFE_CHAR_CLASS}]")
+
+
+def contains_unsafe_characters(text: str, *, allow_line_breaks: bool = True) -> bool:
+    """True if `text` contains a control, bidi-override, or invisible character.
+
+    Tab/newline/CR are allowed by default, matching `SafeText` (needed for
+    `ConversationMemory`'s multi-turn context). Pass `allow_line_breaks=False`
+    for a value that must always be a single line -- a URL, a search query,
+    a suggested command phrase, a wake word.
+    """
+
+    pattern = _CONTROL_CHARS if allow_line_breaks else _UNSAFE_CHARS_SINGLE_LINE
+    return bool(pattern.search(text))
+
+
+def strip_unsafe_characters(text: str) -> str:
+    """Remove every character `contains_unsafe_characters()` would flag."""
+
+    return _CONTROL_CHARS.sub("", text)
+
 
 # A short human/spoken-language string: no control characters, bounded length.
 SafeText = Annotated[
     str,
-    StringConstraints(max_length=2000, pattern=r"^[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f]*$"),
+    StringConstraints(max_length=2000, pattern=rf"^[^{_UNSAFE_CHAR_CLASS}]*$"),
 ]
 
 # A stable identifier used for capability IDs, intent names, gesture IDs.

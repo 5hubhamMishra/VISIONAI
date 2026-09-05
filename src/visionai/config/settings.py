@@ -14,7 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 SttDevice = Literal["cpu", "cuda"]
 SttComputeType = Literal["int8", "float16", "float32"]
-LlmProvider = Literal["none", "anthropic"]
+LlmProvider = Literal["none", "anthropic", "local"]
 
 
 class Settings(BaseSettings):
@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     llm_provider: LlmProvider = Field(default="none")
     llm_model: str = Field(default="claude-opus-5", min_length=1)
     anthropic_api_key: SecretStr | None = Field(default=None)
+    local_model_path: Path | None = Field(default=None)
 
 
 @lru_cache

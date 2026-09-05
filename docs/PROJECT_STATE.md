@@ -7,7 +7,238 @@ passed, 89% coverage, Ruff, mypy, Bandit, and requirements-scoped audit clean.
 Microphone start/stop failures release buffers and permit retry. Retained
 capture has a 120-second default sample budget; overlong recordings are
 discarded. Cancelling gesture listening discards unfinished speech rather
-than dispatching it. Desktop result/error handling now
+than dispatching it. Desktop thread cleanup, graceful shutdown, and in-flight
+conversation clearing are also verified. Earlier contributor checkpoints follow.
+
+2026-09-05 autonomous cycle (Linux sandbox, rate limiter test coverage):
+baseline verified clean and unchanged from the prior session's documented
+sandbox state before any work started (fresh `.venv312` built from
+`requirements/dev.txt`; this container again needed `libegl1`/`libopengl0`/
+`libgl1`/`libportaudio2` installed via `apt-get` before pytest-qt/sounddevice
+would import -- container-only setup gaps, not a dependency change; ruff/
+bandit/pip-audit clean; mypy clean for 53 files except the same sandbox-only
+`ctypes.windll` false positive every session shows; pytest 409 passed/25
+failed/1 skipped, the same exclusively `WindowsLockStateAdapter` fail-closed
+pattern, not a regression). `Approved Next Tasks` items 3 and 5's remaining
+entries all need real hardware, a live network/model, or a human product
+decision this sandbox cannot provide, so this session scanned the coverage
+report for a real, narrow, hardware-free gap instead, continuing the pattern
+of prior coverage-focused sessions. Found one in
+`visionai.policy.rate_limit.FixedWindowRateLimiter` (83% covered): both
+`allow()`'s and `would_allow()`'s `limit_per_minute <= 0` rejection branches
+were untested, and `reset()` -- a public method re-exported from
+`visionai.policy` -- had zero callers anywhere in the codebase or test suite.
+Added five tests to `tests/unit/test_rate_limit.py` covering all three gaps
+(non-positive-limit rejection for both methods; `reset(key)` clearing only
+that key; `reset()` clearing every window). No application code changed --
+this was a pure test gap, not a bug. `policy/rate_limit.py` reached 100% line
+coverage (was 83%). Full verification after the change: 439 tests (413
+passed, 25 failed -- identical failing-test names to the pre-change baseline,
+confirming no regressions -- 1 skipped), 90% coverage, ruff/mypy(one known
+false positive)/bandit/pip-audit all clean. Also noted, but left untouched as
+out of scope for this run: `AGENTS.md` exists at the repository root (added
+by a prior session), which conflicts with the master development prompt's
+standing rule against adding an `AGENTS.md`/`CLAUDE.md` file to this repo --
+flagged under Required Decisions below for a human call on whether to remove
+it, since this session did not create it and removing another session's
+committed file was not requested.
+
+2026-09-05 autonomous cycle (Linux sandbox, local/offline LLM provider):
+baseline verified clean and unchanged from the prior session's documented
+sandbox state before any work started (fresh `.venv312` built from
+`requirements/dev.txt`; this container again needed `libegl1`/`libopengl0`/
+`libgl1`/`libportaudio2` installed via `apt-get` before pytest-qt/sounddevice
+would import -- container-only setup gaps, not a dependency change; ruff/
+bandit/pip-audit clean; mypy clean for 52 files except the same sandbox-only
+`ctypes.windll` false positive every session shows; pytest 392 passed/25
+failed/1 skipped, the same exclusively `WindowsLockStateAdapter` fail-closed
+pattern, not a regression). Closed Phase 6's last remaining explicitly
+accepted provider gap (see `Approved Next Tasks` item 5 below and
+`docs/DECISIONS/0004-llm-provider-choice.md`): added
+`visionai.intelligence.local_provider.LocalLlamaProvider`, a real local/
+offline `LLMProvider` behind a new optional `local_llm` extra (`gpt4all`,
+chosen over `llama-cpp-python` specifically because it ships prebuilt
+Windows/Linux/macOS wheels rather than requiring a local C++ build toolchain
+-- checked against real PyPI release metadata before choosing, the same way
+`docs/DECISIONS/0003-accepted-protobuf-cve.md` checked mediapipe's actual
+wheel support). `Settings.llm_provider` gained a `"local"` value and a new
+`Settings.local_model_path` field (`VISIONAI_LOCAL_MODEL_PATH`); the real
+client is always constructed with `allow_download=False` so a missing or
+misconfigured path fails with a clear `ValueError` from `_build_llm_provider()`
+(in both `app.py` and `main_window.py`) instead of silently reaching the
+network to fetch a model -- the one property that actually makes this
+provider "local/offline" rather than just another cloud vendor. Mirrors
+`AnthropicProvider`'s shape exactly: injectable client, broad catch of both
+client failures and `LLMReply`'s own `SafeText` validation failures into
+`core.errors.ProviderError`, and the identical fixed, code-owned
+no-execution-authority system prompt. `gpt4all` is not added to
+`requirements/dev.txt` (mirroring mediapipe/`vision`), so its real import
+path remains genuinely untested in this sandbox -- an explicit, accepted gap,
+not a claimed live verification; see
+`docs/DECISIONS/0006-local-offline-llm-provider.md`. While implementing this,
+found and closed an unrelated, pre-existing coverage gap in the same two
+functions this touched: neither `app._build_llm_provider()` nor
+`main_window._build_llm_provider()` had ever been tested for its own real
+branch logic before this session -- every existing test replaced the whole
+function with a fake provider instead, so the "none"/"anthropic" branches
+(and, for `main_window.py`, the entire function) had zero or partial direct
+coverage. Added 6 new tests to each of `tests/unit/test_app.py`/
+`tests/unit/test_main_window.py` covering every branch (none/local-missing-
+path/local-missing-file/local-happy-path/anthropic-missing-key/anthropic-
+happy-path), plus 5 new tests in `tests/unit/test_local_provider.py`
+mirroring `tests/unit/test_anthropic_provider.py` exactly (including the
+unsafe-reply-becomes-`ProviderError` regression case). The new
+anthropic-happy-path test incidentally brought `anthropic_provider.py` itself
+to 100% coverage (previously 89%, missing exactly its own real-`anthropic`-
+import branch), since it is the first test anywhere in this suite to reach
+that branch with `anthropic` actually installed. No existing application
+behavior changed. Full verification after the change: 435 tests (409 passed,
+25 failed -- identical failing-test names to the pre-change baseline,
+confirming no regressions -- 1 skipped), 90% coverage (up from 89%),
+ruff/mypy(one known false positive)/bandit/pip-audit all clean.
+
+2026-09-05 autonomous cycle (Linux sandbox, UrlPolicy coverage): baseline
+verified clean and unchanged from the prior session's documented sandbox
+state before any work started (ruff/bandit/pip-audit clean; mypy clean for
+52 files except the same sandbox-only `ctypes.windll` false positive every
+session shows; pytest 386 passed/25 failed/1 skipped, the same exclusively
+`WindowsLockStateAdapter` fail-closed pattern, not a regression; this
+session's own fresh `.venv312` again needed `libegl1`/`libopengl0`/
+`libportaudio2` installed via `apt-get` before the suite would collect --
+`libgl1` was already present -- container-only setup gaps, not a Python
+dependency change). Scanned the coverage report for a real, narrow,
+hardware-free gap and found one in `visionai.policy.url_validation.
+UrlPolicy` -- 85% covered, with `validate_redirect()` (the redirect-host-
+match check) effectively untested: its one existing test called it with a
+redirect target that was not itself allowlisted, so the call always failed
+one line earlier inside `normalize_url()`'s own allowlist check and never
+reached the host-comparison branch the method exists to test. Also found
+`_normalize_host()`'s missing-hostname and IDNA-encoding-failure branches,
+`normalize_url()`'s own control-character rejection, and
+`build_search_url()`'s overly-long-query rejection all untested. Added six
+new tests to `tests/unit/test_url_validation.py` covering all five gaps,
+including a positive same-host `validate_redirect()` case; split the old
+test that bundled an unrelated host-confusion check with the ineffective
+redirect assertion into one single-purpose test. No application code
+changed -- this was a pure test gap, not a bug. `policy/url_validation.py`
+reached 100% line coverage (was 85%). Full verification after the change:
+418 tests (392 passed, 25 failed -- identical failing-test names to the
+pre-change baseline, confirming no regressions -- 1 skipped), 89% coverage,
+ruff/mypy(one known false positive)/bandit/pip-audit all clean.
+
+2026-09-05 autonomous cycle (Linux sandbox, policy engine coverage): baseline
+verified clean and unchanged from the prior session's documented sandbox
+state before any work started (ruff/bandit/pip-audit clean; mypy clean for
+52 files except the same sandbox-only `ctypes.windll` false positive every
+session shows; pytest 378 passed/25 failed/1 skipped, the same exclusively
+`WindowsLockStateAdapter` fail-closed pattern, not a regression; this
+session's own fresh `.venv312` again needed `libegl1`/`libgl1`/`libopengl0`
+and `libportaudio2` installed via `apt-get` before the suite would collect --
+container-only setup gaps, not a Python dependency change). Scanned the
+coverage report for a real, narrow, hardware-free gap and found one in
+`visionai.policy.engine.PolicyEngine.evaluate()` -- the deterministic policy
+gate every capability dispatch passes through -- rather than in a peripheral
+module: it was only 93% covered, and the untested lines were not incidental,
+they were entire security-relevant branches with zero coverage. Specifically:
+the platform-mismatch rejection (`context.platform not in
+manifest.supported_platforms`), the prohibited-capability rejection (a
+second, independent defense-in-depth check -- `CapabilityRegistry.register()`
+already refuses to register a `PROHIBITED` manifest, but `evaluate()` checks
+again itself rather than trusting the registry alone), and three of the four
+argument-type-mismatch branches in `_first_argument_error()` (`INTEGER`,
+`NUMBER`, `BOOLEAN` -- only `STRING` had a test). No built-in capability
+manifest currently declares an `INTEGER`/`NUMBER`/`BOOLEAN` parameter, but
+`ParameterType` is public schema surface a future capability will use, and
+this validation exists specifically to stop a malformed or malicious
+argument from reaching a handler -- untested here means it could silently
+regress with no test to catch it. Added eight tests to `tests/unit/
+test_policy.py`: unsupported-platform rejection; the prohibited-capability
+defense-in-depth branch (a normal manifest registered, then `registry.get`
+monkeypatched to return a `model_copy`-mutated `PROHIBITED` copy, the same
+technique `test_capability_registry.py` already uses to construct an
+otherwise-unregistrable manifest, since the real registry cannot produce
+this state through its own public API); wrong-type rejection for each of
+`INTEGER`/`NUMBER`/`BOOLEAN`; a Python-specific subtlety worth its own
+regression test -- `bool` is a subclass of `int`, and the existing type
+checks deliberately exclude it (`isinstance(value, bool)` is checked
+separately) so a stray `True`/`False` is never silently accepted as a valid
+integer or number argument -- proven for both `INTEGER` and `NUMBER`; and
+one positive case proving a fully valid `INTEGER`/`NUMBER`/`BOOLEAN` argument
+set is still accepted. No application code changed -- this was a pure test
+gap, not a bug. `policy/engine.py` reached 100% line coverage (was 93%).
+Full verification after the change: 412 tests (386 passed, 25 failed --
+identical failing-test names to the pre-change baseline, confirming no
+regressions -- 1 skipped), 89% coverage (up from 88%),
+ruff/mypy(one known false positive)/bandit/pip-audit all clean.
+
+2026-09-05 autonomous cycle (Linux sandbox, secret-store test coverage):
+baseline verified clean and unchanged from the prior session's documented
+sandbox state before any work started (ruff/bandit/pip-audit clean; mypy
+clean for 52 files except the same sandbox-only `ctypes.windll` false
+positive every session shows; pytest 373 passed/25 failed/1 skipped, the
+same exclusively `WindowsLockStateAdapter` fail-closed pattern, not a
+regression; this session's own fresh `.venv312` needed two missing system
+shared libraries installed via `apt-get` before the suite would even
+collect -- `libegl1`/`libgl1`/`libopengl0` for headless `pytest-qt`, and
+`libportaudio2` for `sounddevice`'s real-backend import -- neither is a
+Python dependency change, both are container-only setup gaps, and pytest
+was otherwise unable to start at all without them). Found a real,
+previously untested gap while looking for a well-scoped, hardware-free
+task: `visionai.config.secrets.KeyringSecretStore.set()` and `.delete()` --
+the OS-keychain write/delete paths `--set-api-key`/`--delete-api-key` and
+the desktop Settings dialog both depend on -- had zero test coverage
+(`config/secrets.py` was 70% covered; only `.get()`'s read/fail-soft path
+was exercised, by the existing real-backend smoke test). Both methods'
+`StorageError`-wrapping failure branches, `set()`'s success path, and
+`delete()`'s `keyring.errors.PasswordDeleteError`-is-idempotent branch were
+all unverified by any test. Added six focused tests to
+`tests/unit/test_secrets.py` using `monkeypatch` on the already-imported
+`keyring` module (mirroring how `WindowsLockStateAdapter`'s mocked
+locked/failure branches are tested) -- no real OS keychain touched, no
+hardware or live Windows behavior claimed. `config/secrets.py` is now 100%
+covered; no application code changed, no regressions (identical 25-test
+failure set to the pre-change baseline). Full verification after the
+change: 404 tests (378 passed/25 failed/1 skipped), 88% coverage,
+ruff/mypy(one known false positive)/bandit/pip-audit all clean.
+
+2026-09-05 autonomous cycle (Linux sandbox, text-safety hardening): baseline
+verified clean and unchanged from the prior session's documented sandbox
+state before any work started (ruff/bandit/pip-audit clean; mypy clean for
+52 files except the same sandbox-only `ctypes.windll` false positive every
+session shows; pytest 361 passed/25 failed/1 skipped, the same exclusively
+`WindowsLockStateAdapter` fail-closed pattern, not a regression). Found and
+closed a real, previously undiscovered validation gap while looking for a
+well-scoped, hardware-free task: `SafeText` (and five other independent,
+duplicated control-character checks across the codebase) rejected only
+ASCII control characters, leaving Unicode bidirectional-override characters
+(the "Trojan Source" set, CVE-2021-42574), invisible zero-width format
+characters, and line/paragraph separators completely unchecked in exactly
+the values a human reads to decide whether to approve a proposed action --
+an LLM-suggested search query, a `--suggest`/Suggest Command proposal, a
+confirmation summary -- undermining Section 9's "must display exact
+normalized action, target and effect" guarantee even though every
+downstream allowlist/dispatch check was already correct. Consolidated into
+one shared, tested implementation
+(`visionai.core.events.contains_unsafe_characters()`/
+`strip_unsafe_characters()`) and found a second real bug the fix itself
+would otherwise have introduced: `AnthropicProvider.respond()` built
+`LLMReply` outside its own try/except, so a real reply containing a
+newly-rejected character would have raised an uncaught
+`pydantic.ValidationError` instead of the `ProviderError` this boundary
+already promises for every other failure -- fixed in the same session. See
+`docs/SECURITY.md`'s 2026-09-05 text-safety hardening entry for the full
+rationale and every touched file. Full verification after the fix: 399
+tests (373 passed/25 failed, same pre-existing pattern/1 skipped), 88%
+coverage, ruff/mypy(one known false positive)/bandit/pip-audit all clean --
+identical failure set to the pre-change baseline, no regressions. Also
+found `Approved Next Tasks` item 5 below was stale (it still listed "a
+desktop Settings control for the keychain secret" as a remaining option;
+that was actually already shipped in an earlier session, per this
+document's own "2026-09-05 update" bullet in Implemented and Tested) and
+corrected it.
+
+Latest local Windows verification (2026-09-05 autonomous hour): 387 tests
+passed, 88% coverage, Ruff and mypy clean. Desktop result/error handling now
 joins completed workers before releasing them; normal close and tray Quit
 defer destruction while active workers finish. Clearing Ask AI memory during
 a request no longer restores deleted context when the answer arrives. The
@@ -93,6 +324,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## Implemented and Tested
 
+- Added a local/offline `LLMProvider`: `visionai.intelligence.local_provider.LocalLlamaProvider` runs a user-supplied GGUF model file via the optional `local_llm` extra (`gpt4all==2.8.2`, MIT-licensed, chosen over `llama-cpp-python` for its prebuilt Windows/Linux/macOS wheels). `Settings.llm_provider` gained a `"local"` value and `Settings.local_model_path` (`VISIONAI_LOCAL_MODEL_PATH`); the real client is always built with `allow_download=False`, so it never fetches a model from the network, and both `app._build_llm_provider()`/`main_window._build_llm_provider()` raise a clear `ValueError` for a missing/unset/nonexistent path rather than silently falling through. Mirrors `AnthropicProvider`'s injectable-client shape and broad-catch-to-`ProviderError` error handling exactly; see `docs/DECISIONS/0006-local-offline-llm-provider.md`. Not live-verified with a real model file in this Linux sandbox. Also closed a pre-existing, unrelated coverage gap found while testing this: `_build_llm_provider()`'s own real branch logic (in both `app.py` and `main_window.py`) had never been directly tested before -- every existing test replaced the whole function with a fake. New tests cover every branch in both files, incidentally bringing `anthropic_provider.py` to 100% coverage (previously 89%, missing its own real-`anthropic`-import branch).
 - Added `visionai --wake-word-text`, which applies the persisted wake word to one already-transcribed utterance and routes matching text through `WakeWordVoiceRunner`, the real `EventOrchestrator`, and the policy/dispatcher path. Non-matching text exits cleanly without publishing or launching. This is a CLI text-entry surface only; it does not add STT or microphone capture.
 
 - Added the local `faster-whisper` STT provider behind `MicrophonePushToTalk`: it uses lazy `base.en`/CPU/int8 defaults from environment settings, loads the model only on first real transcription, and sends only final text into the existing validated input path. Raw audio remains transient and is never stored or published.
@@ -183,6 +415,8 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Closed the OS-keychain gap `docs/DECISIONS/0004-llm-provider-choice.md` had recorded as accepted-but-deferred (user decision, chosen over a local/offline provider and conversation memory when asked which direction to take next). Planned via `EnterPlanMode` and validated by a Plan subagent against the actual `keyring` source (not memory) before implementation, which caught two real issues folded into the final design (see below). Added `visionai.config.secrets`, mirroring `platform.lock_state`'s Protocol/in-memory-double/real-implementation shape again: `SecretStore` (`get`/`set`/`delete`), `InMemorySecretStore` (a real dict-backed round-trip test double), and `KeyringSecretStore` (the real implementation, Windows Credential Manager via the `keyring` package -- now added to the `intelligence` extra, `keyring==25.7.0`, MIT-licensed, confirmed installable and importable). `resolve_anthropic_api_key(settings, store=None)` is the one function both `app._build_llm_provider()` and `main_window._build_llm_provider()` now call: the explicit `VISIONAI_ANTHROPIC_API_KEY` env var still wins if set (unchanged behavior for existing users), falling back to the keychain only when it's unset. Added `visionai --set-api-key` (prompts via `getpass.getpass()`, hidden input, never a plain CLI argument) and `visionai --delete-api-key`, both placed before `build_runtime()` like `--ask`/`--list-microphones` since neither needs the capability registry -- confirmed safe by the Plan subagent directly reading `app.py:main()`, unlike `--suggest`, which genuinely did need to come after. The Plan subagent's two real corrections, both shipped: (1) `KeyringSecretStore.get()`'s broad `except Exception` wraps only the `keyring.get_password()` call, not the `import keyring` line itself -- otherwise a missing `intelligence` extra would silently look identical to "no key configured" instead of raising `ImportError`, which the existing `_build_llm_provider()` exception handling already handles correctly; (2) `set()`/`delete()` failures raise `core.errors.StorageError` (already used by `JsonlAuditSink`/`JsonPermissionStore`/`UserSettingsStore` for exactly this "local persistence operation failed" case) rather than leaving a bare `except Exception` as the only boundary, and `delete()`'s idempotent-no-op behavior specifically catches `keyring.errors.PasswordDeleteError` by name -- confirmed against the real Windows `keyring` backend source (fetched, not recalled from memory) that this exception specifically means "wasn't there," not a genuine deletion failure. Verified: `InMemorySecretStore`'s get/set/delete round-trip and idempotent delete-of-absent-key; `resolve_anthropic_api_key()`'s precedence with a directly constructed `Settings(anthropic_api_key=...)` (the first precedent in this codebase for testing a `Settings`-shaped branch without the cached `get_settings()` singleton or environment variables) -- env var wins even with a value also present in an injected keychain double, falls back to the keychain when unset, `None` when neither; one real-backend smoke test proving the actual Windows Credential Manager backend loads and responds. CLI tests inject an `InMemorySecretStore` and a fake `getpass.getpass` (no real prompt or keychain write in the standard suite): a real value is stored and readable back; empty/whitespace input stores nothing; `EOFError`/`KeyboardInterrupt` on the prompt is treated as `"Cancelled."`; deletion removes an existing value. Beyond the automated suite, ran the real, shipped `--set-api-key`/`--delete-api-key` commands against the actual Windows Credential Manager on the development machine: stored a real value, confirmed it was retrievable via `KeyringSecretStore` directly, then deleted it and confirmed it was gone, leaving no test artifact behind. Deliberately deferred: a desktop `MainWindow` control for this (matching the established CLI-first-then-UI pattern).
 - Added session-scoped conversation memory to the desktop window's Ask AI feature (approved next task 5's remaining "conversation memory/retention limits" option, chosen as the best fit for this run's Linux-sandbox-only environment -- no display/camera/microphone/Windows APIs -- over a local/offline provider, which would need downloading and running a real model binary this sandbox cannot verify, and a live-LLM prompt-injection suite, which needs a real network call/API key this sandbox does not have). Added `visionai.intelligence.memory.ConversationMemory`: a small, bounded question/answer history with two independent limits -- a fixed maximum turn count (`deque(maxlen=...)`, oldest evicted first) and a character budget (`build_query_text()` only ever prefixes as many of the most recent turns as fit, and never truncates or drops the caller's own new question to make room, so a lone question's `LLMQuery` validation behavior is unchanged from having no memory at all) -- plus an explicit `clear()` deletion method, satisfying Section 12's "retention limits and deletion" requirement the same way `docs/DECISIONS/0004-llm-provider-choice.md` originally flagged as unmet. This is deliberately additive to the existing `LLMProvider` boundary, not a change to it: `respond(query) -> reply` still takes exactly one `LLMQuery` and returns exactly one `LLMReply`, matching every other adapter boundary in this codebase (`LandmarkAdapter.read_candidate()`, `MicrophoneCapture.start()/stop()`) -- `ConversationMemory` only builds the text the caller sends. Caught and fixed a real off-by-one during test-driven development, before it ever reached committed code: the original character-budget arithmetic subtracted only the new question's own length from the budget, not its `"User: "` prefix, so a full conversation could exceed `max_context_chars` by 6 characters; a dedicated test (`test_conversation_memory_build_query_text_never_exceeds_the_char_budget`) asserting the hard length invariant caught it immediately, fixed by including the rendered trailer's real length in the budget calculation from the start. Wired into `MainWindow`: one `ConversationMemory` per window instance (`self._ask_memory`, session-only, never written to `UserSettingsStore` or any file -- matches this project's existing no-raw-audio/no-raw-camera-frame retention posture), `show_ask_ai()` now sends `self._ask_memory.build_query_text(text)` instead of the raw question and records the turn in `_on_ask_finished()` once a reply actually arrives (a failed request records nothing, proven by a dedicated test), and a new "Clear Conversation" button/method (`clear_ask_conversation()`) deletes it on demand -- added to the tab-order chain (both existing forward/reverse keyboard-navigation tests updated), the onboarding text, and a new Diagnostics line reporting the current retained-turn count. Suggest Command deliberately does not read or write this memory -- it proposes one command from one free-text request each time, not a conversation. The CLI's `--ask` deliberately still does not use it either: each invocation is a separate process with no natural place to keep history without adding new disk persistence, which `docs/DECISIONS/0004-llm-provider-choice.md`'s original stateless-`--ask` reasoning already covers and this slice does not revisit. Verified: `tests/unit/test_conversation_memory.py` (11 tests) covers construction validation, empty-history passthrough, record/eviction ordering, `clear()`, exact prefix rendering, oldest-turns-dropped-first under a tight character budget, the new question never being dropped or truncated even when it alone exceeds the budget, the "no single turn fits" edge case, and the hard total-length invariant; `tests/unit/test_main_window.py` gained three tests using a `_RecordingReplyProvider` that captures the literal `query.text` each call receives -- a second Ask AI question's provider call is proven to include the first question and its real reply verbatim, Clear Conversation is proven to actually remove that context from the next call, and a failed Ask AI call is proven to leave `_ask_memory.turns` empty. `100%` line coverage on the new module (`src/visionai/intelligence/memory.py`, 40 statements) confirmed directly, not inferred from the whole-suite percentage. Also ran the real, shipped `visionai --ask "what is 2+2?"` command (unaffected, since `app.py` was not touched) and constructed a real (non-offscreen-forced) `MainWindow` directly to confirm the new button/wiring import and construct cleanly.
 
+- Hardened `SafeText` and every other independent control-character check in the codebase against Unicode bidirectional-override characters (the "Trojan Source" set, CVE-2021-42574), invisible zero-width format characters, and line/paragraph separators -- previously only ASCII control characters were rejected, so these could appear unchecked in exactly the text a human reads to decide whether to approve a proposed action (an LLM-suggested search query, a `--suggest`/Suggest Command "Proposed: ..." line, a confirmation summary), undermining Section 9's "must display exact normalized action, target and effect" guarantee even though every downstream allowlist/dispatch check was already correct -- see `docs/SECURITY.md`'s 2026-09-05 text-safety hardening entry for the full rationale. Added `visionai.core.events.contains_unsafe_characters()` (an `allow_line_breaks=False` mode additionally blocks tab/newline/CR for values that must always be a single line -- a URL, a search query, a suggested command phrase, a wake word) and `strip_unsafe_characters()`, then replaced five independently duplicated, weaker ord-based checks that had drifted apart -- `orchestration/text_planner.py` (both the `_CONTROL_CHARS` regex used to sanitize a rejected command's informational `Intent`, and the browser-search query pre-check), `orchestration/wake_word.py`'s `WakeWordGate` construction validation, `config/user_settings.py`'s wake-word normalization, `policy/url_validation.py`'s `normalize_url()` and `build_search_url()`, and `intelligence/planner.py`'s `suggest_command()` reply validator -- with calls to the one shared implementation, so they can no longer independently drift. Tab, newline, and carriage return remain intentionally allowed wherever `SafeText`'s default applies, since `ConversationMemory.build_query_text()` depends on real newlines between turns; every single-line-only context above opts into the stricter `allow_line_breaks=False` mode instead. Verifying this by actually running it (not just reviewing the diff) surfaced a real second bug the hardening itself would otherwise have introduced: `AnthropicProvider.respond()` built `LLMReply` from the raw API response text *outside* its own broad try/except, so a real reply containing a newly-rejected character would have raised an uncaught `pydantic.ValidationError` instead of the `ProviderError` this boundary already promises for every other failure mode (the CLI/desktop call sites already caught `ValidationError` too, so this was not a live end-user crash, but the provider's own contract was inconsistent) -- fixed by moving the construction inside the existing try block, in the same session. Verified: a parametrized `test_events.py` corpus (right-to-left override, zero-width space, zero-width non-joiner, bidi isolate, line separator, paragraph separator, byte-order mark, word joiner) proves each is rejected by both `SafeText` and `contains_unsafe_characters()`; a companion test proves tab/newline/CR remain accepted; `allow_line_breaks=False` is proven to additionally reject line breaks; `strip_unsafe_characters()` is proven to remove exactly the flagged characters and nothing else; a new `test_anthropic_provider.py` test proves the unsafe-reply-to-`ProviderError` fix. Full verification after the change: 399 tests (373 passed/25 failed -- the same pre-existing, exclusively `WindowsLockStateAdapter` fail-closed pattern every sandbox session shows, not a regression -- 1 skipped), 88% coverage, ruff/mypy (one known sandbox-only false positive)/bandit/pip-audit all clean -- identical failing-test set to the pre-change baseline, confirming no regressions from either the hardening or the five call-site changes.
+
 ## Implemented but Not Fully Verified
 
 - None outstanding at this time.
@@ -193,7 +427,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Deterministic text planning (`TextCommandPlanner`) now covers typed-text commands for every registered capability; already-recognized voice transcripts, injected one-shot STT results, push-to-talk releases, policy-approved gestures, temporally voted gesture observations, and single-frame camera/landmark candidates now have an `InputAdapter`/recognition path into the runtime bus.
 - Cancellation-token plumbing (`CapabilityHandler` signature, dispatcher-level pre-check, `_execute` wiring) is in place, but every current built-in handler is fast/synchronous and does not poll it -- the first handler that actually needs to poll mid-run will be whatever approved next task 3 (voice/gesture input) adds.
 - Phase 2 desktop UI: a minimal main window exists and is tested, now with a Stop control, verified keyboard tab-order/focus behavior, a tray icon, confirmation and permission-grant prompts, read-only diagnostics, an editable settings dialog for log level, microphone selection, and wake word, a one-time onboarding dialog, worker-thread command execution, and a Gesture Control button; Narrator navigation and real GUI gesture control are live-verified.
-- Phase 6 (Intelligence) has six slices done: `visionai.intelligence`'s provider boundary (`visionai --ask`), the validated LLM-suggested-command boundary, `--suggest`'s explicit human confirmation plus normal dispatcher execution path, both surfaces now also in `MainWindow` (Ask AI, Suggest Command), real OS keychain secret storage (`--set-api-key`/`--delete-api-key`), and session-scoped conversation memory for the desktop window's Ask AI feature (`ConversationMemory`, `MainWindow`-only, never persisted to disk). Clarification and a local/offline provider remain unstarted -- see the Implemented and Tested bullets above and `docs/DECISIONS/0004-llm-provider-choice.md`/`0005-os-keychain-secret-storage.md`.
+- Phase 6 (Intelligence) has seven slices done: `visionai.intelligence`'s provider boundary (`visionai --ask`), the validated LLM-suggested-command boundary, `--suggest`'s explicit human confirmation plus normal dispatcher execution path, both surfaces now also in `MainWindow` (Ask AI, Suggest Command), real OS keychain secret storage (`--set-api-key`/`--delete-api-key`), session-scoped conversation memory for the desktop window's Ask AI feature (`ConversationMemory`, `MainWindow`-only, never persisted to disk), and a local/offline `LLMProvider` (`LocalLlamaProvider`, behind the optional `local_llm` extra). Only clarification remains unstarted -- see the Implemented and Tested bullets above and `docs/DECISIONS/0004-llm-provider-choice.md`/`0005-os-keychain-secret-storage.md`/`0006-local-offline-llm-provider.md`.
 
 ## Approved Next Tasks
 
@@ -201,7 +435,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 2. WCAG 2.2 AA verification for `MainWindow` is complete for the tested scope: keyboard focus order/no-trap navigation, native contrast/scaling inheritance, and a live Narrator pass are verified. Do not claim formal WCAG certification without a full audit.
 3. Phase 3 voice is now closed for its approved scope too: real device enumeration/capture, a real `faster-whisper` STT provider, push-to-talk and wake-word control boundaries, and continuous `--wake-word-listen`/gesture-triggered voice-capture surfaces on both the CLI and (as of this session) the desktop window all exist and are tested. This entry previously described that work as still-outstanding; corrected here since the wording had gone stale relative to the Implemented and Tested log above. Remaining, smaller voice gaps: a dedicated hotword-spotting engine (current wake-word detection transcribes fixed-length chunks and matches text, not true streaming hotword spotting) and live-verifying the real STT/wake-word/voice-trigger paths with the user's actual microphone and voice (only unit-tested with fakes so far).
 4. Phase 5 vision's approved scope is now closed: `WebcamLandmarkAdapter`, `visionai --gesture-frames N`, `visionai --gesture-listen`, five gesture-to-capability mappings, closed-fist voice capture, and the matching `visionai-ui` Gesture Control button (with the same voice-trigger parity) are unit-tested and live-verified through both CLI and GUI. Keep camera frames/landmarks out of events and storage by default.
-5. Phase 6 Intelligence's provider and command-suggestion slices are done, including explicit human confirmation and dispatch through the unmodified policy/dispatcher path, now available on both the CLI and the desktop window (Ask AI, Suggest Command), plus real OS keychain secret storage (`--set-api-key`/`--delete-api-key`, Windows Credential Manager via `keyring`, alongside the still-working env var) and session-scoped, explicitly clearable conversation memory for the desktop window's Ask AI feature (`visionai.intelligence.memory.ConversationMemory`; deliberately not added to the stateless CLI `--ask`, and not persisted to disk). The focused tests cover approval, cancellation, and rejection of unlisted/prompt-injected model output on both surfaces, plus conversation-memory retention/eviction/deletion. Remaining options are clarification, a local/offline provider (needs a real downloadable model and cannot be live-verified in a display/hardware-less Linux sandbox), a real prompt-injection test suite against a live LLM (Section 17 -- unit tests with fakes only prove so much, and a live run needs a real network call/API key this sandbox does not have), and a desktop Settings control for the keychain secret (CLI-only for now, deliberately).
+5. Phase 6 Intelligence's provider and command-suggestion slices are done, including explicit human confirmation and dispatch through the unmodified policy/dispatcher path, now available on both the CLI and the desktop window (Ask AI, Suggest Command), plus real OS keychain secret storage now available on *both* the CLI (`--set-api-key`/`--delete-api-key`, Windows Credential Manager via `keyring`, alongside the still-working env var) and the desktop Settings dialog (masked API-key entry, keychain deletion -- corrected here: this was previously, incorrectly, still listed below as a CLI-only remaining option; it was actually completed in an earlier session, per the "2026-09-05 update" bullet in Implemented and Tested), and session-scoped, explicitly clearable conversation memory for the desktop window's Ask AI feature (`visionai.intelligence.memory.ConversationMemory`; deliberately not added to the stateless CLI `--ask`, and not persisted to disk). Text-safety validation across this phase's LLM-facing surfaces (and every other independent control-character check in the codebase) was also hardened against Unicode bidi-override/invisible characters this session -- see the Implemented and Tested bullet above. The focused tests cover approval, cancellation, and rejection of unlisted/prompt-injected model output on both surfaces, plus conversation-memory retention/eviction/deletion. A local/offline provider is also now done (`visionai.intelligence.local_provider.LocalLlamaProvider`, behind the optional `local_llm` extra -- `gpt4all`; never downloads a model itself, and is not live-verified with a real model file in this display/hardware-less Linux sandbox -- see `docs/DECISIONS/0006-local-offline-llm-provider.md`). The only remaining option is clarification (an LLM asking a follow-up question when a request is ambiguous -- a genuine new-feature design decision, not yet scoped); a real prompt-injection test suite against a *live* LLM (Section 17) still needs a real network call/API key this sandbox does not have, though a fakes-only/deterministic-fallback-only version of that suite is now substantially covered (see `tests/unit/test_command_suggestion.py`'s malformed-suggestion corpus and this session's `SafeText` hardening tests).
 
 ## Known Defects
 
@@ -237,7 +471,8 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## Required Decisions
 
-- None outstanding. (Resolved: `../jarvis` was locally quarantined; the next major phase was decided as Phase 2, desktop UI; the current package layout's deviation from the master prompt's Section 6 target structure is recorded in `docs/DECISIONS/0002-package-layout-deviation.md`, now updated since `vision` and `intelligence` have both since been created; asked which major direction to take once Phases 0-5's approved scope were all closed -- the user chose Phase 6 Intelligence over live-verifying voice or closing the `WindowsLockStateAdapter` locked-workstation defect, decided and recorded in `docs/DECISIONS/0004-llm-provider-choice.md`.)
+- Whether to remove `AGENTS.md` from the repository root. It was added by a prior autonomous session and conflicts with the master development prompt's standing rule to never add an `AGENTS.md`/`CLAUDE.md` file to this repo. This session did not create it and left it in place rather than take an unrequested destructive action on another session's committed file; a human should decide whether to delete it.
+- Otherwise none outstanding. (Resolved: `../jarvis` was locally quarantined; the next major phase was decided as Phase 2, desktop UI; the current package layout's deviation from the master prompt's Section 6 target structure is recorded in `docs/DECISIONS/0002-package-layout-deviation.md`, now updated since `vision` and `intelligence` have both since been created; asked which major direction to take once Phases 0-5's approved scope were all closed -- the user chose Phase 6 Intelligence over live-verifying voice or closing the `WindowsLockStateAdapter` locked-workstation defect, decided and recorded in `docs/DECISIONS/0004-llm-provider-choice.md`.)
 
 ## Verification Commands
 
@@ -248,12 +483,12 @@ cd visionai
 
 ## Last Verification Result
 
-- Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs -- see the 2026-09-05 autonomous cycle (conversation memory) entry in `docs/WORK_LOG.md`; hosted CI on `windows-latest` remains the authoritative full-environment run)
+- Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libopengl0`/`libportaudio2` (`libgl1` was already present) -- headless `pytest-qt` could not import `QtGui` at all without `libEGL.so.1`, and `sounddevice`'s real-backend smoke test raised `OSError: PortAudio library not found` -- both were installed via `apt-get` before the suite would run to completion. Neither is a Python/project dependency change -- both are container-image setup gaps, not application code.
 - Ruff: passed (whole repo)
-- mypy: passed for 52 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing)
-- pytest: 374 tests total (14 more than the prior session's 360, all this session's own new `ConversationMemory`/`MainWindow` tests). In this Linux sandbox: 354 passed, 19 failed, 1 skipped, 88% coverage -- the 19 failures are the same, exclusively `WindowsLockStateAdapter` failing closed (correctly, by design) pattern as every prior sandbox session, not a regression; the real-environment equivalent is 373 passed, 1 skipped, 0 failed, confirmed directly this session (not just inferred from the pattern): pushed this session's commit and checked the real hosted CI run against it (`5hubhamMishra/VISIONAI` Actions, run 79, `windows-latest`) -- completed, conclusion `success`. New this session: running the full suite with `--cov` (as `scripts/verify.ps1`/hosted CI both do) reproducibly segfaults partway through in this sandbox -- reproduced on a clean container, both with and without `COVERAGE_CORE=ctrace` and an explicit `concurrency = thread` coverage config, always inside a `QThread`/`qtbot.waitUntil` wait in `tests/unit/test_main_window.py`, at a different test each time. Running the exact same tests with no coverage instrumentation attached passes cleanly (354/19/1, matching this session's real result above) and running `test_main_window.py` alone under `--cov` also never segfaults, so this is a coverage-instrumentation-plus-many-sequential-Qt-threads interaction specific to this sandbox's Python 3.12/PySide6/offscreen-QPA combination, not an application bug -- worked around this session by running `--cov` over the rest of the suite and `test_main_window.py` separately (`--cov-append`) and summing results, which reproduces the exact same 88%/374-test totals a single `--cov` run would if it did not crash. Not fixed in the repository: hosted CI on `windows-latest` (a real GUI environment, not the offscreen QPA plugin) has never shown this and remains authoritative; changing `scripts/verify.ps1`/CI for a Linux-sandbox-only artifact was judged out of this run's narrow scope. `src/visionai/intelligence/memory.py` (this session's new module) has 100% line coverage, confirmed directly with a scoped `--cov=visionai.intelligence.memory` run, not inferred from the whole-suite percentage.
+- mypy: passed for 53 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing).
+- pytest: 439 tests total (4 more than the prior session's 435 -- 5 new tests added to `tests/unit/test_rate_limit.py`, 1 pre-existing test in that same file was reused/left unchanged; no other test file changed). In this Linux sandbox: 413 passed, 25 failed, 1 skipped, 90% coverage -- this session's baseline check (before any change) showed the identical 25 failures, all the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/policy/rate_limit.py` (this session's coverage target) reached 100% line coverage (was 83%).
 - Bandit: passed (whole repo, `src`)
-- pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv)
+- pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv; no dependency changes this session)
 
 ## Last Updated
 
