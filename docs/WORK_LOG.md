@@ -9,7 +9,8 @@
 - Validated model clarification output as safe single-line text; malformed or
   unsafe clarification does not reach dispatch. Added CLI, desktop, and planner
   regression tests.
-- Full verification: 458 tests passed, 91% coverage, Ruff, mypy, Bandit, and
+- Full verification (including the two desktop clarification regression tests
+  above): 460 tests passed, 91% coverage, Ruff, mypy, Bandit, and
   requirements-scoped pip-audit passed. Live LLM behavior remains unverified.
 
 ## 2026-09-05 Autonomous Cycle: Baseline Fix -- Local Provider Path Splitting (Linux sandbox)
