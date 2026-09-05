@@ -26,6 +26,37 @@ flag are now directly tested. No runtime behavior changed.
 The next cycle adds deterministic coverage for `ConfirmationService`'s
 non-positive TTL rejection. No runtime behavior changed.
 
+2026-09-05 autonomous cycle (Linux sandbox, baseline fix -- local provider
+path splitting): started against local commit `6ab7771`; this session found
+the sandbox baseline was not clean as documented -- 26 failures instead of
+the previously-recorded 25, with one new failure
+(`tests/unit/test_local_provider.py::test_constructor_loads_existing_model_without_download`)
+that was not the accepted `WindowsLockStateAdapter` fail-closed pattern.
+Root cause: `LocalLlamaProvider.__init__` (added in an earlier session, only
+ever verified on real Windows) split its `model_path` argument with the
+ambient `pathlib.Path`, whose behavior depends on the host OS -- on Windows
+it correctly parses a backslash-separated path into a model filename and
+parent directory, but on this Linux sandbox `Path("C:\\models\\assistant.gguf")`
+treats the whole string as one opaque filename with an empty (`.`) parent,
+since POSIX paths do not use backslash as a separator. This was a real,
+previously-unverified platform inconsistency in already-shipped code, not
+merely a sandbox artifact like the lock-state pattern -- the constructor's
+path-splitting logic had never actually been exercised on any platform other
+than Windows in either the test suite or manual verification. Fixed by
+switching `local_provider.py` to `pathlib.PureWindowsPath`, which parses
+Windows-style paths identically regardless of the host OS running the code;
+this is behavior-preserving on the real target platform (Windows only, per
+`README.md`) and makes the split deterministic and testable on any host.
+Updated `tests/unit/test_local_provider.py`'s constructor test to compute
+its expected split with `PureWindowsPath` as well, so the assertion verifies
+the intended contract rather than only accidentally passing on Windows. Full
+verification after the fix: 455 tests (429 passed, 25 failed -- back to
+exactly the documented `WindowsLockStateAdapter` fail-closed set, confirmed
+by name -- 1 skipped), 91% coverage, Ruff/mypy(one known
+`ctypes.windll` false positive)/Bandit/pip-audit all clean. No other
+behavior changed; this was the one baseline-repair task for this cycle, per
+the standing protocol's "if the baseline is broken, fixing it is your task."
+
 2026-09-05 autonomous cycle (Linux sandbox, dispatcher test coverage): started
 against local commit `15ccbe2`; baseline verified clean and unchanged from the
 prior session's documented sandbox state before any work started (fresh
@@ -375,7 +406,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## Implemented and Tested
 
-- Added a local/offline `LLMProvider`: `visionai.intelligence.local_provider.LocalLlamaProvider` runs a user-supplied GGUF model file via the optional `local_llm` extra (`gpt4all==2.8.2`, MIT-licensed, chosen over `llama-cpp-python` for its prebuilt Windows/Linux/macOS wheels). `Settings.llm_provider` gained a `"local"` value and `Settings.local_model_path` (`VISIONAI_LOCAL_MODEL_PATH`); the real client is always built with `allow_download=False`, so it never fetches a model from the network, and both `app._build_llm_provider()`/`main_window._build_llm_provider()` raise a clear `ValueError` for a missing/unset/nonexistent path rather than silently falling through. Mirrors `AnthropicProvider`'s injectable-client shape and broad-catch-to-`ProviderError` error handling exactly; see `docs/DECISIONS/0006-local-offline-llm-provider.md`. Not live-verified with a real model file in this Linux sandbox. Also closed a pre-existing, unrelated coverage gap found while testing this: `_build_llm_provider()`'s own real branch logic (in both `app.py` and `main_window.py`) had never been directly tested before -- every existing test replaced the whole function with a fake. New tests cover every branch in both files, incidentally bringing `anthropic_provider.py` to 100% coverage (previously 89%, missing its own real-`anthropic`-import branch).
+- Added a local/offline `LLMProvider`: `visionai.intelligence.local_provider.LocalLlamaProvider` runs a user-supplied GGUF model file via the optional `local_llm` extra (`gpt4all==2.8.2`, MIT-licensed, chosen over `llama-cpp-python` for its prebuilt Windows/Linux/macOS wheels). `Settings.llm_provider` gained a `"local"` value and `Settings.local_model_path` (`VISIONAI_LOCAL_MODEL_PATH`); the real client is always built with `allow_download=False`, so it never fetches a model from the network, and both `app._build_llm_provider()`/`main_window._build_llm_provider()` raise a clear `ValueError` for a missing/unset/nonexistent path rather than silently falling through. Mirrors `AnthropicProvider`'s injectable-client shape and broad-catch-to-`ProviderError` error handling exactly; see `docs/DECISIONS/0006-local-offline-llm-provider.md`. Not live-verified with a real model file in this Linux sandbox. Also closed a pre-existing, unrelated coverage gap found while testing this: `_build_llm_provider()`'s own real branch logic (in both `app.py` and `main_window.py`) had never been directly tested before -- every existing test replaced the whole function with a fake. New tests cover every branch in both files, incidentally bringing `anthropic_provider.py` to 100% coverage (previously 89%, missing its own real-`anthropic`-import branch). 2026-09-05 fix: the constructor's `model_path` split used `pathlib.Path`, whose behavior depends on the host OS; on this Linux sandbox it silently mis-split a Windows-style path (whole string as filename, empty parent) instead of raising or working correctly, a real platform bug never previously exercised outside Windows. Switched to `pathlib.PureWindowsPath`, which parses Windows-style paths the same way regardless of host OS -- behavior-preserving on the real Windows target, and now actually verified deterministic in this sandbox too.
 - Added `visionai --wake-word-text`, which applies the persisted wake word to one already-transcribed utterance and routes matching text through `WakeWordVoiceRunner`, the real `EventOrchestrator`, and the policy/dispatcher path. Non-matching text exits cleanly without publishing or launching. This is a CLI text-entry surface only; it does not add STT or microphone capture.
 
 - Added the local `faster-whisper` STT provider behind `MicrophonePushToTalk`: it uses lazy `base.en`/CPU/int8 defaults from environment settings, loads the model only on first real transcription, and sends only final text into the existing validated input path. Raw audio remains transient and is never stored or published.
@@ -537,7 +568,7 @@ cd visionai
 - Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libopengl0`/`libgl1`/`libportaudio2` -- headless `pytest-qt` could not import `QtGui` at all without `libEGL.so.1`, and `sounddevice`'s real-backend smoke test would raise `OSError: PortAudio library not found` -- all installed via `apt-get` before the suite would run to completion. None of this is a Python/project dependency change -- it is a container-image setup gap, not application code.
 - Ruff: passed (whole repo)
 - mypy: passed for 53 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing).
-- pytest: 453 tests total against the final rebased tree (`bc68507` plus this session's own commit) -- 2 new tests added to `tests/unit/test_dispatcher.py`; no other test file changed by this session, though a concurrent commit (`bc68507`, pulled in via `git pull --rebase` before this session's own commit) added one net new test elsewhere. In this Linux sandbox: 427 passed, 25 failed, 1 skipped, 91% coverage -- this session's baseline check against `bc68507` (before its own change) showed 451 tests (425 passed/25 failed/1 skipped), all 25 failures the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/capabilities/dispatcher.py` (this session's coverage target) reached 100% line coverage (was 93%).
+- pytest: this session's baseline check against `6ab7771` (before any change) showed 455 tests but **26 failures, not the documented 25** -- one new failure, `tests/unit/test_local_provider.py::test_constructor_loads_existing_model_without_download`, was a genuine platform-dependent bug in already-shipped code (see the Current Phase entry above), not the accepted `WindowsLockStateAdapter` pattern. Fixed by switching `LocalLlamaProvider`'s path split from `pathlib.Path` to `pathlib.PureWindowsPath` and updating the test's expectation to match. After the fix: 455 tests (429 passed, 25 failed -- back to exactly the documented `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop set, confirmed by name -- 1 skipped), 91% coverage.
 - Bandit: passed (whole repo, `src`)
 - pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv; no dependency changes this session)
 

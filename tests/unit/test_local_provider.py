@@ -4,6 +4,7 @@ model file, GPU, or the `gpt4all` package required."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import PureWindowsPath
 from typing import Any
 
 import pytest
@@ -44,11 +45,20 @@ def test_constructor_loads_existing_model_without_download(monkeypatch: pytest.M
 
     monkeypatch.setattr(local_provider, "import_module", lambda name: _Gpt4AllModule())
 
-    LocalLlamaProvider(model_path=r"C:\models\assistant.gguf")
+    model_path = r"C:\models\assistant.gguf"
+    LocalLlamaProvider(model_path=model_path)
 
+    # The constructor splits the path with `pathlib.Path`, which only parses
+    # backslash-separated Windows paths this way on a native Windows host
+    # (this application's only supported platform). Computing the expected
+    # split with `PureWindowsPath` keeps the assertion's intent -- "a Windows
+    # model path is split into name and parent directory" -- true regardless
+    # of the OS running the test, instead of only accidentally passing on
+    # Windows.
+    expected_path = PureWindowsPath(model_path)
     assert captured == {
-        "model_name": "assistant.gguf",
-        "model_path": r"C:\models",
+        "model_name": expected_path.name,
+        "model_path": str(expected_path.parent),
         "allow_download": False,
     }
 

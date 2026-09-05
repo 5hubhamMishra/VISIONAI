@@ -20,7 +20,7 @@ user's behalf.
 from __future__ import annotations
 
 from importlib import import_module
-from pathlib import Path
+from pathlib import PureWindowsPath
 from typing import Protocol
 
 from visionai.core.errors import ProviderError
@@ -50,7 +50,13 @@ class LocalLlamaProvider:
             self._client = client
         else:
             gpt4all = import_module("gpt4all")
-            path = Path(model_path)
+            # `PureWindowsPath`, not `pathlib.Path`: this application only ships
+            # on Windows, and using the ambient `Path` flavor made this split
+            # silently depend on the host OS running the code (a Windows path
+            # would parse as a single opaque filename with an empty parent on
+            # a POSIX host), which is untestable outside Windows and was never
+            # actually exercised there before this was found.
+            path = PureWindowsPath(model_path)
             self._client = gpt4all.GPT4All(
                 model_name=path.name,
                 model_path=str(path.parent),

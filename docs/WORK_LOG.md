@@ -1,5 +1,74 @@
 # Work Log
 
+## 2026-09-05 Autonomous Cycle: Baseline Fix -- Local Provider Path Splitting (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`
+  (already up to date at `6ab7771`), read `README.md`,
+  `docs/PROJECT_STATE.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`,
+  `docs/TESTING.md`, `docs/WORK_LOG.md`, and recent git log. Built a Python
+  3.12 virtualenv from `requirements/dev.txt` and installed the headless
+  Qt/PortAudio system libraries (`libegl1`, `libopengl0`, `libgl1`,
+  `libportaudio2` -- a fresh container each run, so this setup step
+  recurs; container-only, not a Python dependency change).
+- Ran the full verification suite before picking any task, per protocol.
+  Ruff, mypy (one known sandbox-only `ctypes.windll` false positive),
+  Bandit, and `pip-audit` all matched the documented clean state. `pytest`
+  did not: 455 tests with **26 failures**, not the 25 every prior sandbox
+  session has documented as the exclusively `WindowsLockStateAdapter`
+  fail-closed pattern. Investigated the extra failure rather than assuming
+  it was more of the same.
+- The new failure was `tests/unit/test_local_provider.py::
+  test_constructor_loads_existing_model_without_download`. Root cause:
+  `LocalLlamaProvider.__init__` (added in an earlier session, whose own
+  work-log entry recorded only a real-Windows `scripts/verify.ps1` run, never
+  this Linux sandbox) split its `model_path` argument with the ambient
+  `pathlib.Path`. `Path`'s behavior depends on the host OS: on Windows it
+  correctly parses a backslash-separated path into a model filename and
+  parent directory; on this POSIX sandbox, backslash is not a path
+  separator, so `Path("C:\\models\\assistant.gguf")` treats the entire
+  string as one opaque filename with an empty (`.`) parent. This is a real,
+  previously-unverified platform inconsistency in already-shipped
+  production code, not a cosmetic sandbox artifact like the lock-state
+  pattern -- the constructor's path-splitting logic had never actually been
+  exercised on any platform other than Windows, in either the automated
+  suite or manual verification.
+- Fixed `src/visionai/intelligence/local_provider.py` to import and use
+  `pathlib.PureWindowsPath` instead of `pathlib.Path`. `PureWindowsPath`
+  always parses Windows-style paths the same way regardless of the host OS
+  running the code, so this is behavior-preserving on the real target
+  platform (Windows only, per `README.md`) while making the split
+  deterministic and testable on any host, including this sandbox. Updated
+  `tests/unit/test_local_provider.py::
+  test_constructor_loads_existing_model_without_download` to compute its
+  expected `model_name`/`model_path` with `PureWindowsPath` as well, so the
+  assertion verifies the intended contract -- "a Windows-style model path is
+  split into filename and parent directory" -- rather than only accidentally
+  passing when run on a Windows host.
+- This was treated as the mandatory baseline-repair task for this cycle
+  ("if the baseline is broken, fixing it is your task"), not a
+  separately-chosen item from Approved Next Tasks; no other application
+  behavior was touched, and no hardware, display, camera, microphone, or
+  Windows-API behavior was exercised or claimed.
+- Full verification after the fix: `ruff check .` (clean); `mypy src`
+  (clean except the known sandbox-only `ctypes.windll` false positive);
+  `pytest --cov=src/visionai --cov-report=term-missing` (455 tests: 429
+  passed, 25 failed -- back to exactly the documented `WindowsLockStateAdapter`
+  failing-closed set, confirmed by name -- 1 skipped, 91% coverage, matching
+  the pre-fix total minus the one bug); `bandit -q -r src` (clean);
+  `pip-audit -r requirements/base.txt -r requirements/dev.txt` (no known
+  vulnerabilities).
+- Files changed: `src/visionai/intelligence/local_provider.py`,
+  `tests/unit/test_local_provider.py`, `docs/PROJECT_STATE.md`,
+  `docs/WORK_LOG.md`.
+- Next task: `docs/PROJECT_STATE.md`'s Approved Next Tasks item 5's only
+  remaining scoped option (LLM clarification) still needs a human product
+  decision; items 3's remaining hotword/live-mic verification needs real
+  hardware. A future sandbox session could keep mining coverage gaps in
+  `platform/stt.py` (76%), `platform/webcam.py` (72%, largely the real-camera
+  branches), or `ui/main_window.py` (81%), or re-verify that no other
+  already-shipped, previously-Windows-only-verified code has a similar
+  host-OS-dependent assumption baked in untested.
+
 ## 2026-09-05 Next Cycle: Confirmation TTL Validation Coverage
 
 - User requested the next autonomous cycle. Starting from clean `d612d39`,
