@@ -1,5 +1,53 @@
 # Work Log
 
+## 2026-09-05 autonomous cycle: rate limiter test coverage (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`
+  (already up to date at `9a5551a`), read the docs and recent git log, built a
+  Python 3.12 virtualenv from `requirements/dev.txt`, installed the headless
+  Qt/PortAudio system libraries (`libegl1`, `libopengl0`, `libgl1`,
+  `libportaudio2` -- a fresh container each run, so this setup step recurs),
+  and ran the baseline verification suite before touching anything. Baseline
+  matched the documented sandbox state exactly: ruff/bandit/pip-audit clean,
+  mypy clean except the known `ctypes.windll` false positive, pytest 409
+  passed/25 failed/1 skipped, 90% coverage -- all 25 failures the same
+  exclusively `WindowsLockStateAdapter` fail-closed pattern every prior
+  sandbox session has documented, not a regression.
+- `Approved Next Tasks` item 5's only remaining items (LLM clarification, a
+  live prompt-injection suite against a real model) both need a human product
+  decision or real network/API access this sandbox does not have; item 3's
+  remaining items (a real hotword engine, live mic verification) need real
+  hardware. Scanned the coverage report instead for a real, narrow,
+  hardware-free gap, continuing the pattern of prior sessions
+  (`policy/engine.py`, `policy/url_validation.py`, `config/secrets.py`), and
+  found one in `visionai.policy.rate_limit.FixedWindowRateLimiter` -- the
+  concurrency-hardened rate limiter every capability dispatch's rate check
+  goes through -- at 83% covered. Three real gaps, not incidental: `allow()`'s
+  and `would_allow()`'s `limit_per_minute <= 0` rejection branches had no
+  test (a manifest with a non-positive limit, whether from a data error or a
+  future capability, would silently allow/deny based on untested logic), and
+  `reset()` -- a public method re-exported from `visionai.policy` -- had zero
+  callers anywhere in the codebase or test suite, meaning a regression in its
+  single-key or clear-all behavior could ship completely unnoticed.
+- Added five tests to `tests/unit/test_rate_limit.py`: non-positive-limit
+  rejection for both `allow()` and `would_allow()`, `reset(key)` clearing only
+  that key's window while leaving others untouched, and `reset()` with no key
+  clearing every tracked window. No application code changed -- this was a
+  pure test gap, not a bug. `policy/rate_limit.py` reached 100% line coverage
+  (was 83%).
+- Full verification after the change: 439 tests (413 passed, 25 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 1 skipped), 90% coverage (unchanged, since the module was
+  already small relative to the whole suite), ruff/mypy (one known false
+  positive)/bandit/pip-audit all clean.
+- Noted but out of scope for this run: `AGENTS.md` exists at the repository
+  root (added by a prior session per this file's own 2026-09-05 10:08 UTC
+  entry below), which conflicts with the master development prompt's
+  standing rule to never add an `AGENTS.md`/`CLAUDE.md` file to this repo.
+  This session did not create it and left it untouched rather than take an
+  unrequested destructive action on another session's committed file;
+  flagging it here for a human decision on whether to remove it.
+
 ## 2026-09-05 autonomous cycle: local/offline LLM provider (Linux sandbox)
 
 - Followed the standing protocol in a fresh sandbox container: pulled `main`

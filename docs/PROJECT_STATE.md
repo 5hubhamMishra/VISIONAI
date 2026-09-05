@@ -2,6 +2,39 @@
 
 ## Current Phase
 
+2026-09-05 autonomous cycle (Linux sandbox, rate limiter test coverage):
+baseline verified clean and unchanged from the prior session's documented
+sandbox state before any work started (fresh `.venv312` built from
+`requirements/dev.txt`; this container again needed `libegl1`/`libopengl0`/
+`libgl1`/`libportaudio2` installed via `apt-get` before pytest-qt/sounddevice
+would import -- container-only setup gaps, not a dependency change; ruff/
+bandit/pip-audit clean; mypy clean for 53 files except the same sandbox-only
+`ctypes.windll` false positive every session shows; pytest 409 passed/25
+failed/1 skipped, the same exclusively `WindowsLockStateAdapter` fail-closed
+pattern, not a regression). `Approved Next Tasks` items 3 and 5's remaining
+entries all need real hardware, a live network/model, or a human product
+decision this sandbox cannot provide, so this session scanned the coverage
+report for a real, narrow, hardware-free gap instead, continuing the pattern
+of prior coverage-focused sessions. Found one in
+`visionai.policy.rate_limit.FixedWindowRateLimiter` (83% covered): both
+`allow()`'s and `would_allow()`'s `limit_per_minute <= 0` rejection branches
+were untested, and `reset()` -- a public method re-exported from
+`visionai.policy` -- had zero callers anywhere in the codebase or test suite.
+Added five tests to `tests/unit/test_rate_limit.py` covering all three gaps
+(non-positive-limit rejection for both methods; `reset(key)` clearing only
+that key; `reset()` clearing every window). No application code changed --
+this was a pure test gap, not a bug. `policy/rate_limit.py` reached 100% line
+coverage (was 83%). Full verification after the change: 439 tests (413
+passed, 25 failed -- identical failing-test names to the pre-change baseline,
+confirming no regressions -- 1 skipped), 90% coverage, ruff/mypy(one known
+false positive)/bandit/pip-audit all clean. Also noted, but left untouched as
+out of scope for this run: `AGENTS.md` exists at the repository root (added
+by a prior session), which conflicts with the master development prompt's
+standing rule against adding an `AGENTS.md`/`CLAUDE.md` file to this repo --
+flagged under Required Decisions below for a human call on whether to remove
+it, since this session did not create it and removing another session's
+committed file was not requested.
+
 2026-09-05 autonomous cycle (Linux sandbox, local/offline LLM provider):
 baseline verified clean and unchanged from the prior session's documented
 sandbox state before any work started (fresh `.venv312` built from
@@ -430,7 +463,8 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## Required Decisions
 
-- None outstanding. (Resolved: `../jarvis` was locally quarantined; the next major phase was decided as Phase 2, desktop UI; the current package layout's deviation from the master prompt's Section 6 target structure is recorded in `docs/DECISIONS/0002-package-layout-deviation.md`, now updated since `vision` and `intelligence` have both since been created; asked which major direction to take once Phases 0-5's approved scope were all closed -- the user chose Phase 6 Intelligence over live-verifying voice or closing the `WindowsLockStateAdapter` locked-workstation defect, decided and recorded in `docs/DECISIONS/0004-llm-provider-choice.md`.)
+- Whether to remove `AGENTS.md` from the repository root. It was added by a prior autonomous session and conflicts with the master development prompt's standing rule to never add an `AGENTS.md`/`CLAUDE.md` file to this repo. This session did not create it and left it in place rather than take an unrequested destructive action on another session's committed file; a human should decide whether to delete it.
+- Otherwise none outstanding. (Resolved: `../jarvis` was locally quarantined; the next major phase was decided as Phase 2, desktop UI; the current package layout's deviation from the master prompt's Section 6 target structure is recorded in `docs/DECISIONS/0002-package-layout-deviation.md`, now updated since `vision` and `intelligence` have both since been created; asked which major direction to take once Phases 0-5's approved scope were all closed -- the user chose Phase 6 Intelligence over live-verifying voice or closing the `WindowsLockStateAdapter` locked-workstation defect, decided and recorded in `docs/DECISIONS/0004-llm-provider-choice.md`.)
 
 ## Verification Commands
 
@@ -443,10 +477,10 @@ cd visionai
 
 - Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libopengl0`/`libportaudio2` (`libgl1` was already present) -- headless `pytest-qt` could not import `QtGui` at all without `libEGL.so.1`, and `sounddevice`'s real-backend smoke test raised `OSError: PortAudio library not found` -- both were installed via `apt-get` before the suite would run to completion. Neither is a Python/project dependency change -- both are container-image setup gaps, not application code.
 - Ruff: passed (whole repo)
-- mypy: passed for 53 source files (one more than the prior session's 52 -- the new `local_provider.py`), except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing). `local_provider.py` uses `importlib.import_module("gpt4all")` rather than a static import specifically so this passes without the optional `local_llm` extra installed, mirroring `webcam.py`'s `cv2`/`mediapipe` pattern.
-- pytest: 435 tests total (17 more than the prior session's 418 -- 5 new in `tests/unit/test_local_provider.py`, 6 new each in `tests/unit/test_app.py`/`tests/unit/test_main_window.py` covering `_build_llm_provider()`'s branches; no other test file changed). In this Linux sandbox: 409 passed, 25 failed, 1 skipped, 90% coverage -- this session's baseline check (before any change) showed the identical 25 failures, all the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/intelligence/local_provider.py` (this session's new module) is at 87% coverage -- the uncovered lines are exactly the real `import_module("gpt4all")` construction path, an explicit accepted gap since the `local_llm` extra is deliberately not installed in this environment (see `docs/DECISIONS/0006-local-offline-llm-provider.md`). `src/visionai/intelligence/anthropic_provider.py` incidentally reached 100% coverage (was 89%) as a side effect of this session's new `_build_llm_provider()` branch tests.
+- mypy: passed for 53 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing).
+- pytest: 439 tests total (4 more than the prior session's 435 -- 5 new tests added to `tests/unit/test_rate_limit.py`, 1 pre-existing test in that same file was reused/left unchanged; no other test file changed). In this Linux sandbox: 413 passed, 25 failed, 1 skipped, 90% coverage -- this session's baseline check (before any change) showed the identical 25 failures, all the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/policy/rate_limit.py` (this session's coverage target) reached 100% line coverage (was 83%).
 - Bandit: passed (whole repo, `src`)
-- pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv; also separately checked `requirements/local_llm.txt` alone -- no known vulnerabilities found for `gpt4all==2.8.2` either, though it is not part of the standard audited/tested dependency surface)
+- pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv; no dependency changes this session)
 
 ## Last Updated
 
