@@ -1,5 +1,15 @@
 # Work Log
 
+## 2026-09-05 Autonomous cycle: exact confirmation binding
+
+- Reproduced approval reuse after changing arguments, capability, or risk
+  while keeping the same request ID. Confirmation now retains and compares
+  the complete immutable request, with validation/consumption under a lock.
+- Added 16-concurrent-consumer regression and retained expiry, cancellation,
+  replacement, mismatch, and single-use tests. Prune expired entries on create.
+- Full verification passed at this slice: 364 tests, 88% coverage, Ruff,
+  mypy, Bandit, and requirements-scoped pip-audit.
+
 ## 2026-09-05 Autonomous cycle: transcript confidence gate
 
 - Reproduced low-confidence final transcripts dispatching an app launch at

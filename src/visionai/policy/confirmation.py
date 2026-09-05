@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from threading import Lock
 from uuid import UUID, uuid4
 
 from visionai.core.errors import ConfirmationError
@@ -16,18 +17,12 @@ class ConfirmationService:
         if ttl_seconds <= 0:
             raise ValueError("ttl_seconds must be greater than zero")
         self._ttl_seconds = ttl_seconds
-        self._pending: dict[UUID, ConfirmationRequest] = {}
+        self._pending: dict[UUID, tuple[ActionRequest, ConfirmationRequest]] = {}
+        self._lock = Lock()
 
     def create(self, request: ActionRequest, *, action_summary: str) -> ConfirmationRequest:
         if request.risk_level < RiskLevel.SENSITIVE:
             raise ConfirmationError("confirmation is only required for sensitive actions")
-        stale_ids = [
-            pending_id
-            for pending_id, pending in self._pending.items()
-            if pending.request_id == request.id
-        ]
-        for pending_id in stale_ids:
-            del self._pending[pending_id]
         confirmation = ConfirmationRequest(
             id=uuid4(),
             request_id=request.id,
@@ -35,7 +30,15 @@ class ConfirmationService:
             risk_level=request.risk_level,
             expires_at=datetime.now(UTC) + timedelta(seconds=self._ttl_seconds),
         )
-        self._pending[confirmation.id] = confirmation
+        with self._lock:
+            stale_ids = [
+                pending_id
+                for pending_id, (_, pending) in self._pending.items()
+                if pending.request_id == request.id or pending.expires_at <= confirmation.created_at
+            ]
+            for pending_id in stale_ids:
+                del self._pending[pending_id]
+            self._pending[confirmation.id] = (request, confirmation)
         return confirmation
 
     def validate(
@@ -45,17 +48,20 @@ class ConfirmationService:
         *,
         now: datetime | None = None,
     ) -> None:
-        confirmation = self._pending.get(confirmation_id)
-        if confirmation is None:
-            raise ConfirmationError("confirmation is missing or already used")
-        if confirmation.request_id != request.id:
-            raise ConfirmationError("confirmation is not bound to this request")
-        if (now or datetime.now(UTC)) >= confirmation.expires_at:
+        with self._lock:
+            pending = self._pending.get(confirmation_id)
+            if pending is None:
+                raise ConfirmationError("confirmation is missing or already used")
+            original, confirmation = pending
+            if original != request:
+                raise ConfirmationError("confirmation is not bound to this request")
+            if (now or datetime.now(UTC)) >= confirmation.expires_at:
+                self._pending.pop(confirmation_id, None)
+                raise ConfirmationError("confirmation has expired")
             self._pending.pop(confirmation_id, None)
-            raise ConfirmationError("confirmation has expired")
-        self._pending.pop(confirmation_id, None)
 
     def discard(self, confirmation_id: UUID) -> bool:
         """Remove a pending confirmation without authorizing its request."""
 
-        return self._pending.pop(confirmation_id, None) is not None
+        with self._lock:
+            return self._pending.pop(confirmation_id, None) is not None

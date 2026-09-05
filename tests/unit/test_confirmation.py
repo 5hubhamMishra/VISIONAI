@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Barrier
 from uuid import uuid4
 
 import pytest
@@ -14,6 +16,27 @@ def test_confirmation_is_bound_to_exact_request_and_single_use() -> None:
     confirmation = service.create(request, action_summary="Read clipboard")
 
     service.validate(request, confirmation.id)
+
+    with pytest.raises(ConfirmationError):
+        service.validate(request, confirmation.id)
+
+
+def test_concurrent_confirmation_consumers_authorize_exactly_once() -> None:
+    service = ConfirmationService()
+    request = ActionRequest(capability_id="clipboard.read", risk_level=RiskLevel.SENSITIVE)
+    confirmation = service.create(request, action_summary="Read clipboard")
+    ready = Barrier(16)
+
+    def consume(_: int) -> bool:
+        ready.wait(timeout=5)
+        try:
+            service.validate(request, confirmation.id)
+            return True
+        except ConfirmationError:
+            return False
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        assert sum(pool.map(consume, range(16))) == 1
 
     with pytest.raises(ConfirmationError):
         service.validate(request, confirmation.id)
@@ -74,3 +97,18 @@ def test_discard_removes_pending_confirmation_without_authorizing_it() -> None:
     assert service.discard(confirmation.id) is False
     with pytest.raises(ConfirmationError):
         service.validate(request, confirmation.id)
+
+
+@pytest.mark.parametrize("changes", [
+    {"arguments": {"target": "different"}},
+    {"capability_id": "file.delete"},
+    {"risk_level": RiskLevel.DESTRUCTIVE},
+])
+def test_confirmation_rejects_changed_payload_with_the_same_id(changes: dict) -> None:
+    service = ConfirmationService()
+    request = ActionRequest(capability_id="clipboard.read", risk_level=RiskLevel.SENSITIVE)
+    confirmation = service.create(request, action_summary="Read clipboard")
+    altered = request.model_copy(update=changes)
+    with pytest.raises(ConfirmationError, match="bound"):
+        service.validate(altered, confirmation.id)
+    service.validate(request, confirmation.id)
