@@ -19,6 +19,41 @@ now propagate to a nonzero exit and recovery message, and stale voice
 diagnostics have been reconciled. See
 [the next-cycle report](AUTONOMOUS_HOUR_2026-09-05_NEXT.md).
 
+2026-09-05 autonomous cycle (Linux sandbox, dispatcher test coverage): started
+against local commit `15ccbe2`; baseline verified clean and unchanged from the
+prior session's documented sandbox state before any work started (fresh
+`.venv312` built from `requirements/dev.txt`; this container again needed
+`libegl1`/`libopengl0`/`libgl1`/`libportaudio2` installed via `apt-get` before
+pytest-qt/sounddevice would import -- container-only setup gaps, not a
+dependency change; ruff/bandit/pip-audit clean; mypy clean for 53 files except
+the same sandbox-only `ctypes.windll` false positive every session shows;
+pytest 450 tests -- 424 passed, 25 failed, 1 skipped, 91% coverage -- the same
+exclusively `WindowsLockStateAdapter` fail-closed pattern every prior sandbox
+session has documented, not a regression). `Approved Next Tasks` items 3 and
+5's remaining entries all need real hardware, a live network/model, or a
+human product decision this sandbox cannot provide, so this session again
+scanned the coverage report for a real, narrow, hardware-free gap, continuing
+the pattern of prior coverage-focused sessions. Found one in
+`visionai.capabilities.dispatcher.SerializedDispatcher.register_handler()`
+(93% covered): it had zero callers anywhere in the codebase (`runtime.py`
+builds the full handlers dict up front and passes it to the constructor) and
+zero test coverage -- the same "public method, no callers, no tests" shape as
+the previously-found `FixedWindowRateLimiter.reset()` gap. Added two tests to
+`tests/unit/test_dispatcher.py`: one proving `register_handler()` wires a
+handler that `dispatch()` can then actually use (not just that the call
+doesn't raise), and one proving a duplicate `handler_id` raises
+`DispatchError` with the expected message rather than silently overwriting
+the existing handler. No application code changed -- this was a pure test
+gap, not a bug. Before committing, `git pull --rebase origin main` brought in
+a concurrent commit (`bc68507`, "Propagate CLI listening failures", unrelated
+to this change) -- re-verified the full suite against the rebased tree before
+finalizing: true pre-change baseline on `bc68507` was 451 tests (425
+passed/25 failed/1 skipped, 91% coverage, `dispatcher.py` 93%), and this
+session's two new tests brought it to 453 tests (427 passed, identical
+25-failure set by name -- no regressions -- 1 skipped), 91% coverage,
+`capabilities/dispatcher.py` at 100% line coverage (was 93%),
+ruff/mypy(one known false positive)/bandit/pip-audit all clean.
+
 2026-09-05 autonomous cycle (Linux sandbox, rate limiter test coverage):
 baseline verified clean and unchanged from the prior session's documented
 sandbox state before any work started (fresh `.venv312` built from
@@ -492,10 +527,10 @@ cd visionai
 
 ## Last Verification Result
 
-- Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libopengl0`/`libportaudio2` (`libgl1` was already present) -- headless `pytest-qt` could not import `QtGui` at all without `libEGL.so.1`, and `sounddevice`'s real-backend smoke test raised `OSError: PortAudio library not found` -- both were installed via `apt-get` before the suite would run to completion. Neither is a Python/project dependency change -- both are container-image setup gaps, not application code.
+- Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libopengl0`/`libgl1`/`libportaudio2` -- headless `pytest-qt` could not import `QtGui` at all without `libEGL.so.1`, and `sounddevice`'s real-backend smoke test would raise `OSError: PortAudio library not found` -- all installed via `apt-get` before the suite would run to completion. None of this is a Python/project dependency change -- it is a container-image setup gap, not application code.
 - Ruff: passed (whole repo)
 - mypy: passed for 53 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing).
-- pytest: 439 tests total (4 more than the prior session's 435 -- 5 new tests added to `tests/unit/test_rate_limit.py`, 1 pre-existing test in that same file was reused/left unchanged; no other test file changed). In this Linux sandbox: 413 passed, 25 failed, 1 skipped, 90% coverage -- this session's baseline check (before any change) showed the identical 25 failures, all the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/policy/rate_limit.py` (this session's coverage target) reached 100% line coverage (was 83%).
+- pytest: 453 tests total against the final rebased tree (`bc68507` plus this session's own commit) -- 2 new tests added to `tests/unit/test_dispatcher.py`; no other test file changed by this session, though a concurrent commit (`bc68507`, pulled in via `git pull --rebase` before this session's own commit) added one net new test elsewhere. In this Linux sandbox: 427 passed, 25 failed, 1 skipped, 91% coverage -- this session's baseline check against `bc68507` (before its own change) showed 451 tests (425 passed/25 failed/1 skipped), all 25 failures the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/capabilities/dispatcher.py` (this session's coverage target) reached 100% line coverage (was 93%).
 - Bandit: passed (whole repo, `src`)
 - pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv; no dependency changes this session)
 

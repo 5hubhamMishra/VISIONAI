@@ -199,3 +199,51 @@ def test_dispatcher_rejects_missing_handler_after_policy_allows() -> None:
 
     with pytest.raises(DispatchError):
         dispatcher.dispatch(request, PolicyContext())
+
+
+def test_register_handler_adds_a_new_handler_that_dispatch_can_then_use() -> None:
+    """No built-in wiring calls register_handler today (runtime.py builds the
+    full handlers dict up front and passes it to the constructor), but it is
+    still public API a future caller could use to add a handler afterward --
+    prove it actually wires a dispatchable handler, not just mutates state
+    nothing reads."""
+    registry = CapabilityRegistry([_manifest()])
+    dispatcher = SerializedDispatcher(
+        registry=registry,
+        policy=PolicyEngine(registry),
+        audit=InMemoryAuditSink(),
+    )
+    request = ActionRequest(capability_id="system.time", risk_level=RiskLevel.READ_ONLY)
+
+    dispatcher.register_handler(
+        "system.time",
+        lambda request, cancellation: ActionResult(
+            request_id=request.id, success=True, message="It is 10:00."
+        ),
+    )
+    result = dispatcher.dispatch(request, PolicyContext())
+
+    assert result.success is True
+    assert result.message == "It is 10:00."
+
+
+def test_register_handler_rejects_a_duplicate_handler_id() -> None:
+    registry = CapabilityRegistry([_manifest()])
+    dispatcher = SerializedDispatcher(
+        registry=registry,
+        policy=PolicyEngine(registry),
+        audit=InMemoryAuditSink(),
+        handlers={
+            "system.time": lambda request, cancellation: ActionResult(
+                request_id=request.id, success=True, message="ok"
+            )
+        },
+    )
+
+    with pytest.raises(DispatchError, match="handler already registered: system.time"):
+        dispatcher.register_handler(
+            "system.time",
+            lambda request, cancellation: ActionResult(
+                request_id=request.id, success=True, message="replaced"
+            ),
+        )
