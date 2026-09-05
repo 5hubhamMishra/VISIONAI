@@ -1,5 +1,19 @@
 # Work Log
 
+## 2026-09-05 Next Cycle: Confirmation TTL Validation Coverage
+
+- User requested the next autonomous cycle. Starting from clean `d612d39`,
+  the remaining feature choices still require owner hardware, live network/API
+  access, or a product decision. Selected one narrow security-boundary test
+  gap instead of adding speculative behavior.
+- Added one regression test proving `ConfirmationService` rejects a zero TTL.
+  No production code changed.
+- Focused verification: 11 tests passed. Full `scripts/verify.ps1`: 455 tests
+  passed, 91% coverage, Ruff, mypy, Bandit, and requirements-scoped pip-audit
+  passed. Remaining work is unchanged: live
+  hardware and phone pairing, live LLM prompt-injection testing, and product
+  direction for clarification behavior.
+
 ## 2026-09-05 One-Hour Cycle: Local Provider Constructor Coverage
 
 - User requested the next autonomous one-hour cycle. The repository was clean

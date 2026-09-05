@@ -23,6 +23,9 @@ The current autonomous cycle adds deterministic coverage for the local LLM
 provider constructor: its model path split and `allow_download=False` safety
 flag are now directly tested. No runtime behavior changed.
 
+The next cycle adds deterministic coverage for `ConfirmationService`'s
+non-positive TTL rejection. No runtime behavior changed.
+
 2026-09-05 autonomous cycle (Linux sandbox, dispatcher test coverage): started
 against local commit `15ccbe2`; baseline verified clean and unchanged from the
 prior session's documented sandbox state before any work started (fresh

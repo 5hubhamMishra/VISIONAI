@@ -10,6 +10,11 @@ from visionai.core.events import ActionRequest, RiskLevel
 from visionai.policy import ConfirmationService
 
 
+def test_confirmation_rejects_non_positive_ttl() -> None:
+    with pytest.raises(ValueError, match="ttl_seconds"):
+        ConfirmationService(ttl_seconds=0)
+
+
 def test_confirmation_is_bound_to_exact_request_and_single_use() -> None:
     service = ConfirmationService(ttl_seconds=30)
     request = ActionRequest(capability_id="clipboard.read", risk_level=RiskLevel.SENSITIVE)
