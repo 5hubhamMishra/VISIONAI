@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 from pydantic import ValidationError
 
 from visionai.config import (
+    default_routine_store,
     default_secret_store,
     default_user_settings_store,
     effective_log_level,
@@ -21,7 +22,14 @@ from visionai.config import (
 from visionai.config.user_settings import effective_wake_word
 from visionai.core.cancellation import CancellationToken
 from visionai.core.errors import ProviderError, StorageError
-from visionai.core.events import ActionPlan, ActionRequest, ActionResult, EventBase, GestureEvent
+from visionai.core.events import (
+    ActionPlan,
+    ActionRequest,
+    ActionResult,
+    EventBase,
+    GestureEvent,
+    RiskLevel,
+)
 from visionai.intelligence import (
     DeterministicFallbackProvider,
     LLMProvider,
@@ -400,6 +408,21 @@ def main() -> int:
         action="store_true",
         help="Remove any Anthropic API key stored in the OS keychain.",
     )
+    parser.add_argument(
+        "--routine-save",
+        nargs="+",
+        default=None,
+        metavar=("NAME", "PHRASE"),
+        help=(
+            "Save a named routine: NAME followed by one or more already-reviewed "
+            "phrases. Only read-only or reversible phrases are accepted."
+        ),
+    )
+    parser.add_argument("--routine-run", default=None, help="Run a saved routine by name.")
+    parser.add_argument(
+        "--routine-list", action="store_true", help="List saved routine names."
+    )
+    parser.add_argument("--routine-delete", default=None, help="Delete a saved routine by name.")
     args = parser.parse_args()
 
     if args.set_api_key:
@@ -542,6 +565,64 @@ def main() -> int:
         result = runtime.dispatcher.dispatch(plan.steps[0], runtime.policy_context_factory())
         print(result.message)
         return 0 if result.success else 1
+
+    if args.routine_list:
+        names = default_routine_store().list_names()
+        if not names:
+            print("No saved routines.")
+            return 0
+        for name in names:
+            print(name)
+        return 0
+
+    if args.routine_delete is not None:
+        default_routine_store().delete(args.routine_delete)
+        print(f"Routine {args.routine_delete!r} deleted, if it existed.")
+        return 0
+
+    if args.routine_save is not None:
+        if len(args.routine_save) < 2:
+            print("Usage: --routine-save NAME PHRASE [PHRASE ...]")
+            return 1
+        name, *phrases = args.routine_save
+        for step_phrase in phrases:
+            _intent, plan = runtime.planner.plan(step_phrase)
+            if not plan.steps:
+                print(f"Not a recognized command, nothing saved: {step_phrase!r}")
+                return 1
+            if plan.steps[0].risk_level > RiskLevel.REVERSIBLE:
+                print(
+                    f"Routines may only contain read-only or reversible commands, "
+                    f"not {step_phrase!r} (it needs permission or confirmation)."
+                )
+                return 1
+        try:
+            default_routine_store().save(name, phrases)
+        except ValueError as exc:
+            print(f"Could not save routine: {exc}")
+            return 1
+        print(f"Routine {name!r} saved with {len(phrases)} step(s).")
+        return 0
+
+    if args.routine_run is not None:
+        saved_phrases = default_routine_store().get(args.routine_run)
+        if saved_phrases is None:
+            print(f"No saved routine named {args.routine_run!r}.")
+            return 1
+        for step_phrase in saved_phrases:
+            _intent, plan = runtime.planner.plan(step_phrase)
+            if not plan.steps:
+                print(f"Stopping: {step_phrase!r} no longer plans to a command.")
+                return 1
+            if plan.steps[0].risk_level > RiskLevel.REVERSIBLE:
+                print(f"Stopping: {step_phrase!r} now requires permission or confirmation.")
+                return 1
+            result = runtime.dispatcher.dispatch(plan.steps[0], runtime.policy_context_factory())
+            print(result.message)
+            if not result.success:
+                return 1
+        return 0
+
     if args.text is not None:
         _intent, plan = runtime.planner.plan(args.text)
         if not plan.steps:

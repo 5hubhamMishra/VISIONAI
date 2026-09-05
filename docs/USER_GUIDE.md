@@ -75,6 +75,10 @@ The API key itself can come from either of two places. Setting `VISIONAI_ANTHROP
 `--suggest "<free text>"` asks the same configured LLM provider to translate the text into one command from a fixed, reviewed menu (the same commands `--text` accepts). The LLM's reply is always re-checked against the real menu before anything happens, so it can never cause a command outside that menu to be proposed, no matter what the input text tries to get it to say. If nothing matches, it prints `"No matching command found."` and stops. If it matches, it prints `"Proposed: <what would happen>"` and then asks `"Execute this command? [y/N]: "` -- typing `y`/`yes` runs it through the exact same policy engine and dispatcher `--text` uses (so a capability that still needs a permission grant or a fresh confirmation, like clearing history, is denied the same way `--text` would deny it -- this prompt is a separate, additional check, not a substitute for those); anything else (including no answer, e.g. piped input with nothing left to read) prints `"Cancelled."` and does nothing. Uses the same provider configuration as `--ask`.
 If the request is ambiguous, it may ask one short clarification question. Your answer is combined with the original request and mapped once more before the normal confirmation prompt; a second clarification is not asked.
 
+## Routines
+
+Save a named routine with `--routine-save <name> "<phrase>" ["<phrase>" ...]`, using the same command phrases `--text` accepts (e.g. `visionai --routine-save morning "what time is it" "open notepad"`). Only read-only or reversible commands can be saved -- anything that would need a permission grant or confirmation is rejected, and nothing is saved if any phrase is rejected. Run one with `--routine-run <name>`: each step runs in order through the normal command path, and a routine stops at the first step that fails. `--routine-list` shows saved routine names; `--routine-delete <name>` removes one.
+
 ## Gesture cheat sheet
 
 Final transcripts below `VISIONAI_MIN_TRANSCRIPT_CONFIDENCE` (default `0.7`,

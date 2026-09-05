@@ -1,3 +1,4 @@
+from visionai.config.routines import RoutineStore, default_routine_store
 from visionai.config.secrets import SecretStore, default_secret_store, resolve_anthropic_api_key
 from visionai.config.settings import Settings, get_settings
 from visionai.config.user_settings import (
@@ -15,4 +16,6 @@ __all__ = [
     "SecretStore",
     "default_secret_store",
     "resolve_anthropic_api_key",
+    "RoutineStore",
+    "default_routine_store",
 ]

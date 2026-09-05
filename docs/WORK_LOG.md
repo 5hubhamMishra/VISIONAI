@@ -1,5 +1,31 @@
 # Work Log
 
+## 2026-09-06 Phase 7 First Slice: Routines Restricted to Risk 0/1
+
+- Started Phase 7 (Advanced), with explicit user approval, on the smallest
+  possible first slice per Section 19: named routines. See
+  `docs/DECISIONS/0007-phase7-routines-first-slice.md` for the full rationale.
+- Added `visionai.config.routines.RoutineStore` (mirrors `UserSettingsStore`'s
+  atomic-write JSON pattern) and four CLI flags: `--routine-save NAME PHRASE
+  [PHRASE ...]`, `--routine-run NAME`, `--routine-list`, `--routine-delete NAME`.
+- A routine may only contain phrases that plan to a Risk 0 (read-only) or Risk
+  1 (reversible) capability -- checked at save time and re-checked immediately
+  before each step's dispatch at run time. This sidesteps designing a new
+  multi-step confirmation UX before a permission/confirmation-gated action
+  could ever be bundled into a routine: by construction, it never can be yet.
+  Each step still dispatches through the unmodified `TextCommandPlanner`/
+  `SerializedDispatcher` path `--text` uses.
+- Caught and fixed a real mypy error before committing: a loop variable named
+  `phrase` collided with an earlier `str | None`-typed `phrase` from the
+  `--suggest` block in the same function, confusing type inference at the
+  `planner.plan()` call site. Renamed to `step_phrase` in both routine loops.
+- Verified: 18 new tests (`tests/unit/test_routines.py` for the store,
+  `tests/unit/test_app.py` for the CLI flags -- save/reject-unrecognized/
+  reject-sensitive/run/run-unknown/list/list-empty/delete). Full suite: 481
+  passed, 10 skipped, 91% coverage, Ruff, mypy (54 files), Bandit, pip-audit
+  all clean, run directly on this machine's real Windows `.venv312`.
+- No desktop UI surface for this yet (CLI-first-then-UI precedent).
+
 ## 2026-09-06 Live Prompt-Injection Test Suite (Section 17)
 
 - Live validation was attempted with the Anthropic API key read directly from

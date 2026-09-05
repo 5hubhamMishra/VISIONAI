@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from visionai import app
+from visionai.config.routines import RoutineStore
 from visionai.config.secrets import InMemorySecretStore
 from visionai.config.user_settings import UserSettingsStore
 from visionai.core.cancellation import CancellationToken
@@ -796,3 +797,118 @@ def test_app_rejects_unallowlisted_app_open_without_launching_anything(monkeypat
 
     assert exit_code == 1
     assert "not an allowlisted application" in output
+
+
+def test_app_routine_save_stores_a_valid_routine(monkeypatch, tmp_path, capsys) -> None:
+    store = RoutineStore(tmp_path / "routines.json")
+    monkeypatch.setattr(
+        "sys.argv",
+        ["visionai", "--routine-save", "morning", "what time is it", "open notepad"],
+    )
+    monkeypatch.setattr("visionai.app.default_routine_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Routine 'morning' saved with 2 step(s)." in output
+    assert store.get("morning") == ("what time is it", "open notepad")
+
+
+def test_app_routine_save_rejects_an_unrecognized_phrase(monkeypatch, tmp_path, capsys) -> None:
+    store = RoutineStore(tmp_path / "routines.json")
+    monkeypatch.setattr(
+        "sys.argv", ["visionai", "--routine-save", "morning", "order me a pizza"]
+    )
+    monkeypatch.setattr("visionai.app.default_routine_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Not a recognized command" in output
+    assert store.get("morning") is None
+
+
+def test_app_routine_save_rejects_a_sensitive_phrase(monkeypatch, tmp_path, capsys) -> None:
+    store = RoutineStore(tmp_path / "routines.json")
+    monkeypatch.setattr(
+        "sys.argv", ["visionai", "--routine-save", "cleanup", "clear history"]
+    )
+    monkeypatch.setattr("visionai.app.default_routine_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "may only contain read-only or reversible commands" in output
+    assert store.get("cleanup") is None
+
+
+def test_app_routine_run_executes_each_step_through_the_real_dispatcher(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    launched: list[str] = []
+    store = RoutineStore(tmp_path / "routines.json")
+    store.save("morning", ["open notepad"])
+    monkeypatch.setattr("sys.argv", ["visionai", "--routine-run", "morning"])
+    monkeypatch.setattr("visionai.app.default_routine_store", lambda: store)
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
+    )
+
+    exit_code = app.main()
+
+    assert exit_code == 0
+    assert launched == ["notepad.exe"]
+
+
+def test_app_routine_run_reports_an_unknown_routine(monkeypatch, tmp_path, capsys) -> None:
+    store = RoutineStore(tmp_path / "routines.json")
+    monkeypatch.setattr("sys.argv", ["visionai", "--routine-run", "does not exist"])
+    monkeypatch.setattr("visionai.app.default_routine_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "No saved routine named" in output
+
+
+def test_app_routine_list_reports_saved_names(monkeypatch, tmp_path, capsys) -> None:
+    store = RoutineStore(tmp_path / "routines.json")
+    store.save("morning", ["what time is it"])
+    monkeypatch.setattr("sys.argv", ["visionai", "--routine-list"])
+    monkeypatch.setattr("visionai.app.default_routine_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "morning" in output
+
+
+def test_app_routine_list_reports_none_saved(monkeypatch, tmp_path, capsys) -> None:
+    store = RoutineStore(tmp_path / "routines.json")
+    monkeypatch.setattr("sys.argv", ["visionai", "--routine-list"])
+    monkeypatch.setattr("visionai.app.default_routine_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "No saved routines." in output
+
+
+def test_app_routine_delete_removes_it(monkeypatch, tmp_path, capsys) -> None:
+    store = RoutineStore(tmp_path / "routines.json")
+    store.save("morning", ["what time is it"])
+    monkeypatch.setattr("sys.argv", ["visionai", "--routine-delete", "morning"])
+    monkeypatch.setattr("visionai.app.default_routine_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "deleted" in output
+    assert store.get("morning") is None

@@ -2,6 +2,15 @@
 
 ## Current Phase
 
+Phase 7 (Advanced) has started, with explicit user approval, on its smallest
+possible first slice: named routines (`--routine-save`/`--routine-run`/
+`--routine-list`/`--routine-delete`), restricted to Risk 0/1 phrases only so
+no new multi-step confirmation design is needed yet -- see
+`docs/DECISIONS/0007-phase7-routines-first-slice.md`. Latest local Windows
+verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
+skipped (9 are the live prompt-injection suite below, self-skipping without a
+real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
+
 Latest local Windows verification (2026-09-05 cycle, commit bc68507): 451 tests
 passed, 91% coverage, Ruff, mypy (53 files), Bandit, and scoped dependency audit clean. See
 [the cycle report](AUTONOMOUS_HOUR_2026-09-05.md) for verification scope,
@@ -603,6 +612,8 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 4. Phase 5 vision's approved scope is now closed: `WebcamLandmarkAdapter`, `visionai --gesture-frames N`, `visionai --gesture-listen`, five gesture-to-capability mappings, closed-fist voice capture, and the matching `visionai-ui` Gesture Control button (with the same voice-trigger parity) are unit-tested and live-verified through both CLI and GUI. Keep camera frames/landmarks out of events and storage by default.
 5. Phase 6 Intelligence's provider and command-suggestion slices are done, including explicit human confirmation and dispatch through the unmodified policy/dispatcher path, now available on both the CLI and the desktop window (Ask AI, Suggest Command), plus real OS keychain secret storage now available on *both* the CLI (`--set-api-key`/`--delete-api-key`, Windows Credential Manager via `keyring`, alongside the still-working env var) and the desktop Settings dialog (masked API-key entry, keychain deletion -- corrected here: this was previously, incorrectly, still listed below as a CLI-only remaining option; it was actually completed in an earlier session, per the "2026-09-05 update" bullet in Implemented and Tested), and session-scoped, explicitly clearable conversation memory for the desktop window's Ask AI feature (`visionai.intelligence.memory.ConversationMemory`; deliberately not added to the stateless CLI `--ask`, and not persisted to disk). Text-safety validation across this phase's LLM-facing surfaces (and every other independent control-character check in the codebase) was also hardened against Unicode bidi-override/invisible characters this session -- see the Implemented and Tested bullet above. The focused tests cover approval, cancellation, and rejection of unlisted/prompt-injected model output on both surfaces, plus conversation-memory retention/eviction/deletion. A local/offline provider is also now done (`visionai.intelligence.local_provider.LocalLlamaProvider`, behind the optional `local_llm` extra -- `gpt4all`; never downloads a model itself, and is not live-verified with a real model file in this display/hardware-less Linux sandbox -- see `docs/DECISIONS/0006-local-offline-llm-provider.md`). Clarification is also now done: an ambiguous `--suggest`/Suggest Command request may receive one validated, single-line follow-up question, the human's answer is combined with the original request, and the mapping is retried exactly once before normal confirmation and dispatch -- a second ambiguous reply is never asked again, it is treated as no match, so the model cannot drive an unbounded back-and-forth. Phase 6's originally scoped feature list (Section 12) is now fully implemented. The remaining Section 17 item, a real prompt-injection test suite against a *live* LLM, is now written -- `tests/security/test_prompt_injection_live.py`, 8 real injection attempts plus one sanity check against `AnthropicProvider`, asserting `suggest_command_result()` never returns a phrase outside `reviewed_phrases()` no matter what the live model actually replies (never a fixed expected reply, since that would fabricate a live-model output) -- but not yet live-executed: it self-skips without a real `VISIONAI_ANTHROPIC_API_KEY` (confirmed locally: 9 skipped, no other regressions, 464 passed/91% coverage), and the harness's own auto-mode classifier blocked this session from invoking it directly once a real key was present in the environment, twice, from two different shells -- writing the key to a file and running pytest with it set -- both refused as a deliberate guard against an agent spending real API money/secrets autonomously. A human running the command themselves in their own terminal (`.venv312\Scripts\python.exe -m pytest tests\security\test_prompt_injection_live.py -v`, with `VISIONAI_ANTHROPIC_API_KEY` set) is the only way to get a real result; until that happens this suite should be described as written and self-gated, not executed or passing.
 
+6. Phase 7's first slice, named routines restricted to Risk 0/1 phrases, is done on the CLI (`--routine-save`/`--routine-run`/`--routine-list`/`--routine-delete`) -- see `docs/DECISIONS/0007-phase7-routines-first-slice.md`. Remaining Phase 7 options, none yet approved to start: real multi-step confirmation UX so a routine could include a permission/confirmation-gated step, macro preview/dry-run, a desktop UI surface for routines, plugin manifests/permissions, multimodal pointing+voice, personalization, and a local LLM model manager.
+
 ## Known Defects
 
 - Existing `../jarvis` prototype is still untrusted reference material, but its previously documented concrete OS command injection path has been locally quarantined in this workspace. The quarantine is not part of the `visionai/` Git repository, so a separate `jarvis` copy or restore must not be assumed safe.
@@ -649,6 +660,7 @@ cd visionai
 
 ## Last Verification Result
 
+- 2026-09-06, real Windows (this machine's `.venv312`, not a sandbox): 481 passed, 10 skipped (9 self-gated live-LLM prompt-injection tests, 1 pre-existing), 91% coverage, Ruff clean, mypy clean for 54 source files (real `WindowsLockStateAdapter` typing resolves correctly here, unlike the Linux sandbox note below), Bandit clean, pip-audit clean. Includes this session's Phase 7 routines-first-slice addition.
 - Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libopengl0`/`libportaudio2` (`libgl1` was already present) -- headless `pytest-qt` could not import `QtGui` at all without `libEGL.so.1`, and `sounddevice`'s real-backend smoke test would raise `OSError: PortAudio library not found` -- all installed via `apt-get` before the suite would run to completion. None of this is a Python/project dependency change -- it is a container-image setup gap, not application code.
 - Ruff: passed (whole repo)
 - mypy: passed for 53 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing).
@@ -658,4 +670,4 @@ cd visionai
 
 ## Last Updated
 
-2026-09-05
+2026-09-06
