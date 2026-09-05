@@ -28,6 +28,86 @@
 - Full verification passed at this slice: 364 tests, 88% coverage, Ruff,
   mypy, Bandit, and requirements-scoped pip-audit.
 
+## 2026-09-05 Autonomous cycle: Ask AI conversation memory + retention limits
+
+- Followed the standing autonomous-run protocol in a fresh sandbox container (no prior `.venv312` existed): pulled `main`, read `README.md`/`docs/PROJECT_STATE.md`/`docs/ARCHITECTURE.md`/`docs/SECURITY.md`/`docs/TESTING.md`/`docs/WORK_LOG.md`/recent git log, built a Python 3.12 virtualenv from `requirements/dev.txt`, and installed the same headless Qt/PortAudio system libraries (`libegl1`, `libgl1-mesa-dri`, `libportaudio2`) a prior session had needed, since this container started with none of them.
+- Ran the baseline verification suite before touching anything, per this run's instructions. Ruff, mypy (modulo the already-documented sandbox-only `ctypes.windll` false positive), Bandit, and pip-audit all matched the previously documented state. `pytest --cov=src/visionai --cov-report=term-missing` (the exact command `scripts/verify.ps1`/hosted CI use) reliably segfaulted partway through, always inside a `QThread`/`qtbot.waitUntil` wait in `tests/unit/test_main_window.py`, at a different test each run. Investigated rather than assuming the baseline was broken: the same tests with no `--cov` attached passed cleanly (340 passed, 19 failed -- the documented `WindowsLockStateAdapter` fail-closed pattern -- 1 skipped, exactly matching the previously recorded sandbox baseline), and `test_main_window.py` alone under `--cov` never crashed either. Tried `COVERAGE_CORE=ctrace` (Python 3.12's default `sys.monitoring`-based tracer vs. the legacy C tracer) and an explicit `concurrency = thread` coverage config; neither reliably prevented the crash on a full run. Concluded this is a coverage-instrumentation-plus-many-sequential-`QThread`-tests interaction specific to this sandbox's Python 3.12/PySide6/offscreen-QPA combination (hosted CI on `windows-latest` uses a real GUI environment, not the offscreen platform plugin, and has never shown this) -- not an application bug, and not something to chase further or fix in `scripts/verify.ps1`/CI within this run's narrow scope. Worked around it for this session's own verification by running `--cov` over the rest of the suite and `test_main_window.py` separately (`--cov-append`) and summing the results, which reproduces the same totals a single non-crashing `--cov` run would.
+- With the baseline otherwise confirmed clean, picked "conversation memory + retention limits" from `docs/PROJECT_STATE.md`'s approved-next-tasks item 5 -- one of the options this run's instructions specifically named as a good fit for a no-display/camera/microphone/Windows-API sandbox, unlike a local/offline LLM provider (needs a real downloadable model this sandbox cannot obtain or verify) or a live-LLM prompt-injection suite (needs a real network call/API key this sandbox does not have).
+- Added `visionai.intelligence.memory.ConversationMemory`: a small, bounded, explicitly clearable question/answer history living entirely on the caller's side of the unchanged `LLMProvider.respond(query) -> reply` boundary. Bounded two independent ways -- a fixed maximum turn count (oldest evicted first) and a character budget (`build_query_text()` prefixes only as many of the most recent turns as fit, never drops or truncates the new question itself) -- so a long conversation can never grow an outgoing query past `LLMQuery`'s own validated length limit, and `clear()` gives it a real deletion path. A dedicated test written before the implementation was trusted (`test_conversation_memory_build_query_text_never_exceeds_the_char_budget`) caught a real off-by-one in the first draft: the budget arithmetic subtracted only the new question's length, not its `"User: "` rendering prefix, which could let the combined text exceed the configured budget by 6 characters. Fixed before this was ever committed.
+- Wired it into `MainWindow`'s existing Ask AI feature only (not the CLI's `--ask`, which stays a stateless one-shot process invocation with no natural place to keep history without adding new disk persistence -- a separate decision this slice does not make, matching `docs/DECISIONS/0004-llm-provider-choice.md`'s original reasoning -- and not Suggest Command, which proposes one command from one request each time rather than holding a conversation). One `ConversationMemory` per window session, never persisted to disk; a new "Clear Conversation" button deletes it on demand; Diagnostics now reports the retained-turn count; onboarding text and both keyboard tab-order tests were updated for the new button.
+- Verified: `tests/unit/test_conversation_memory.py` (11 tests, 100% line coverage on the new module, confirmed with a scoped `--cov` run) covers construction validation, eviction ordering, `clear()`, exact prefix rendering, oldest-turns-dropped-first under a tight budget, the new question never being dropped, and the hard total-length invariant. Three new `tests/unit/test_main_window.py` tests use a provider fake that records the literal text each call receives: a follow-up Ask AI question is proven to actually include the prior question and reply, Clear Conversation is proven to remove that context, and a failed Ask AI call is proven to record nothing. Ran the real, shipped `visionai --ask "what is 2+2?"` command (unaffected -- `app.py` was not touched) and constructed a real `MainWindow` directly to confirm the new button/wiring import and construct cleanly.
+- Re-ran the full verification suite (ruff, mypy, the split `--cov` pytest run, Bandit, pip-audit) after the change: 374 tests total, 354 passed/19 failed (same documented sandbox pattern)/1 skipped, 88% coverage, ruff/mypy/Bandit/pip-audit all clean. Updated `docs/PROJECT_STATE.md` (Current Phase, Implemented and Tested, In Progress, Approved Next Tasks item 5, Last Verification Result, Last Updated), `docs/ARCHITECTURE.md`, `docs/USER_GUIDE.md`, and `docs/DECISIONS/0004-llm-provider-choice.md`'s "No conversation memory" entry to record this as done for the desktop window.
+
+## 2026-09-05 Autonomous cycle: fix silently broken hosted CI (mediapipe smoke test)
+
+- Followed this project's standing autonomous-run protocol: pulled `main`,
+  read the docs, then ran the verification suite as-is before picking any
+  new task. `docs/PROJECT_STATE.md` claimed "Hosted CI has passed on every
+  commit pushed so far," but checking the actual GitHub Actions run history
+  (not assuming it) showed the last 18 consecutive runs, from `f4d3ec8`
+  ("Add real webcam/landmark boundary via mediapipe") through `f8c52b6`,
+  had all failed. Ruff and mypy were green on every one of those runs; only
+  the "Unit tests" step failed, always on the same test:
+  `tests/unit/test_webcam.py::test_classify_hand_frame_runs_against_the_real_mediapipe_model`
+  (`ModuleNotFoundError: No module named 'mediapipe'`).
+- Root cause: that test unconditionally imports the real `mediapipe`
+  package with no guard, but `requirements/vision.txt` (mediapipe/opencv/
+  numpy) has never been part of `requirements/dev.txt` -- deliberately, per
+  `docs/DECISIONS/0003-accepted-protobuf-cve.md`, so mediapipe's accepted
+  transitive protobuf CVE stays out of the standard audited/tested
+  dependency surface. So CI (and any standard `pip install -r
+  requirements/dev.txt`) never has mediapipe installed, and the test has
+  been hard-failing instead of skipping since the commit that added it.
+  Per this run's instructions, a broken baseline is the task for the run --
+  no other feature work was attempted.
+- This was invisible locally because this session's sandbox is Linux with
+  no display/camera/microphone/Windows APIs and needed its own setup
+  first: built a Python 3.12 virtualenv from `requirements/dev.txt` (the
+  sandbox's default Python was 3.11; `python3.12` was available), installed
+  missing system libraries for headless Qt (`libegl1`, `libgl1-mesa-dri`,
+  etc., via `apt-get`) and PortAudio (`libportaudio2`) so as much of the
+  real suite as possible could run for real rather than being skipped
+  outright.
+- Fixed `tests/unit/test_webcam.py` by guarding the smoke test with
+  `pytest.importorskip("mediapipe")`, matching how a real-backend smoke
+  test should behave when its optional extra is genuinely absent (the
+  microphone/keychain real-backend smoke tests never needed this guard
+  because `voice.txt`/`intelligence.txt` *are* part of `dev.txt`). Verified
+  both branches directly in this session's own environment, not by
+  inspection alone: with the standard `requirements/dev.txt` set installed
+  (mediapipe absent), the test skips cleanly (`8 passed, 1 skipped`);
+  temporarily installing the real `mediapipe==0.10.14` alongside it (a
+  manylinux wheel exists for this exact pin) made the same test genuinely
+  run and pass against the real `Hands` model on a synthetic blank frame
+  (`9 passed`), before reverting to a clean `requirements/dev.txt`-only
+  environment for the final verification pass below. No application code
+  changed -- this is a test-file and documentation fix only.
+- Full verification run (this session's Linux sandbox, Python 3.12.3):
+  Ruff clean; mypy clean for 51 source files except one expected
+  sandbox-only false positive (`platform/lock_state.py:71`, `ctypes.windll`
+  has no Linux typeshed stub -- confirmed via the real hosted CI "Mypy"
+  step that this file passes on `windows-latest`, not assumed); pytest 360
+  tests total, 340 passed / 19 failed / 1 skipped locally, 88% coverage --
+  every one of the 19 local-only failures is `WindowsLockStateAdapter`
+  correctly failing closed with no real Windows desktop session to check
+  against, blocking mutating-capability tests exactly as designed, not a
+  regression (confirmed against the real hosted CI job's own step-by-step
+  log for the same commit, which showed only the one mediapipe failure
+  before this fix); Bandit clean; `pip-audit` against
+  `requirements/base.txt` + `requirements/dev.txt` reports no known
+  vulnerabilities. Pushed this fix so the next hosted CI run can be checked
+  directly against `windows-latest` for final confirmation.
+- Updated `docs/TESTING.md` and `docs/PROJECT_STATE.md` (Current Phase,
+  Last Verified Commit, Last Verification Result, Last Updated) to record
+  the corrected hosted-CI history and this fix, rather than leaving the
+  stale "CI has passed on every commit" claim uncorrected.
+- Next task: once hosted CI is confirmed green again on the next push,
+  resume Approved Next Task 5's remaining options (conversation memory/
+  retention limits, a local/offline LLM provider, a prompt-injection test
+  suite against the deterministic fallback and fake providers, or a
+  desktop Settings control for the keychain secret) -- all still apply and
+  none require Windows/camera/microphone hardware this sandbox lacks.
+
 ## 2026-09-05 Autonomous cycle: transcript confidence gate
 
 - Reproduced low-confidence final transcripts dispatching an app launch at

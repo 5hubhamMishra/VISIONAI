@@ -70,6 +70,17 @@ than needing dedicated tests yet.
   nothing persisted -- Section 12's "retention limits and deletion" requirement is
   satisfied trivially by having nothing to retain yet, rather than building a retention
   policy for data that doesn't exist.
+  - **Done, for the desktop window.** `visionai.intelligence.memory.ConversationMemory`
+    adds a bounded (a fixed maximum turn count, oldest evicted first, plus a character
+    budget so a long conversation can never grow an outgoing query past `LLMQuery`'s own
+    validated length limit), explicitly clearable (`clear()`) question/answer history.
+    It lives entirely on the caller's side of the unmodified `LLMProvider.respond(query)
+    -> reply` boundary -- providers still only ever see one `LLMQuery` per call.
+    `MainWindow`'s Ask AI button owns one `ConversationMemory` per window session (a new
+    "Clear Conversation" button deletes it on demand); nothing is ever written to disk.
+    The CLI's `--ask` deliberately keeps the original stateless reasoning above and does
+    not use it -- a fresh process per invocation has no natural place to keep history
+    without adding new persistence, which is a separate decision this slice does not make.
 
 ## Consequences
 
