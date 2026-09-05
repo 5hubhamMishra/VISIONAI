@@ -30,6 +30,13 @@ The current Phase 6 clarification slice is implemented on CLI and desktop
 Suggest Command: ambiguous requests may receive one validated follow-up
 question, then one final mapping attempt before normal confirmation and policy.
 
+Live Section 17 prompt-injection validation was attempted on 2026-09-06 using
+the configured Anthropic keychain entry. Python, keychain retrieval, and API
+authentication setup succeeded, but all 9 requests were rejected by Anthropic
+with HTTP 400 because the account credit balance was too low. The model safety
+assertions therefore remain unverified; rerun the existing live suite after
+adding credits. The secret was not logged or persisted.
+
 2026-09-05 autonomous cycle (Linux sandbox, capability manifest risk-control
 coverage): started against local commit `5720727`; baseline verified clean
 and unchanged from the prior session's documented sandbox state before any

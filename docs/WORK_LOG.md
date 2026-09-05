@@ -2,6 +2,15 @@
 
 ## 2026-09-06 Live Prompt-Injection Test Suite (Section 17)
 
+- Live validation was attempted with the Anthropic API key read directly from
+  the Windows OS keychain; the key was never printed or written to disk.
+- Runtime and authentication setup succeeded, and all 9 requests reached
+  Anthropic, but every request was rejected with HTTP 400 because the account
+  credit balance was too low. No model replies were returned, so the safety
+  assertions remain unverified rather than passing.
+- The suite is ready to rerun after adding Anthropic credits; no further code
+  change is needed for this billing blocker.
+
 - Added `tests/security/test_prompt_injection_live.py`: 8 real prompt-injection
   attempts plus one sanity check, run against the real `AnthropicProvider`.
   Asserts `suggest_command_result()` never returns a phrase outside
