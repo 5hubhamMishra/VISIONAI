@@ -1,5 +1,20 @@
 # Work Log
 
+## 2026-09-06 State Machine Boundary Coverage
+
+- Added focused tests for `StateMachine.on_transition()` callbacks and the
+  documented idle/stopped cancellation no-op. No production code changed.
+- Focused verification: 5 tests passed. Full `scripts/verify.ps1`: 462 tests
+  passed, 91% coverage, Ruff, mypy, Bandit, and requirements-scoped pip-audit
+  passed.
+
+## 2026-09-06 State Machine Boundary Coverage
+
+- Added focused tests for `StateMachine.on_transition()` callbacks and the
+  documented idle/stopped cancellation no-op. No production code changed.
+- Full verification: 460 tests passed, 91% coverage, Ruff, mypy, Bandit, and
+  requirements-scoped pip-audit passed.
+
 ## 2026-09-05 Phase 6 Clarification
 
 - Implemented one bounded clarification question for ambiguous LLM command

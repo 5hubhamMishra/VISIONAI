@@ -23,6 +23,24 @@ def test_state_machine_rejects_unapproved_jump() -> None:
         machine.transition(AppState.EXECUTING)
 
 
+def test_state_machine_notifies_registered_listeners() -> None:
+    machine = StateMachine()
+    transitions = []
+    machine.on_transition(transitions.append)
+
+    transition = machine.transition(AppState.LISTENING, reason="voice")
+
+    assert transitions == [transition]
+
+
+def test_state_machine_cancel_is_a_noop_when_idle_or_stopped() -> None:
+    machine = StateMachine()
+
+    assert machine.cancel() is None
+    machine.transition(AppState.STOPPED)
+    assert machine.cancel() is None
+
+
 def test_state_machine_serializes_concurrent_transitions() -> None:
     """Regression: only one of many racing transitions may succeed.
 

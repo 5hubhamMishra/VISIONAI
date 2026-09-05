@@ -66,6 +66,8 @@ reached 100% line coverage (was 94%). Full verification after the change:
 462 tests (434 passed, 27 failed -- identical failing-test names to the
 pre-change baseline, confirming no regressions -- 1 skipped), 91% coverage,
 Ruff/mypy(one known false positive)/Bandit/pip-audit all clean.
+The 2026-09-06 reliability slice adds direct coverage for state-transition
+listeners and idle/stopped cancellation no-ops. No runtime behavior changed.
 
 2026-09-05 autonomous cycle (Linux sandbox, baseline fix -- local provider
 path splitting): started against local commit `6ab7771`; this session found
