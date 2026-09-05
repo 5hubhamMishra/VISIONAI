@@ -21,6 +21,25 @@ discarded. Cancelling gesture listening discards unfinished speech rather
 than dispatching it. Desktop thread cleanup, graceful shutdown, and in-flight
 conversation clearing are also verified. Earlier contributor checkpoints follow.
 
+2026-09-06 autonomous cycle (Linux sandbox, capabilities/browser.py coverage):
+started against local commit `c003fae`; baseline verified clean and unchanged
+from the prior session's documented state before any work started (500 tests:
+462 passed, 28 failed -- the documented `WindowsLockStateAdapter` fail-closed
+pattern, not a regression -- 10 skipped, 91% coverage; Ruff, Bandit, pip-audit
+clean; mypy clean for 54 files except the one documented sandbox-only
+`ctypes.windll` false positive). The prior session's own report explicitly
+flagged `capabilities/browser.py` (94% covered, lines 55/140/169) as a
+remaining hardware-free coverage gap. Confirmed it was real: the actual
+`default_browser_opener()` (production `webbrowser.open()` call) had zero
+coverage, and both `browser.open`/`browser.search` handlers' "opener returned
+`False`" failure branches were untested -- only the success and pre-open
+policy-rejection paths were covered. Added three tests to
+`tests/unit/test_browser.py`. No application code changed. `capabilities/
+browser.py` reached 100% line coverage (was 94%). Full verification: 503
+tests (465 passed, 28 failed -- identical failing-test names, no regressions
+-- 10 skipped), 91% coverage, Ruff/mypy(one known false positive)/Bandit/
+pip-audit all clean.
+
 2026-09-06 autonomous cycle (Linux sandbox): started against local commit
 `be5816a` (Phase 7's routines-first-slice, already merged by a prior session).
 This session did not touch Phase 7 itself -- it closed a pure test-coverage
@@ -673,7 +692,14 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `config/routines.py` coverage
+- 2026-09-06, Linux sandbox (this session, `capabilities/browser.py` coverage
+  cycle): 503 tests -- 465 passed, 28 failed (all the documented
+  `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
+  regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
+  source files except the one documented sandbox-only `ctypes.windll` false
+  positive, Bandit clean, pip-audit clean. `capabilities/browser.py` now at
+  100% line coverage (was 94%).
+- 2026-09-06, Linux sandbox (prior session, `config/routines.py` coverage
   cycle): 500 tests -- 462 passed, 28 failed (all the documented
   `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
   regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
@@ -690,4 +716,4 @@ cd visionai
 
 ## Last Updated
 
-2026-09-06 (Linux sandbox coverage cycle)
+2026-09-06 (Linux sandbox coverage cycle: `capabilities/browser.py`)

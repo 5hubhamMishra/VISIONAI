@@ -1,9 +1,11 @@
+import visionai.capabilities.browser as browser_module
 from visionai.capabilities import CapabilityRegistry
 from visionai.capabilities.browser import (
     ALLOWED_SITES,
     browser_manifests,
     browser_open_manifest,
     browser_search_manifest,
+    default_browser_opener,
     make_browser_open_handler,
     make_browser_search_handler,
 )
@@ -98,6 +100,32 @@ def test_browser_search_handler_rejects_empty_query_without_opening() -> None:
     assert result.success is False
     assert "search query is empty" in result.message
     assert opened == []
+
+
+def test_default_browser_opener_delegates_to_webbrowser_open(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(browser_module.webbrowser, "open", lambda url: calls.append(url) or True)
+
+    assert default_browser_opener("https://example.com") is True
+    assert calls == ["https://example.com"]
+
+
+def test_browser_open_handler_reports_failure_when_opener_returns_false() -> None:
+    handler = make_browser_open_handler(opener=lambda url: False)
+
+    result = handler(_browser_open_request("github"), _TOKEN)
+
+    assert result.success is False
+    assert result.message == "Could not open github."
+
+
+def test_browser_search_handler_reports_failure_when_opener_returns_false() -> None:
+    handler = make_browser_search_handler(opener=lambda url: False)
+
+    result = handler(_browser_search_request("weather"), _TOKEN)
+
+    assert result.success is False
+    assert result.message == "Could not open search."
 
 
 def test_browser_search_handler_rejects_control_characters_without_opening() -> None:
