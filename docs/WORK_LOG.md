@@ -1,5 +1,25 @@
 # Work Log
 
+## 2026-09-05 autonomous hour: desktop thread lifetime and privacy
+
+- Integrated remote CI/memory commits through merge 3ca75c0, retaining the
+  local exact-confirmation binding and queued-policy changes. Resolved only
+  documentation conflicts by retaining both contributors' records.
+- Reproduced the UI crash locally both before and after that merge. Added a
+  deterministic delayed-worker regression: success and failure made the UI
+  ready while its QThread was still running. Both failed before the fix.
+- All completion paths now quit/join their completed worker before releasing
+  references. Normal close and tray Quit cancel cooperative work and defer
+  destruction without blocking the UI while work remains. Shutdown suppresses
+  new proposal/permission/confirmation dialogs.
+- Reproduced and fixed Clear Conversation during an in-flight Ask AI request:
+  a late answer no longer reintroduces the deleted question into memory.
+- Full Windows suite after the fixes: 387 passed, 88% coverage; Ruff and
+  mypy (52 source files) passed. Security checks run through verify.ps1.
+- Qt reference: https://doc.qt.io/qt-6/qthread.html. This fixes a reproduced
+  application lifetime defect; it does not claim every possible Qt/platform
+  crash is eliminated. Live human desktop checks remain separate.
+
 ## 2026-09-05 10:08 UTC autonomous hour: queued policy freshness
 
 - Owner reaffirmed the one-hour autonomous cycle and persistent minimal-effort

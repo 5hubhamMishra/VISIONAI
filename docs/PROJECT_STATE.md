@@ -2,6 +2,15 @@
 
 ## Current Phase
 
+Latest local Windows verification (2026-09-05 autonomous hour): 387 tests
+passed, 88% coverage, Ruff and mypy clean. Desktop result/error handling now
+joins completed workers before releasing them; normal close and tray Quit
+defer destruction while active workers finish. Clearing Ask AI memory during
+a request no longer restores deleted context when the answer arrives. The
+earlier Qt crash reproduced on Windows too; the delayed-worker regression
+failed before this lifecycle fix and now passes. Historical results below
+describe their respective earlier checkpoints.
+
 2026-09-05 10:08 UTC cycle: queued actions now refresh workstation lock state
 and permissions after acquiring the dispatcher lock. Focused regressions
 cover screen locking, permission revocation, and preservation of confirmed

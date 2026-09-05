@@ -1,5 +1,13 @@
 # User Guide
 
+Closing to the system tray keeps VisionAI available as before. Choosing Quit
+(or closing when no tray is available) now stops cooperative work and waits
+for background workers to finish before exiting. A pending AI network call
+must finish or fail first; the window remains responsive while waiting.
+Clearing the Ask AI conversation during a request also prevents that pending
+turn from being added back when its response arrives. It cannot retract a
+question already sent to a configured provider.
+
 VisionAI is not ready for end-user operation yet. Real voice input and recognized gestures can each trigger only the small command map below; they do not provide arbitrary system control.
 
 There are two ways to run a command today: a console entry point, and a minimal desktop window (the first Phase 2 UI slice). Both drive the exact same policy-gated capabilities -- neither has any execution authority the other lacks.

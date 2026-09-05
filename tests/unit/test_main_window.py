@@ -1,8 +1,9 @@
+from threading import Event
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QWidget
 
@@ -37,11 +38,131 @@ from visionai.runtime import build_runtime
 from visionai.ui.main_window import MainWindow, _SettingsDialog
 
 
+@pytest.mark.parametrize("failed", [False, True])
+def test_completed_worker_has_exited_before_window_becomes_ready(
+    qtbot: Any, monkeypatch: Any, failed: bool
+) -> None:
+    from visionai.ui.main_window import _RuntimeWorker
+
+    def run(worker: _RuntimeWorker) -> None:
+        if failed:
+            worker.failed.emit("Simulated failure")
+        else:
+            worker.finished.emit([])
+        # Keep the emitting thread alive long enough to expose early UI cleanup.
+        QThread.msleep(100)
+
+    monkeypatch.setattr(_RuntimeWorker, "run", run)
+    window = MainWindow(build_runtime())
+    qtbot.addWidget(window)
+    window._command_input.setText("help")
+    window.run_current_command()
+    thread = window._worker_thread
+    assert thread is not None
+    exited = Event()
+    thread.finished.connect(exited.set, Qt.ConnectionType.DirectConnection)
+    try:
+        _wait_for_command_complete(window, qtbot)
+        assert exited.is_set()
+    finally:
+        if not exited.is_set():
+            thread.quit()
+            thread.wait(5000)
+
+
 def _wait_for_command_complete(window: MainWindow, qtbot: Any) -> None:
     qtbot.waitUntil(
         lambda: not window._is_worker_running() and window._run_button.isEnabled(),
         timeout=5000,
     )
+
+
+@pytest.mark.parametrize("quit_app", [False, True])
+def test_window_waits_for_active_command_before_closing(
+    qtbot: Any, monkeypatch: Any, quit_app: bool
+) -> None:
+    runtime = _build_slow_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window.show()
+    quit_calls: list[bool] = []
+    monkeypatch.setattr(QApplication, "quit", lambda self: quit_calls.append(True))
+    monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", lambda: False)
+    window._command_input.setText("slow command")
+    with qtbot.waitSignal(runtime.orchestrator.started, timeout=5000):
+        window.run_current_command()
+    try:
+        if quit_app:
+            window._quit_application()
+            assert quit_calls == []
+        else:
+            assert not window.close()
+            assert window.isVisible()
+        assert not window.isEnabled()
+        qtbot.waitUntil(lambda: window._worker_thread is None, timeout=5000)
+        qtbot.waitUntil(
+            lambda: bool(quit_calls) if quit_app else not window.isVisible(), timeout=5000
+        )
+    finally:
+        runtime.operations.cancel_active_operation()
+        qtbot.waitUntil(lambda: window._worker_thread is None, timeout=5000)
+
+
+def test_clear_conversation_during_request_does_not_restore_deleted_memory(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    started, release = Event(), Event()
+
+    class Provider:
+        def respond(self, query: Any) -> LLMReply:
+            started.set()
+            assert release.wait(5)
+            return LLMReply(text="Late answer")
+
+    window = MainWindow(build_runtime())
+    qtbot.addWidget(window)
+    monkeypatch.setattr("visionai.ui.main_window._build_llm_provider", Provider)
+    monkeypatch.setattr(window, "_prompt_for_text", lambda *args: "Forget this question")
+    window.show_ask_ai()
+    try:
+        qtbot.waitUntil(started.is_set, timeout=5000)
+        window.clear_ask_conversation()
+    finally:
+        release.set()
+        qtbot.waitUntil(lambda: window._ask_thread is None, timeout=5000)
+    assert window._ask_memory.turns == ()
+
+
+def test_closing_during_suggestion_never_prompts_or_executes(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    started, release = Event(), Event()
+    launched: list[str] = []
+
+    class Provider:
+        def respond(self, query: Any) -> LLMReply:
+            started.set()
+            assert release.wait(5)
+            return LLMReply(text="open notepad")
+
+    window = MainWindow(build_runtime(launcher=launched.append))
+    qtbot.addWidget(window)
+    window.show()
+    monkeypatch.setattr("visionai.ui.main_window._build_llm_provider", Provider)
+    monkeypatch.setattr(window, "_prompt_for_text", lambda *args: "open notepad")
+    prompts: list[str] = []
+    monkeypatch.setattr(window, "_ask_execute_confirmation", lambda text: prompts.append(text))
+    monkeypatch.setattr(QSystemTrayIcon, "isSystemTrayAvailable", lambda: False)
+    window.show_suggest_command()
+    try:
+        qtbot.waitUntil(started.is_set, timeout=5000)
+        assert not window.close()
+    finally:
+        release.set()
+        qtbot.waitUntil(lambda: window._suggest_thread is None, timeout=5000)
+        qtbot.waitUntil(lambda: not window.isVisible(), timeout=5000)
+    assert prompts == []
+    assert launched == []
 
 
 def _sensitive_manifest() -> CapabilityManifest:

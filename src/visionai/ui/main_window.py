@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 import PySide6
 from pydantic import ValidationError
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -447,6 +447,16 @@ class _SuggestWorker(QObject):
         self.message.emit(result.message)
 
 
+def _finish_thread(thread: QThread | None) -> None:
+    """Join a completed worker before clearing references or re-enabling its UI."""
+
+    if thread is not None:
+        # A worker result signal precedes the return from run(). Releasing
+        # its window here can otherwise destroy a QThread that is still running.
+        thread.quit()
+        thread.wait()
+
+
 class _TextPromptDialog(QDialog):
     """A single free-text input with OK/Cancel -- reused for Ask AI and Suggest Command."""
 
@@ -588,6 +598,7 @@ class MainWindow(QMainWindow):
         self._pending_ask_question: str | None = None
         self._suggest_thread: QThread | None = None
         self._suggest_worker: _SuggestWorker | None = None
+        self._closing = False
         self.setWindowTitle("VisionAI")
 
         self._status_label = QLabel(self._runtime.state_machine.state.name)
@@ -702,9 +713,29 @@ class MainWindow(QMainWindow):
     def _quit_application(self) -> None:
         """Fully exit, bypassing the minimize-to-tray closeEvent behavior."""
 
+        if not self._prepare_close():
+            QTimer.singleShot(50, self._quit_application)
+            return
         app = QApplication.instance()
         if app is not None:
             app.quit()
+
+    def _prepare_close(self) -> bool:
+        """Cancel active work and defer destruction until all threads have exited."""
+
+        self._closing = True
+        self._pending_ask_question = None
+        self._ask_memory.clear()
+        if not any((
+            self._worker_thread, self._gesture_thread, self._ask_thread, self._suggest_thread
+        )):
+            return True
+        self.setEnabled(False)
+        self._runtime.operations.cancel_active_operation()
+        if self._gesture_cancellation is not None:
+            self._gesture_cancellation.cancel()
+        self._output.setPlainText("Stopping active work before closing...")
+        return False
 
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
@@ -724,6 +755,9 @@ class MainWindow(QMainWindow):
         if QSystemTrayIcon.isSystemTrayAvailable():
             event.ignore()
             self.hide()
+        elif not self._prepare_close():
+            event.ignore()
+            QTimer.singleShot(50, self.close)
         else:
             event.accept()
 
@@ -965,6 +999,7 @@ class MainWindow(QMainWindow):
         self._status_label.setText(self._runtime.state_machine.state.name)
 
     def _on_gesture_finished(self, confirmed: int) -> None:
+        _finish_thread(self._gesture_thread)
         self._gesture_thread = None
         self._gesture_worker = None
         self._gesture_cancellation = None
@@ -975,6 +1010,7 @@ class MainWindow(QMainWindow):
         self._refresh_history()
 
     def _on_gesture_failed(self, message: str) -> None:
+        _finish_thread(self._gesture_thread)
         self._gesture_thread = None
         self._gesture_worker = None
         self._gesture_cancellation = None
@@ -1023,6 +1059,7 @@ class MainWindow(QMainWindow):
         thread.start()
 
     def _on_ask_finished(self, message: str) -> None:
+        _finish_thread(self._ask_thread)
         self._ask_thread = None
         self._ask_worker = None
         self._ask_button.setEnabled(True)
@@ -1032,6 +1069,7 @@ class MainWindow(QMainWindow):
             self._pending_ask_question = None
 
     def _on_ask_failed(self, message: str) -> None:
+        _finish_thread(self._ask_thread)
         self._ask_thread = None
         self._ask_worker = None
         self._pending_ask_question = None
@@ -1042,6 +1080,7 @@ class MainWindow(QMainWindow):
         """Delete the Ask AI conversation history remembered for this session."""
 
         self._ask_memory.clear()
+        self._pending_ask_question = None
         self._output.setPlainText("Ask AI conversation memory cleared.")
 
     def show_suggest_command(self) -> None:
@@ -1075,8 +1114,11 @@ class MainWindow(QMainWindow):
         thread.start()
 
     def _on_suggest_proposed(self, phrase: str, summary: str) -> None:
+        _finish_thread(self._suggest_thread)
         self._suggest_thread = None
         self._suggest_worker = None
+        if self._closing:
+            return
         self._output.setPlainText(f"Proposed: {summary}")
         if self._ask_execute_confirmation(summary):
             self._start_suggest_worker(phrase=phrase)
@@ -1085,6 +1127,7 @@ class MainWindow(QMainWindow):
             self._output.setPlainText("Cancelled.")
 
     def _on_suggest_message(self, message: str) -> None:
+        _finish_thread(self._suggest_thread)
         self._suggest_thread = None
         self._suggest_worker = None
         self._suggest_button.setEnabled(True)
@@ -1093,6 +1136,7 @@ class MainWindow(QMainWindow):
         self._status_label.setText(self._runtime.state_machine.state.name)
 
     def _on_suggest_failed(self, message: str) -> None:
+        _finish_thread(self._suggest_thread)
         self._suggest_thread = None
         self._suggest_worker = None
         self._suggest_button.setEnabled(True)
@@ -1135,11 +1179,20 @@ class MainWindow(QMainWindow):
         return self._worker_thread is not None
 
     def _clear_worker(self) -> None:
+        _finish_thread(self._worker_thread)
         self._worker_thread = None
         self._worker = None
 
     def _on_worker_finished(self, outputs: list[EventBase]) -> None:
         self._clear_worker()
+
+        if self._closing:
+            for output in outputs:
+                if isinstance(output, ConfirmationRequest):
+                    self._runtime.orchestrator.cancel_pending_confirmation(output.id)
+                elif isinstance(output, PermissionRequest):
+                    self._runtime.orchestrator.cancel_pending_permission(output.id)
+            return
 
         confirmation_result = self._handle_confirmation(outputs)
         if confirmation_result is not None:
