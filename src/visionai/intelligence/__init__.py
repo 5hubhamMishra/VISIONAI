@@ -6,6 +6,7 @@ importing `visionai.intelligence` must never require the `intelligence`
 extra (the `anthropic` package) to be installed.
 """
 
+from visionai.intelligence.memory import ConversationMemory, ConversationTurn
 from visionai.intelligence.planner import suggest_command
 from visionai.intelligence.provider import (
     DeterministicFallbackProvider,
@@ -15,6 +16,8 @@ from visionai.intelligence.provider import (
 )
 
 __all__ = [
+    "ConversationMemory",
+    "ConversationTurn",
     "DeterministicFallbackProvider",
     "LLMProvider",
     "LLMQuery",

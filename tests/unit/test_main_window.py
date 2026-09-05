@@ -525,6 +525,85 @@ def test_main_window_ask_ai_cancel_does_nothing(qtbot: Any, monkeypatch: Any) ->
     assert window._output.toPlainText() == ""
 
 
+class _RecordingReplyProvider:
+    """Records every query text it receives; replies in a fixed sequence."""
+
+    def __init__(self, replies: list[str]) -> None:
+        self.received_texts: list[str] = []
+        self._replies = iter(replies)
+
+    def respond(self, query: Any) -> LLMReply:
+        self.received_texts.append(query.text)
+        return LLMReply(text=next(self._replies))
+
+
+def test_main_window_ask_ai_remembers_recent_turns_for_follow_up_questions(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    provider = _RecordingReplyProvider(["4", "6"])
+    monkeypatch.setattr("visionai.ui.main_window._build_llm_provider", lambda: provider)
+
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: "what is 2+2?")
+    qtbot.mouseClick(window._ask_button, Qt.MouseButton.LeftButton)
+    _wait_for_ask_complete(window, qtbot)
+    assert window._output.toPlainText() == "4"
+
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: "and 3+3?")
+    qtbot.mouseClick(window._ask_button, Qt.MouseButton.LeftButton)
+    _wait_for_ask_complete(window, qtbot)
+    assert window._output.toPlainText() == "6"
+
+    assert provider.received_texts == [
+        "what is 2+2?",
+        "User: what is 2+2?\nAssistant: 4\nUser: and 3+3?",
+    ]
+
+
+def test_main_window_clear_conversation_deletes_ask_ai_memory(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    provider = _RecordingReplyProvider(["4", "6"])
+    monkeypatch.setattr("visionai.ui.main_window._build_llm_provider", lambda: provider)
+
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: "what is 2+2?")
+    qtbot.mouseClick(window._ask_button, Qt.MouseButton.LeftButton)
+    _wait_for_ask_complete(window, qtbot)
+
+    qtbot.mouseClick(window._clear_conversation_button, Qt.MouseButton.LeftButton)
+    assert window._output.toPlainText() == "Ask AI conversation memory cleared."
+    assert window._ask_memory.turns == ()
+
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: "and 3+3?")
+    qtbot.mouseClick(window._ask_button, Qt.MouseButton.LeftButton)
+    _wait_for_ask_complete(window, qtbot)
+
+    assert provider.received_texts == ["what is 2+2?", "and 3+3?"]
+
+
+def test_main_window_ask_ai_failure_does_not_record_a_turn(qtbot: Any, monkeypatch: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    def _broken_provider() -> object:
+        raise ValueError("no key configured")
+
+    monkeypatch.setattr(window, "_prompt_for_text", lambda title, label: "what is 2+2?")
+    monkeypatch.setattr("visionai.ui.main_window._build_llm_provider", _broken_provider)
+    qtbot.mouseClick(window._ask_button, Qt.MouseButton.LeftButton)
+    _wait_for_ask_complete(window, qtbot)
+
+    assert window._ask_memory.turns == ()
+
+
 def test_main_window_suggest_command_executes_after_confirmation(
     qtbot: Any, monkeypatch: Any
 ) -> None:
@@ -656,6 +735,7 @@ def test_main_window_diagnostics_text_reports_environment_and_state(qtbot: Any) 
     assert "Voice input: not connected" in text
     assert "Camera/vision input: available via the Gesture Control button" in text
     assert "LLM provider: none" in text
+    assert "Ask AI conversation memory: 0 turn(s) retained this session" in text
 
 
 def test_main_window_diagnostics_button_opens_a_dialog(qtbot: Any, monkeypatch: Any) -> None:
@@ -991,6 +1071,7 @@ def test_main_window_tab_order_reaches_every_control_without_a_trap(qtbot: Any) 
         window._gesture_button,
         window._ask_button,
         window._suggest_button,
+        window._clear_conversation_button,
         window._output,
         window._history,
         window._command_input,
@@ -1010,6 +1091,7 @@ def test_main_window_tab_order_reverses_cleanly_with_shift_tab(qtbot: Any) -> No
     expected_reverse_order = [
         window._history,
         window._output,
+        window._clear_conversation_button,
         window._suggest_button,
         window._ask_button,
         window._gesture_button,

@@ -69,6 +69,7 @@ from visionai.core.events import (
     TranscriptEvent,
 )
 from visionai.intelligence import (
+    ConversationMemory,
     DeterministicFallbackProvider,
     LLMProvider,
     LLMQuery,
@@ -93,9 +94,11 @@ _ONBOARDING_TEXT = (
     "and Settings to change the log level. Gesture Control watches your webcam "
     "and dispatches recognized hand gestures through those same safety checks. "
     "Ask AI sends a question to a configured LLM provider (off by default) and "
-    "only shows the answer; Suggest Command asks the LLM to propose a command "
-    "and still asks you to confirm before running anything. This dialog only "
-    "shows once."
+    "only shows the answer, remembering recent questions/answers from this "
+    "session only (never saved to disk) so follow-up questions have context; "
+    "Clear Conversation deletes that memory. Suggest Command asks the LLM to "
+    "propose a command and still asks you to confirm before running anything. "
+    "This dialog only shows once."
 )
 
 if TYPE_CHECKING:
@@ -581,6 +584,8 @@ class MainWindow(QMainWindow):
         self._gesture_confirmed_count = 0
         self._ask_thread: QThread | None = None
         self._ask_worker: _AskWorker | None = None
+        self._ask_memory = ConversationMemory()
+        self._pending_ask_question: str | None = None
         self._suggest_thread: QThread | None = None
         self._suggest_worker: _SuggestWorker | None = None
         self.setWindowTitle("VisionAI")
@@ -620,6 +625,12 @@ class MainWindow(QMainWindow):
             "Ask the LLM to propose a command for free text, then ask before "
             "running it through the same policy and dispatcher as a typed command"
         )
+        self._clear_conversation_button = QPushButton("Clear Conversation")
+        self._clear_conversation_button.setAccessibleName("Clear Ask AI conversation memory")
+        self._clear_conversation_button.setToolTip(
+            "Delete the Ask AI conversation history remembered for this window session "
+            "(never persisted to disk)"
+        )
 
         self._output = QTextEdit()
         self._output.setReadOnly(True)
@@ -638,6 +649,7 @@ class MainWindow(QMainWindow):
         input_row.addWidget(self._gesture_button)
         input_row.addWidget(self._ask_button)
         input_row.addWidget(self._suggest_button)
+        input_row.addWidget(self._clear_conversation_button)
 
         result_label = QLabel("Result:")
         result_label.setBuddy(self._output)
@@ -664,6 +676,7 @@ class MainWindow(QMainWindow):
         self._gesture_button.clicked.connect(self.toggle_gesture_listening)
         self._ask_button.clicked.connect(self.show_ask_ai)
         self._suggest_button.clicked.connect(self.show_suggest_command)
+        self._clear_conversation_button.clicked.connect(self.clear_ask_conversation)
         self._refresh_history()
         self._command_input.setFocus()
 
@@ -855,6 +868,8 @@ class MainWindow(QMainWindow):
             "Camera/vision input: available via the Gesture Control button (needs a webcam)",
             "Speech/vision processing: local only (no cloud provider configured)",
             f"LLM provider: {get_settings().llm_provider}",
+            f"Ask AI conversation memory: {len(self._ask_memory.turns)} turn(s) "
+            "retained this session (never persisted; Clear Conversation deletes it)",
         ]
         return "\n".join(lines)
 
@@ -977,7 +992,13 @@ class MainWindow(QMainWindow):
         return text or None
 
     def show_ask_ai(self) -> None:
-        """Ask the configured LLM one question. Conversation only -- dispatches nothing."""
+        """Ask the configured LLM one question. Conversation only -- dispatches nothing.
+
+        Prior turns from this window session (if any) are prefixed onto the
+        outgoing question by `ConversationMemory.build_query_text()` -- the
+        LLM provider boundary itself still only ever sees one `LLMQuery`
+        text, never a separate history structure.
+        """
 
         if self._ask_thread is not None:
             return
@@ -985,9 +1006,10 @@ class MainWindow(QMainWindow):
         if text is None:
             return
 
+        self._pending_ask_question = text
         self._ask_button.setEnabled(False)
         thread = QThread(self)
-        worker = _AskWorker(text=text)
+        worker = _AskWorker(text=self._ask_memory.build_query_text(text))
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.finished.connect(self._on_ask_finished)
@@ -1005,12 +1027,22 @@ class MainWindow(QMainWindow):
         self._ask_worker = None
         self._ask_button.setEnabled(True)
         self._output.setPlainText(message)
+        if self._pending_ask_question is not None:
+            self._ask_memory.record(self._pending_ask_question, message)
+            self._pending_ask_question = None
 
     def _on_ask_failed(self, message: str) -> None:
         self._ask_thread = None
         self._ask_worker = None
+        self._pending_ask_question = None
         self._ask_button.setEnabled(True)
         self._output.setPlainText(message)
+
+    def clear_ask_conversation(self) -> None:
+        """Delete the Ask AI conversation history remembered for this session."""
+
+        self._ask_memory.clear()
+        self._output.setPlainText("Ask AI conversation memory cleared.")
 
     def show_suggest_command(self) -> None:
         """Ask the LLM to propose a command, then ask before dispatching it."""
