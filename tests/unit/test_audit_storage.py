@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from visionai.core.errors import StorageError
@@ -49,3 +51,40 @@ def test_jsonl_audit_sink_clear_is_a_noop_when_no_file_exists(tmp_path) -> None:
     sink.clear()
 
     assert sink.list() == ()
+
+
+def test_jsonl_audit_sink_record_raises_storage_error_on_write_failure(
+    tmp_path, monkeypatch
+) -> None:
+    path = tmp_path / "audit.jsonl"
+    sink = JsonlAuditSink(path)
+    original_open = Path.open
+
+    def _raise_for_target(self: Path, *args: object, **kwargs: object) -> object:
+        if self == path:
+            raise OSError("disk full")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", _raise_for_target)
+
+    with pytest.raises(StorageError, match="could not be written"):
+        sink.record(AuditEvent(category="policy", actor="system", summary="entry"))
+
+
+def test_jsonl_audit_sink_clear_raises_storage_error_on_unlink_failure(
+    tmp_path, monkeypatch
+) -> None:
+    path = tmp_path / "audit.jsonl"
+    path.write_text("{}\n", encoding="utf-8")
+    sink = JsonlAuditSink(path)
+    original_unlink = Path.unlink
+
+    def _raise_for_target(self: Path, *args: object, **kwargs: object) -> object:
+        if self == path:
+            raise OSError("permission denied")
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", _raise_for_target)
+
+    with pytest.raises(StorageError, match="could not be cleared"):
+        sink.clear()

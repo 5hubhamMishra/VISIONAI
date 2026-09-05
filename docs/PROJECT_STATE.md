@@ -11,6 +11,38 @@ verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
 
+2026-09-06 autonomous cycle (Linux sandbox, observability/audit.py coverage):
+started against local commit `10452d6` (the prior session's `capabilities/
+browser.py` coverage cycle); baseline verified clean and unchanged from the
+prior session's documented state before any work started (fresh `.venv312`
+built from `requirements/dev.txt` in a new container, again needing
+`libegl1`/`libopengl0`/`libportaudio2` via `apt-get` -- `libgl1` was already
+present -- before pytest-qt/sounddevice would import; Ruff clean; mypy clean
+for 54 files except the same sandbox-only `ctypes.windll` false positive
+every session shows; Bandit clean; pip-audit clean; pytest 503 tests -- 465
+passed, 28 failed, 10 skipped, 91% coverage -- all 28 failures confirmed by
+message to be the documented `WindowsLockStateAdapter` fail-closed pattern,
+not a regression, exactly matching the prior session's recorded result).
+The prior session's own report flagged `observability/audit.py` (92%
+covered, lines 47-48/67-68) as one of several remaining hardware-free
+coverage gaps. Confirmed it was a real gap, not incidental: `JsonlAuditSink.
+record()`'s and `.clear()`'s `OSError`-to-`StorageError` handling -- the
+durable audit log's own write- and delete-failure recovery paths -- had zero
+test coverage; only the read-failure path (`list()`'s malformed-line
+rejection) was already tested. This is security-relevant, not merely a
+coverage number: the audit sink is the durable record every dispatched
+capability writes to, and its failure-handling had never been exercised.
+Added two tests to `tests/unit/test_audit_storage.py`, monkeypatching
+`pathlib.Path.open`/`Path.unlink` (scoped to the test's own target path only,
+so no other Path usage in the test run is affected) to force an `OSError`,
+mirroring the pattern used for `JsonPermissionStore`'s write-failure test in
+an earlier session. No application code changed -- this was a pure test
+gap, not a bug. `observability/audit.py` reached 100% line coverage (was
+92%). Full verification after the change: 505 tests (467 passed, 28 failed
+-- identical failing-test names to the pre-change baseline, confirming no
+regressions -- 10 skipped), 91% coverage, Ruff/mypy(one known false
+positive)/Bandit/pip-audit all clean.
+
 Latest local Windows verification (2026-09-05 cycle, commit bc68507): 451 tests
 passed, 91% coverage, Ruff, mypy (53 files), Bandit, and scoped dependency audit clean. See
 [the cycle report](AUTONOMOUS_HOUR_2026-09-05.md) for verification scope,
@@ -692,7 +724,14 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `capabilities/browser.py` coverage
+- 2026-09-06, Linux sandbox (this session, `observability/audit.py` coverage
+  cycle): 505 tests -- 467 passed, 28 failed (all the documented
+  `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
+  regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
+  source files except the one documented sandbox-only `ctypes.windll` false
+  positive, Bandit clean, pip-audit clean. `observability/audit.py` now at
+  100% line coverage (was 92%).
+- 2026-09-06, Linux sandbox (prior session, `capabilities/browser.py` coverage
   cycle): 503 tests -- 465 passed, 28 failed (all the documented
   `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
   regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
@@ -716,4 +755,4 @@ cd visionai
 
 ## Last Updated
 
-2026-09-06 (Linux sandbox coverage cycle: `capabilities/browser.py`)
+2026-09-06 (Linux sandbox coverage cycle: `observability/audit.py`)
