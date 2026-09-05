@@ -232,12 +232,12 @@ def _run_gesture_listen(
                 try:
                     return await listening_loop.run()
                 finally:
-                    if voice_runner is not None:
-                        transcript = await voice_runner.release()
-                        if transcript is not None and transcript.text.strip():
-                            print(f"Recognized command: {transcript.text.strip()}")
-                    runtime.input_bus.close()
-                    await consumer
+                    try:
+                        if voice_runner is not None:
+                            voice_runner.cancel()
+                    finally:
+                        runtime.input_bus.close()
+                        await consumer
                     while runtime.output_bus.size:
                         output = await runtime.output_bus.next_event()
                         if isinstance(output, ActionResult):

@@ -286,12 +286,11 @@ class _GestureListenWorker(QObject):
         try:
             return await listening_loop.run()
         finally:
-            # Mirrors app._run_gesture_listen's finally block: if the session
-            # ends some other way (e.g. the button cancels it) while voice
-            # capture is still open, send what was captured rather than
-            # discarding it silently.
-            if self._voice_runner is not None:
-                await self._send_voice_capture()
+            # Only the explicit open-palm send gesture submits speech.
+            # Cancellation, shutdown, and camera failures discard it.
+            voice_runner, self._voice_runner = self._voice_runner, None
+            if voice_runner is not None:
+                voice_runner.cancel()
 
     async def _dispatch(self, event: EventBase) -> ActionResult | None:
         """Run one event through the real orchestrator and return its result, if any.

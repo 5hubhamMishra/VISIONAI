@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
+from math import isfinite
 from typing import Protocol
 
 import numpy as np
@@ -103,35 +104,75 @@ class MicrophoneCapture:
         *,
         device: int | None = None,
         sample_rate: int = DEFAULT_SAMPLE_RATE,
+        max_duration_seconds: float = 120.0,
         stream_factory: StreamFactory = _default_stream_factory,
     ) -> None:
+        if isinstance(sample_rate, bool) or not isinstance(sample_rate, int) or sample_rate <= 0:
+            raise ValueError("sample rate must be a positive integer")
+        if not isfinite(max_duration_seconds) or max_duration_seconds <= 0:
+            raise ValueError("maximum capture duration must be finite and positive")
+        self._max_samples = int(sample_rate * max_duration_seconds)
+        if self._max_samples < 1:
+            raise ValueError("maximum capture duration must allow at least one sample")
         self._device = device
         self._sample_rate = sample_rate
         self._stream_factory = stream_factory
         self._stream: AudioStream | None = None
         self._frames: list[np.ndarray] = []
+        self._sample_count = 0
+        self._overflowed = False
+
+    def _on_audio(self, frame: np.ndarray) -> None:
+        if self._overflowed:
+            return
+        self._sample_count += frame.size
+        if self._sample_count > self._max_samples:
+            self._overflowed = True
+            self._frames.clear()
+        else:
+            self._frames.append(frame)
 
     def start(self) -> None:
         """Begin recording; frames accumulate in memory until stop()."""
 
         if self._stream is not None:
             raise MicrophoneCaptureError("capture already in progress")
-        self._frames = []
-        self._stream = self._stream_factory(self._sample_rate, self._device, self._frames.append)
-        self._stream.start()
+        self._frames.clear()
+        self._sample_count = 0
+        self._overflowed = False
+        try:
+            self._stream = self._stream_factory(self._sample_rate, self._device, self._on_audio)
+            self._stream.start()
+        except BaseException:
+            try:
+                if self._stream is not None:
+                    self._stream.close()
+            finally:
+                self._stream = None
+                self._frames.clear()
+            raise
 
     def stop(self) -> np.ndarray:
         """End recording and return the captured samples as one array."""
 
         if self._stream is None:
             raise MicrophoneCaptureError("no capture in progress")
-        self._stream.stop()
-        self._stream.close()
-        self._stream = None
-        if not self._frames:
-            return np.empty((0,), dtype=np.float32)
-        audio: np.ndarray = np.reshape(np.concatenate(self._frames, axis=0), -1)
-        return audio
+        try:
+            try:
+                self._stream.stop()
+            finally:
+                self._stream.close()
+            if self._overflowed:
+                raise MicrophoneCaptureError(
+                    "Recording exceeded the capture limit; please record a shorter command."
+                )
+            if not self._frames:
+                return np.empty((0,), dtype=np.float32)
+            audio: np.ndarray = np.reshape(np.concatenate(self._frames, axis=0), -1)
+            return audio
+        finally:
+            self._stream = None
+            self._frames.clear()
 
 
 def default_microphone_capture(

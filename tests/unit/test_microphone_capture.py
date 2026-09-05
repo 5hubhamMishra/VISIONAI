@@ -107,6 +107,30 @@ async def test_release_after_release_is_a_noop() -> None:
     assert bus.size == 1
 
 
+async def test_cancel_discards_recording_without_transcription_and_allows_retry() -> None:
+    bus = EventBus(max_size=10)
+    capture = MicrophoneCapture(stream_factory=_factory([np.array([0.4], dtype=np.float32)]))
+    transcribed: list[bool] = []
+
+    def transcribe(audio: np.ndarray) -> str:
+        transcribed.append(True)
+        return "open notepad"
+
+    runner = MicrophonePushToTalk(
+        input_adapter=InputAdapter(bus), capture=capture, transcribe=transcribe
+    )
+    assert not runner.cancel()
+    runner.press()
+    assert runner.cancel()
+    assert await runner.release() is None
+    assert transcribed == []
+    assert bus.size == 0
+    assert capture._frames == []
+    assert runner.press()
+    assert await runner.release() is not None
+    assert transcribed == [True]
+
+
 def test_capture_defaults_to_saved_microphone_factory(monkeypatch) -> None:
     expected = MicrophoneCapture(stream_factory=_factory([]))
     monkeypatch.setattr(

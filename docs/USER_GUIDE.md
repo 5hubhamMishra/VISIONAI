@@ -8,6 +8,14 @@ Clearing the Ask AI conversation during a request also prevents that pending
 turn from being added back when its response arrives. It cannot retract a
 question already sent to a configured provider.
 
+Cancelling gesture listening (the Stop Gesture Control button, Ctrl+C, or
+application shutdown) discards unfinished speech. Show an open palm to send
+a recorded voice command explicitly. Captured audio buffers are released
+after stop or a device error; you can retry capture without restarting the
+app. The default retention limit is 120 seconds of samples. Exceeding it
+discards the entire recording and reports an error when released; the
+microphone stream remains open until stopped. No raw audio is saved to disk.
+
 VisionAI is not ready for end-user operation yet. Real voice input and recognized gestures can each trigger only the small command map below; they do not provide arbitrary system control.
 
 There are two ways to run a command today: a console entry point, and a minimal desktop window (the first Phase 2 UI slice). Both drive the exact same policy-gated capabilities -- neither has any execution authority the other lacks.

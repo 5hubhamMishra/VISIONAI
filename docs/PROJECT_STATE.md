@@ -2,8 +2,12 @@
 
 ## Current Phase
 
-Latest local Windows verification (2026-09-05 autonomous hour): 387 tests
-passed, 88% coverage, Ruff and mypy clean. Desktop result/error handling now
+Latest local Windows verification (2026-09-05 autonomous hour): 398 tests
+passed, 89% coverage, Ruff, mypy, Bandit, and requirements-scoped audit clean.
+Microphone start/stop failures release buffers and permit retry. Retained
+capture has a 120-second default sample budget; overlong recordings are
+discarded. Cancelling gesture listening discards unfinished speech rather
+than dispatching it. Desktop result/error handling now
 joins completed workers before releasing them; normal close and tray Quit
 defer destruction while active workers finish. Clearing Ask AI memory during
 a request no longer restores deleted context when the answer arrives. The

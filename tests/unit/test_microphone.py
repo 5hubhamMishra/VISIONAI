@@ -54,6 +54,59 @@ def test_start_then_stop_returns_concatenated_frames() -> None:
     audio = capture.stop()
 
     assert audio.tolist() == pytest.approx([0.1, 0.2, 0.3])
+    assert capture._frames == []
+
+
+@pytest.mark.parametrize("stage", ["start", "stop", "close"])
+def test_stream_failure_releases_audio_and_allows_retry(stage: str) -> None:
+    closed: list[bool] = []
+
+    class BrokenStream(_FakeStream):
+        def start(self) -> None:
+            super().start()
+            if stage == "start":
+                raise RuntimeError("start failed")
+
+        def stop(self) -> None:
+            if stage == "stop":
+                raise RuntimeError("stop failed")
+
+        def close(self) -> None:
+            closed.append(True)
+            if stage == "close":
+                raise RuntimeError("close failed")
+
+    capture = MicrophoneCapture(stream_factory=lambda rate, device, callback: BrokenStream(
+        callback, [np.array([0.5], dtype=np.float32)]
+    ))
+    with pytest.raises(RuntimeError, match=f"{stage} failed"):
+        capture.start()
+        capture.stop()
+    assert closed == [True]
+    assert capture._frames == []
+    capture._stream_factory = _factory([])
+    capture.start()
+    assert capture.stop().size == 0
+
+
+def test_overlong_capture_discards_all_audio_instead_of_transcribing_a_prefix() -> None:
+    capture = MicrophoneCapture(
+        sample_rate=4, max_duration_seconds=1,
+        stream_factory=_factory([np.ones(4), np.ones(1), np.ones(4)]),
+    )
+    capture.start()
+    assert capture._frames == []
+    with pytest.raises(MicrophoneCaptureError, match="exceeded"):
+        capture.stop()
+    capture._stream_factory = _factory([np.ones(4)])
+    capture.start()
+    assert capture.stop().size == 4
+
+
+@pytest.mark.parametrize("duration", [0, -1, float("nan"), float("inf")])
+def test_capture_rejects_invalid_duration_limits(duration: float) -> None:
+    with pytest.raises(ValueError):
+        MicrophoneCapture(max_duration_seconds=duration)
 
 
 def test_stop_with_no_frames_captured_returns_empty_array() -> None:

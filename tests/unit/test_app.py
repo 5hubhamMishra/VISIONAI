@@ -260,6 +260,48 @@ def test_app_gesture_listen_reads_nothing_when_already_cancelled(monkeypatch, ca
     assert "Stopped. Confirmed 0 gesture(s)." in output
 
 
+@pytest.mark.parametrize("desktop", [False, True])
+def test_cancelled_gesture_session_discards_pending_voice(monkeypatch, desktop: bool) -> None:
+    token = CancellationToken()
+    fist = GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9)
+    adapter = _CancelWhenExhausted(StaticLandmarkAdapter(candidates=[fist, fist]), token, 3)
+    times = iter([0.0, 0.5, 0.6])
+    recognizer = TemporalGestureRecognizer(clock=lambda: next(times))
+    launched: list[str] = []
+    transcribed: list[bool] = []
+    stopped: list[bool] = []
+    runtime = build_runtime(
+        launcher=launched.append, lock_state=StaticLockStateAdapter(locked=False)
+    )
+
+    class Capture(_FakeMicrophoneCapture):
+        def stop(self) -> None:
+            stopped.append(True)
+
+    def transcribe(audio: object) -> str:
+        transcribed.append(True)
+        return "open notepad"
+
+    module = "visionai.ui.main_window" if desktop else "visionai.app"
+    monkeypatch.setattr(f"{module}._build_microphone_capture", Capture)
+    monkeypatch.setattr(f"{module}._build_transcriber", lambda: transcribe)
+    if desktop:
+        from visionai.ui.main_window import _GestureListenWorker
+
+        worker = _GestureListenWorker(
+            runtime=runtime, landmark_adapter=adapter, recognizer=recognizer, cancellation=token
+        )
+        errors: list[str] = []
+        worker.failed.connect(errors.append)
+        worker.run()
+        assert errors == []
+    else:
+        assert app._run_gesture_listen(runtime, adapter, recognizer, token) == 1
+    assert stopped == [True]
+    assert transcribed == []
+    assert launched == []
+
+
 def test_app_gesture_listen_closed_fist_starts_and_open_palm_sends_voice_command(
     monkeypatch, capsys
 ) -> None:

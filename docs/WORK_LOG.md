@@ -1,5 +1,22 @@
 # Work Log
 
+## 2026-09-05 autonomous hour: microphone recovery and cancellation
+
+- Reproduced raw buffers retained after stop and failure paths that left the
+  capture unusable. Start failure now attempts close; stop always attempts
+  close; both release internal audio references and permit a new capture.
+- Added a finite sample budget (120 seconds by default, constructor-tunable).
+  Overflow discards the whole recording and reports an error on release;
+  no truncated speech prefix is submitted. This bounds retained audio, not
+  physical device uptime; stop/release still closes the stream.
+- Added MicrophonePushToTalk.cancel(). Reproduced both CLI and desktop
+  gesture-session cancellation transcribing and launching an unfinished
+  command. Both now discard it; the explicit open-palm send remains tested.
+- Focused integration: 110 passed. Full verify.ps1: 398 passed, 89% coverage,
+  Ruff, mypy (52 files), Bandit, and requirements-scoped pip-audit passed.
+- Verified hosted CI for e12d470: success, run 33960773301. No microphone
+  recording or live speech accuracy claim was needed for these regressions.
+
 ## 2026-09-05 autonomous hour: desktop thread lifetime and privacy
 
 - Integrated remote CI/memory commits through merge 3ca75c0, retaining the

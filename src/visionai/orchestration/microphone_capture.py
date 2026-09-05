@@ -72,3 +72,12 @@ class MicrophonePushToTalk:
             confidence=self._confidence,
             language=self._language,
         )
+
+    def cancel(self) -> bool:
+        """Stop and discard a recording without transcribing or publishing it."""
+
+        if not self._recording:
+            return False
+        self._recording = False
+        self._capture.stop()
+        return True
