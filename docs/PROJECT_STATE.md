@@ -2,6 +2,35 @@
 
 ## Current Phase
 
+2026-09-05 autonomous cycle (Linux sandbox, UrlPolicy coverage): baseline
+verified clean and unchanged from the prior session's documented sandbox
+state before any work started (ruff/bandit/pip-audit clean; mypy clean for
+52 files except the same sandbox-only `ctypes.windll` false positive every
+session shows; pytest 386 passed/25 failed/1 skipped, the same exclusively
+`WindowsLockStateAdapter` fail-closed pattern, not a regression; this
+session's own fresh `.venv312` again needed `libegl1`/`libopengl0`/
+`libportaudio2` installed via `apt-get` before the suite would collect --
+`libgl1` was already present -- container-only setup gaps, not a Python
+dependency change). Scanned the coverage report for a real, narrow,
+hardware-free gap and found one in `visionai.policy.url_validation.
+UrlPolicy` -- 85% covered, with `validate_redirect()` (the redirect-host-
+match check) effectively untested: its one existing test called it with a
+redirect target that was not itself allowlisted, so the call always failed
+one line earlier inside `normalize_url()`'s own allowlist check and never
+reached the host-comparison branch the method exists to test. Also found
+`_normalize_host()`'s missing-hostname and IDNA-encoding-failure branches,
+`normalize_url()`'s own control-character rejection, and
+`build_search_url()`'s overly-long-query rejection all untested. Added six
+new tests to `tests/unit/test_url_validation.py` covering all five gaps,
+including a positive same-host `validate_redirect()` case; split the old
+test that bundled an unrelated host-confusion check with the ineffective
+redirect assertion into one single-purpose test. No application code
+changed -- this was a pure test gap, not a bug. `policy/url_validation.py`
+reached 100% line coverage (was 85%). Full verification after the change:
+418 tests (392 passed, 25 failed -- identical failing-test names to the
+pre-change baseline, confirming no regressions -- 1 skipped), 89% coverage,
+ruff/mypy(one known false positive)/bandit/pip-audit all clean.
+
 2026-09-05 autonomous cycle (Linux sandbox, policy engine coverage): baseline
 verified clean and unchanged from the prior session's documented sandbox
 state before any work started (ruff/bandit/pip-audit clean; mypy clean for
@@ -357,10 +386,10 @@ cd visionai
 
 ## Last Verification Result
 
-- Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libgl1`/`libopengl0` (headless `pytest-qt` could not import `QtGui` at all -- `ImportError: libEGL.so.1`) and `libportaudio2` (`sounddevice`'s real-backend smoke test raised `OSError: PortAudio library not found`); both were installed via `apt-get` before the suite would run to completion. Neither is a Python/project dependency change -- both are container-image setup gaps, not application code.
+- Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libopengl0`/`libportaudio2` (`libgl1` was already present) -- headless `pytest-qt` could not import `QtGui` at all without `libEGL.so.1`, and `sounddevice`'s real-backend smoke test raised `OSError: PortAudio library not found` -- both were installed via `apt-get` before the suite would run to completion. Neither is a Python/project dependency change -- both are container-image setup gaps, not application code.
 - Ruff: passed (whole repo)
 - mypy: passed for 52 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing).
-- pytest: 412 tests total (8 more than the prior session's 404 -- 8 new in `test_policy.py` covering `PolicyEngine.evaluate()`'s platform-mismatch, prohibited-capability, and INTEGER/NUMBER/BOOLEAN argument-type branches; this run did not otherwise add/remove tests). In this Linux sandbox: 386 passed, 25 failed, 1 skipped, 89% coverage -- this session's baseline check (before any change) showed the identical 25 failures, all the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/policy/engine.py` (this session's newly-tested module) has 100% line coverage, confirmed directly in the whole-suite report, up from 93% at session start.
+- pytest: 418 tests total (6 more than the prior session's 412 -- `test_url_validation.py` gained 6 net tests: 7 new, covering `UrlPolicy.validate_redirect()`'s host-match/host-change branches plus four other previously-untested edge cases, minus 1 old test removed when it was split into two single-purpose tests; no other test file changed). In this Linux sandbox: 392 passed, 25 failed, 1 skipped, 89% coverage -- this session's baseline check (before any change) showed the identical 25 failures, all the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/policy/url_validation.py` (this session's newly-tested module) has 100% line coverage, confirmed directly in the whole-suite report, up from 85% at session start.
 - Bandit: passed (whole repo, `src`)
 - pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv)
 

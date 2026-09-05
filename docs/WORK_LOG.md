@@ -1,5 +1,61 @@
 # Work Log
 
+## 2026-09-05 autonomous cycle: UrlPolicy redirect and edge-case test coverage (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`
+  (already up to date at `e613787`), read the docs and recent git log, built a
+  Python 3.12 virtualenv from `requirements/dev.txt`, installed the headless
+  Qt/PortAudio system libraries (`libegl1`, `libopengl0`, `libportaudio2` --
+  `libgl1` was already present -- a fresh container each run, so this setup
+  step recurs), and ran the baseline verification suite before touching
+  anything. Baseline matched the documented sandbox state exactly:
+  ruff/bandit/pip-audit clean, mypy clean except the known `ctypes.windll`
+  false positive, pytest 386 passed/25 failed/1 skipped, 89% coverage --
+  reproduced one failure directly (`test_app_runs_a_wake_word_text_command`)
+  to confirm it is still the same `WindowsLockStateAdapter` fail-closed
+  pattern every prior sandbox session has documented, not a regression.
+- Checked `docs/PROJECT_STATE.md`'s Approved Next Tasks: every remaining
+  scoped option under item 5 (LLM clarification, a local/offline provider, a
+  live prompt-injection suite) needs either a human product decision or real
+  network/hardware access this sandbox does not have, and items 2-4 need live
+  Windows/hardware verification. Scanned the coverage report for a real gap
+  in existing, already-shipped logic instead, the same approach prior
+  sandbox sessions used successfully.
+- Found a genuine gap in `visionai.policy.url_validation.UrlPolicy`: 85%
+  covered, and the missing lines were not incidental. `validate_redirect()`
+  -- the method that enforces a redirect must land on the same host it
+  started from -- had a test that called it, but the test's redirect target
+  was not itself allowlisted, so it always failed one line earlier inside
+  `normalize_url()`'s own allowlist check and never actually exercised the
+  host-comparison branch (`original_host != redirect_host`) the method
+  exists for; a real regression to that comparison would have shipped with
+  nothing to catch it. `_normalize_host()`'s "host is required" branch (an
+  empty/missing hostname), its IDNA-encoding-failure branch (a host label
+  too long for `str.encode("idna")` to represent), `normalize_url()`'s own
+  control-character rejection, and `build_search_url()`'s overly-long-query
+  rejection were also all untested.
+- Added six new tests to `tests/unit/test_url_validation.py`: two for
+  `validate_redirect()` (a redirect to a different, but still allowlisted,
+  host is rejected with "redirect host changed"; a same-host redirect
+  succeeds and returns the normalized URL), plus one each for the four
+  previously-untested branches above. Split the old combined test (which
+  bundled an unrelated host-confusion check with the ineffective redirect
+  assertion) into a single-purpose `test_url_policy_rejects_host_confusion`
+  so each test now proves one thing. No application code changed -- this was
+  a pure test gap, not a bug. `policy/url_validation.py` reached 100% line
+  coverage (was 85%).
+- Full verification after the change: 418 tests (392 passed, 25 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 1 skipped), 89% coverage (unchanged at the whole-repo
+  rounding, since `url_validation.py` is a small module), ruff/mypy(one known
+  false positive)/bandit/pip-audit all clean.
+- Next task: the same set of remaining Approved Next Tasks options still
+  apply (clarification is a product decision; local/offline provider and
+  live prompt-injection need real network/hardware); another well-scoped
+  option for a future sandbox session is `policy/rate_limit.py` (83%
+  covered, three untested branches) or `capabilities/media.py` (85%
+  covered).
+
 ## 2026-09-05 autonomous cycle: PolicyEngine argument-type and defense-in-depth test coverage (Linux sandbox)
 
 - Followed the standing protocol in a fresh sandbox container: pulled `main`
