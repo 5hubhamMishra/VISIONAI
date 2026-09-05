@@ -1,5 +1,76 @@
 # Work Log
 
+## 2026-09-05 autonomous cycle: PolicyEngine argument-type and defense-in-depth test coverage (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`
+  (already up to date at `86a547d`), read the docs and recent git log, built
+  a Python 3.12 virtualenv from `requirements/dev.txt`, installed the
+  headless Qt/PortAudio system libraries (`libegl1`, `libgl1`, `libopengl0`,
+  `libportaudio2` -- a fresh container each run, so this setup step recurs),
+  and ran the baseline verification suite before touching anything. Baseline
+  matched the documented sandbox state exactly: ruff/bandit/pip-audit clean,
+  mypy clean except the known `ctypes.windll` false positive, pytest 378
+  passed/25 failed/1 skipped, 88% coverage -- all 25 failures confirmed by
+  reproducing one directly (`test_app_runs_browser_search`, message "mutating
+  actions are blocked while the screen is locked") to be the same
+  `WindowsLockStateAdapter` fail-closed pattern every prior sandbox session
+  has documented, not a regression.
+- Checked `docs/PROJECT_STATE.md`'s Approved Next Tasks first, per protocol:
+  every remaining scoped option under item 5 (LLM clarification, a
+  local/offline provider, a live prompt-injection suite) needs either a human
+  product decision or real network/hardware access this sandbox does not
+  have, and items 2-4 need live Windows/hardware verification. Rather than
+  inventing new scope, scanned the coverage report for a real gap in
+  existing, already-shipped logic instead -- the same approach the two prior
+  sandbox sessions used successfully.
+- Found `visionai.policy.engine.PolicyEngine.evaluate()` -- the deterministic
+  policy gate every capability dispatch passes through -- at only 93%
+  coverage, and the missing lines were not incidental: they were whole
+  branches with zero test coverage. The platform-mismatch rejection had none.
+  The prohibited-capability rejection (`evaluate()`'s own independent check,
+  separate from `CapabilityRegistry.register()`'s already-tested refusal to
+  register a `PROHIBITED` manifest in the first place -- genuine defense in
+  depth, not a duplicate check) had none. Three of the four argument-type
+  branches in `_first_argument_error()` -- `INTEGER`, `NUMBER`, `BOOLEAN` --
+  had none; only `STRING` was tested, and no built-in capability manifest
+  currently declares a non-`STRING` parameter, but `ParameterType` is public
+  schema surface a future capability will use, so this validation logic
+  guards a real future attack surface it just has not been exercised yet.
+- Added eight tests to `tests/unit/test_policy.py`: unsupported-platform
+  rejection; the prohibited-capability defense-in-depth branch (registered a
+  normal manifest, then used `monkeypatch` to make `registry.get` return a
+  `model_copy`-mutated `PROHIBITED` copy of it -- the real registry cannot
+  reach this state through its own public API, so this is the only way to
+  exercise `evaluate()`'s own check directly; the `model_copy` technique
+  mirrors `test_capability_registry.py`'s existing use of it for the same
+  reason); wrong-type rejection for `INTEGER`/`NUMBER`/`BOOLEAN` individually;
+  a targeted regression test for a real Python subtlety the code already
+  handles correctly but had never been proven to -- `bool` is a subclass of
+  `int`, and both the `INTEGER` and `NUMBER` checks deliberately exclude it
+  with a separate `isinstance(value, bool)` clause, so a stray `True`/`False`
+  is never silently accepted as a numeric argument; and one positive-path
+  test proving a fully valid `INTEGER`/`NUMBER`/`BOOLEAN` argument set still
+  passes. No application code changed -- `policy/engine.py`'s logic was
+  already correct; this closes a test gap, not a bug.
+- Files changed: `tests/unit/test_policy.py`, `docs/PROJECT_STATE.md`,
+  `docs/WORK_LOG.md`. No application/production code changed.
+- Commands/tests run: `ruff check .` (clean); `mypy src` (clean except the
+  known sandbox-only false positive); `pytest --cov=src/visionai
+  --cov-report=term-missing` (412 tests: 386 passed, 25 failed -- identical
+  by name to the pre-change baseline, confirming no regressions -- 1
+  skipped, 89% coverage, up from 88%; `policy/engine.py` at 100% line
+  coverage, up from 93%); `bandit -q -r src` (clean); `pip-audit -r
+  requirements/base.txt -r requirements/dev.txt` (no known vulnerabilities).
+- Next task: this closes a real coverage gap in a security-critical module
+  but adds no new capability. Approved Next Tasks item 5's remaining scoped
+  options still need a human product/design decision (clarification) or
+  real hardware/network access this sandbox lacks (local/offline provider,
+  live prompt-injection suite). A future sandbox session should keep mining
+  coverage gaps in other policy/validation modules (e.g. `policy/
+  url_validation.py` at 85%, `policy/rate_limit.py` at 83%,
+  `observability/audit.py` at 92%) or documentation reconciliation, or get
+  a human decision to unblock the remaining Phase 6 options.
+
 ## 2026-09-05 autonomous cycle: KeyringSecretStore write-path test coverage (Linux sandbox)
 
 - Followed the standing protocol in a fresh sandbox container: pulled `main`

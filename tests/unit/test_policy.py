@@ -169,6 +169,164 @@ def test_unrelated_confirmation_does_not_authorize_request() -> None:
     assert decision.requires_confirmation is True
 
 
+def test_policy_rejects_unsupported_platform() -> None:
+    registry = CapabilityRegistry([_open_site_manifest()])
+    engine = PolicyEngine(registry)
+    request = ActionRequest(
+        capability_id="browser.open_site",
+        arguments={"url": "https://example.com"},
+        risk_level=RiskLevel.REVERSIBLE,
+    )
+
+    decision = engine.evaluate(request, PolicyContext(platform="linux"))
+
+    assert decision.allowed is False
+    assert decision.reason == "capability is not supported on this platform"
+
+
+def test_policy_rejects_prohibited_capability_as_defense_in_depth(monkeypatch) -> None:
+    # CapabilityRegistry.register() already refuses to register a PROHIBITED
+    # manifest, so this branch cannot be reached through the real registry.
+    # It exists as a second, independent gate in PolicyEngine.evaluate()
+    # itself and is worth proving directly rather than trusting the registry
+    # alone to keep a prohibited capability from ever being evaluated.
+    registry = CapabilityRegistry([_open_site_manifest()])
+    prohibited = _open_site_manifest().model_copy(update={"risk_level": RiskLevel.PROHIBITED})
+    monkeypatch.setattr(registry, "get", lambda capability_id: prohibited)
+    engine = PolicyEngine(registry)
+    request = ActionRequest(
+        capability_id="browser.open_site",
+        arguments={"url": "https://example.com"},
+        risk_level=RiskLevel.REVERSIBLE,
+    )
+
+    decision = engine.evaluate(request, PolicyContext())
+
+    assert decision.allowed is False
+    assert decision.reason == "prohibited capability"
+
+
+def _numeric_manifest() -> CapabilityManifest:
+    return CapabilityManifest(
+        id="media.set_volume",
+        description="Set the system volume.",
+        parameters={
+            "level": ParameterSpec(
+                type=ParameterType.INTEGER,
+                required=True,
+                description="Target volume level.",
+            ),
+            "fade_seconds": ParameterSpec(
+                type=ParameterType.NUMBER,
+                required=True,
+                description="Fade duration in seconds.",
+            ),
+            "mute": ParameterSpec(
+                type=ParameterType.BOOLEAN,
+                required=True,
+                description="Whether to mute instead.",
+            ),
+        },
+        risk_level=RiskLevel.REVERSIBLE,
+        rate_limit_per_minute=10,
+        timeout_seconds=5,
+        idempotency=IdempotencyMode.NON_IDEMPOTENT,
+        audit_category="media",
+        handler_id="media.set_volume",
+    )
+
+
+def test_policy_rejects_wrong_integer_argument_type() -> None:
+    registry = CapabilityRegistry([_numeric_manifest()])
+    engine = PolicyEngine(registry)
+    request = ActionRequest(
+        capability_id="media.set_volume",
+        arguments={"level": "loud", "fade_seconds": 1.0, "mute": False},
+        risk_level=RiskLevel.REVERSIBLE,
+    )
+
+    decision = engine.evaluate(request, PolicyContext())
+
+    assert decision.allowed is False
+    assert decision.reason == "argument has wrong type: level"
+
+
+def test_policy_rejects_bool_for_integer_argument() -> None:
+    # bool is a subclass of int in Python; a stray True/False must not be
+    # silently accepted as a valid integer argument.
+    registry = CapabilityRegistry([_numeric_manifest()])
+    engine = PolicyEngine(registry)
+    request = ActionRequest(
+        capability_id="media.set_volume",
+        arguments={"level": True, "fade_seconds": 1.0, "mute": False},
+        risk_level=RiskLevel.REVERSIBLE,
+    )
+
+    decision = engine.evaluate(request, PolicyContext())
+
+    assert decision.allowed is False
+    assert decision.reason == "argument has wrong type: level"
+
+
+def test_policy_rejects_wrong_number_argument_type() -> None:
+    registry = CapabilityRegistry([_numeric_manifest()])
+    engine = PolicyEngine(registry)
+    request = ActionRequest(
+        capability_id="media.set_volume",
+        arguments={"level": 5, "fade_seconds": "fast", "mute": False},
+        risk_level=RiskLevel.REVERSIBLE,
+    )
+
+    decision = engine.evaluate(request, PolicyContext())
+
+    assert decision.allowed is False
+    assert decision.reason == "argument has wrong type: fade_seconds"
+
+
+def test_policy_rejects_bool_for_number_argument() -> None:
+    registry = CapabilityRegistry([_numeric_manifest()])
+    engine = PolicyEngine(registry)
+    request = ActionRequest(
+        capability_id="media.set_volume",
+        arguments={"level": 5, "fade_seconds": True, "mute": False},
+        risk_level=RiskLevel.REVERSIBLE,
+    )
+
+    decision = engine.evaluate(request, PolicyContext())
+
+    assert decision.allowed is False
+    assert decision.reason == "argument has wrong type: fade_seconds"
+
+
+def test_policy_rejects_wrong_boolean_argument_type() -> None:
+    registry = CapabilityRegistry([_numeric_manifest()])
+    engine = PolicyEngine(registry)
+    request = ActionRequest(
+        capability_id="media.set_volume",
+        arguments={"level": 5, "fade_seconds": 1.0, "mute": "yes"},
+        risk_level=RiskLevel.REVERSIBLE,
+    )
+
+    decision = engine.evaluate(request, PolicyContext())
+
+    assert decision.allowed is False
+    assert decision.reason == "argument has wrong type: mute"
+
+
+def test_policy_accepts_valid_numeric_and_boolean_arguments() -> None:
+    registry = CapabilityRegistry([_numeric_manifest()])
+    engine = PolicyEngine(registry)
+    request = ActionRequest(
+        capability_id="media.set_volume",
+        arguments={"level": 5, "fade_seconds": 1.5, "mute": False},
+        risk_level=RiskLevel.REVERSIBLE,
+    )
+
+    decision = engine.evaluate(request, PolicyContext())
+
+    assert decision.allowed is True
+
+
 def test_policy_can_check_rate_limit_without_consuming_it() -> None:
     registry = CapabilityRegistry([_rate_limited_manifest()])
     limiter = FixedWindowRateLimiter(clock=lambda: 100.0)

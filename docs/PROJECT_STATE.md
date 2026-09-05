@@ -2,6 +2,51 @@
 
 ## Current Phase
 
+2026-09-05 autonomous cycle (Linux sandbox, policy engine coverage): baseline
+verified clean and unchanged from the prior session's documented sandbox
+state before any work started (ruff/bandit/pip-audit clean; mypy clean for
+52 files except the same sandbox-only `ctypes.windll` false positive every
+session shows; pytest 378 passed/25 failed/1 skipped, the same exclusively
+`WindowsLockStateAdapter` fail-closed pattern, not a regression; this
+session's own fresh `.venv312` again needed `libegl1`/`libgl1`/`libopengl0`
+and `libportaudio2` installed via `apt-get` before the suite would collect --
+container-only setup gaps, not a Python dependency change). Scanned the
+coverage report for a real, narrow, hardware-free gap and found one in
+`visionai.policy.engine.PolicyEngine.evaluate()` -- the deterministic policy
+gate every capability dispatch passes through -- rather than in a peripheral
+module: it was only 93% covered, and the untested lines were not incidental,
+they were entire security-relevant branches with zero coverage. Specifically:
+the platform-mismatch rejection (`context.platform not in
+manifest.supported_platforms`), the prohibited-capability rejection (a
+second, independent defense-in-depth check -- `CapabilityRegistry.register()`
+already refuses to register a `PROHIBITED` manifest, but `evaluate()` checks
+again itself rather than trusting the registry alone), and three of the four
+argument-type-mismatch branches in `_first_argument_error()` (`INTEGER`,
+`NUMBER`, `BOOLEAN` -- only `STRING` had a test). No built-in capability
+manifest currently declares an `INTEGER`/`NUMBER`/`BOOLEAN` parameter, but
+`ParameterType` is public schema surface a future capability will use, and
+this validation exists specifically to stop a malformed or malicious
+argument from reaching a handler -- untested here means it could silently
+regress with no test to catch it. Added eight tests to `tests/unit/
+test_policy.py`: unsupported-platform rejection; the prohibited-capability
+defense-in-depth branch (a normal manifest registered, then `registry.get`
+monkeypatched to return a `model_copy`-mutated `PROHIBITED` copy, the same
+technique `test_capability_registry.py` already uses to construct an
+otherwise-unregistrable manifest, since the real registry cannot produce
+this state through its own public API); wrong-type rejection for each of
+`INTEGER`/`NUMBER`/`BOOLEAN`; a Python-specific subtlety worth its own
+regression test -- `bool` is a subclass of `int`, and the existing type
+checks deliberately exclude it (`isinstance(value, bool)` is checked
+separately) so a stray `True`/`False` is never silently accepted as a valid
+integer or number argument -- proven for both `INTEGER` and `NUMBER`; and
+one positive case proving a fully valid `INTEGER`/`NUMBER`/`BOOLEAN` argument
+set is still accepted. No application code changed -- this was a pure test
+gap, not a bug. `policy/engine.py` reached 100% line coverage (was 93%).
+Full verification after the change: 412 tests (386 passed, 25 failed --
+identical failing-test names to the pre-change baseline, confirming no
+regressions -- 1 skipped), 89% coverage (up from 88%),
+ruff/mypy(one known false positive)/bandit/pip-audit all clean.
+
 2026-09-05 autonomous cycle (Linux sandbox, secret-store test coverage):
 baseline verified clean and unchanged from the prior session's documented
 sandbox state before any work started (ruff/bandit/pip-audit clean; mypy
@@ -312,10 +357,10 @@ cd visionai
 
 ## Last Verification Result
 
-- Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run -- not yet re-checked against this session's own push at the time of writing this entry, since verification here was all local). This container was also missing `libegl1`/`libgl1`/`libopengl0` (headless `pytest-qt` could not import `QtGui` at all -- `ImportError: libEGL.so.1`) and `libportaudio2` (`sounddevice`'s real-backend smoke test raised `OSError: PortAudio library not found`); both were installed via `apt-get` before the suite would run to completion. Neither is a Python/project dependency change -- both are container-image setup gaps, not application code -- and installing them only lets the existing tests actually execute; it does not constitute claiming any real display, camera, or microphone hardware.
+- Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libgl1`/`libopengl0` (headless `pytest-qt` could not import `QtGui` at all -- `ImportError: libEGL.so.1`) and `libportaudio2` (`sounddevice`'s real-backend smoke test raised `OSError: PortAudio library not found`); both were installed via `apt-get` before the suite would run to completion. Neither is a Python/project dependency change -- both are container-image setup gaps, not application code.
 - Ruff: passed (whole repo)
 - mypy: passed for 52 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing).
-- pytest: 404 tests total (5 more than the prior session's 399 -- 6 new in `test_secrets.py` covering `KeyringSecretStore.set()`/`.delete()`, minus this run did not otherwise add/remove tests). In this Linux sandbox: 378 passed, 25 failed, 1 skipped, 88% coverage -- this session's baseline check (before any change) showed the identical 25 failures, all the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/config/secrets.py` (this session's newly-tested module) has 100% line coverage, confirmed directly in the whole-suite report, up from 70% at session start.
+- pytest: 412 tests total (8 more than the prior session's 404 -- 8 new in `test_policy.py` covering `PolicyEngine.evaluate()`'s platform-mismatch, prohibited-capability, and INTEGER/NUMBER/BOOLEAN argument-type branches; this run did not otherwise add/remove tests). In this Linux sandbox: 386 passed, 25 failed, 1 skipped, 89% coverage -- this session's baseline check (before any change) showed the identical 25 failures, all the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/policy/engine.py` (this session's newly-tested module) has 100% line coverage, confirmed directly in the whole-suite report, up from 93% at session start.
 - Bandit: passed (whole repo, `src`)
 - pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv)
 
