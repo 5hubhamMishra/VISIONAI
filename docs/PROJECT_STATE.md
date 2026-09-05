@@ -2,6 +2,60 @@
 
 ## Current Phase
 
+2026-09-05 autonomous cycle (Linux sandbox, local/offline LLM provider):
+baseline verified clean and unchanged from the prior session's documented
+sandbox state before any work started (fresh `.venv312` built from
+`requirements/dev.txt`; this container again needed `libegl1`/`libopengl0`/
+`libgl1`/`libportaudio2` installed via `apt-get` before pytest-qt/sounddevice
+would import -- container-only setup gaps, not a dependency change; ruff/
+bandit/pip-audit clean; mypy clean for 52 files except the same sandbox-only
+`ctypes.windll` false positive every session shows; pytest 392 passed/25
+failed/1 skipped, the same exclusively `WindowsLockStateAdapter` fail-closed
+pattern, not a regression). Closed Phase 6's last remaining explicitly
+accepted provider gap (see `Approved Next Tasks` item 5 below and
+`docs/DECISIONS/0004-llm-provider-choice.md`): added
+`visionai.intelligence.local_provider.LocalLlamaProvider`, a real local/
+offline `LLMProvider` behind a new optional `local_llm` extra (`gpt4all`,
+chosen over `llama-cpp-python` specifically because it ships prebuilt
+Windows/Linux/macOS wheels rather than requiring a local C++ build toolchain
+-- checked against real PyPI release metadata before choosing, the same way
+`docs/DECISIONS/0003-accepted-protobuf-cve.md` checked mediapipe's actual
+wheel support). `Settings.llm_provider` gained a `"local"` value and a new
+`Settings.local_model_path` field (`VISIONAI_LOCAL_MODEL_PATH`); the real
+client is always constructed with `allow_download=False` so a missing or
+misconfigured path fails with a clear `ValueError` from `_build_llm_provider()`
+(in both `app.py` and `main_window.py`) instead of silently reaching the
+network to fetch a model -- the one property that actually makes this
+provider "local/offline" rather than just another cloud vendor. Mirrors
+`AnthropicProvider`'s shape exactly: injectable client, broad catch of both
+client failures and `LLMReply`'s own `SafeText` validation failures into
+`core.errors.ProviderError`, and the identical fixed, code-owned
+no-execution-authority system prompt. `gpt4all` is not added to
+`requirements/dev.txt` (mirroring mediapipe/`vision`), so its real import
+path remains genuinely untested in this sandbox -- an explicit, accepted gap,
+not a claimed live verification; see
+`docs/DECISIONS/0006-local-offline-llm-provider.md`. While implementing this,
+found and closed an unrelated, pre-existing coverage gap in the same two
+functions this touched: neither `app._build_llm_provider()` nor
+`main_window._build_llm_provider()` had ever been tested for its own real
+branch logic before this session -- every existing test replaced the whole
+function with a fake provider instead, so the "none"/"anthropic" branches
+(and, for `main_window.py`, the entire function) had zero or partial direct
+coverage. Added 6 new tests to each of `tests/unit/test_app.py`/
+`tests/unit/test_main_window.py` covering every branch (none/local-missing-
+path/local-missing-file/local-happy-path/anthropic-missing-key/anthropic-
+happy-path), plus 5 new tests in `tests/unit/test_local_provider.py`
+mirroring `tests/unit/test_anthropic_provider.py` exactly (including the
+unsafe-reply-becomes-`ProviderError` regression case). The new
+anthropic-happy-path test incidentally brought `anthropic_provider.py` itself
+to 100% coverage (previously 89%, missing exactly its own real-`anthropic`-
+import branch), since it is the first test anywhere in this suite to reach
+that branch with `anthropic` actually installed. No existing application
+behavior changed. Full verification after the change: 435 tests (409 passed,
+25 failed -- identical failing-test names to the pre-change baseline,
+confirming no regressions -- 1 skipped), 90% coverage (up from 89%),
+ruff/mypy(one known false positive)/bandit/pip-audit all clean.
+
 2026-09-05 autonomous cycle (Linux sandbox, UrlPolicy coverage): baseline
 verified clean and unchanged from the prior session's documented sandbox
 state before any work started (ruff/bandit/pip-audit clean; mypy clean for
@@ -229,6 +283,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 ## Implemented and Tested
 
+- Added a local/offline `LLMProvider`: `visionai.intelligence.local_provider.LocalLlamaProvider` runs a user-supplied GGUF model file via the optional `local_llm` extra (`gpt4all==2.8.2`, MIT-licensed, chosen over `llama-cpp-python` for its prebuilt Windows/Linux/macOS wheels). `Settings.llm_provider` gained a `"local"` value and `Settings.local_model_path` (`VISIONAI_LOCAL_MODEL_PATH`); the real client is always built with `allow_download=False`, so it never fetches a model from the network, and both `app._build_llm_provider()`/`main_window._build_llm_provider()` raise a clear `ValueError` for a missing/unset/nonexistent path rather than silently falling through. Mirrors `AnthropicProvider`'s injectable-client shape and broad-catch-to-`ProviderError` error handling exactly; see `docs/DECISIONS/0006-local-offline-llm-provider.md`. Not live-verified with a real model file in this Linux sandbox. Also closed a pre-existing, unrelated coverage gap found while testing this: `_build_llm_provider()`'s own real branch logic (in both `app.py` and `main_window.py`) had never been directly tested before -- every existing test replaced the whole function with a fake. New tests cover every branch in both files, incidentally bringing `anthropic_provider.py` to 100% coverage (previously 89%, missing its own real-`anthropic`-import branch).
 - Added `visionai --wake-word-text`, which applies the persisted wake word to one already-transcribed utterance and routes matching text through `WakeWordVoiceRunner`, the real `EventOrchestrator`, and the policy/dispatcher path. Non-matching text exits cleanly without publishing or launching. This is a CLI text-entry surface only; it does not add STT or microphone capture.
 
 - Added the local `faster-whisper` STT provider behind `MicrophonePushToTalk`: it uses lazy `base.en`/CPU/int8 defaults from environment settings, loads the model only on first real transcription, and sends only final text into the existing validated input path. Raw audio remains transient and is never stored or published.
@@ -331,7 +386,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 - Deterministic text planning (`TextCommandPlanner`) now covers typed-text commands for every registered capability; already-recognized voice transcripts, injected one-shot STT results, push-to-talk releases, policy-approved gestures, temporally voted gesture observations, and single-frame camera/landmark candidates now have an `InputAdapter`/recognition path into the runtime bus.
 - Cancellation-token plumbing (`CapabilityHandler` signature, dispatcher-level pre-check, `_execute` wiring) is in place, but every current built-in handler is fast/synchronous and does not poll it -- the first handler that actually needs to poll mid-run will be whatever approved next task 3 (voice/gesture input) adds.
 - Phase 2 desktop UI: a minimal main window exists and is tested, now with a Stop control, verified keyboard tab-order/focus behavior, a tray icon, confirmation and permission-grant prompts, read-only diagnostics, an editable settings dialog for log level, microphone selection, and wake word, a one-time onboarding dialog, worker-thread command execution, and a Gesture Control button; Narrator navigation and real GUI gesture control are live-verified.
-- Phase 6 (Intelligence) has six slices done: `visionai.intelligence`'s provider boundary (`visionai --ask`), the validated LLM-suggested-command boundary, `--suggest`'s explicit human confirmation plus normal dispatcher execution path, both surfaces now also in `MainWindow` (Ask AI, Suggest Command), real OS keychain secret storage (`--set-api-key`/`--delete-api-key`), and session-scoped conversation memory for the desktop window's Ask AI feature (`ConversationMemory`, `MainWindow`-only, never persisted to disk). Clarification and a local/offline provider remain unstarted -- see the Implemented and Tested bullets above and `docs/DECISIONS/0004-llm-provider-choice.md`/`0005-os-keychain-secret-storage.md`.
+- Phase 6 (Intelligence) has seven slices done: `visionai.intelligence`'s provider boundary (`visionai --ask`), the validated LLM-suggested-command boundary, `--suggest`'s explicit human confirmation plus normal dispatcher execution path, both surfaces now also in `MainWindow` (Ask AI, Suggest Command), real OS keychain secret storage (`--set-api-key`/`--delete-api-key`), session-scoped conversation memory for the desktop window's Ask AI feature (`ConversationMemory`, `MainWindow`-only, never persisted to disk), and a local/offline `LLMProvider` (`LocalLlamaProvider`, behind the optional `local_llm` extra). Only clarification remains unstarted -- see the Implemented and Tested bullets above and `docs/DECISIONS/0004-llm-provider-choice.md`/`0005-os-keychain-secret-storage.md`/`0006-local-offline-llm-provider.md`.
 
 ## Approved Next Tasks
 
@@ -339,7 +394,7 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 2. WCAG 2.2 AA verification for `MainWindow` is complete for the tested scope: keyboard focus order/no-trap navigation, native contrast/scaling inheritance, and a live Narrator pass are verified. Do not claim formal WCAG certification without a full audit.
 3. Phase 3 voice is now closed for its approved scope too: real device enumeration/capture, a real `faster-whisper` STT provider, push-to-talk and wake-word control boundaries, and continuous `--wake-word-listen`/gesture-triggered voice-capture surfaces on both the CLI and (as of this session) the desktop window all exist and are tested. This entry previously described that work as still-outstanding; corrected here since the wording had gone stale relative to the Implemented and Tested log above. Remaining, smaller voice gaps: a dedicated hotword-spotting engine (current wake-word detection transcribes fixed-length chunks and matches text, not true streaming hotword spotting) and live-verifying the real STT/wake-word/voice-trigger paths with the user's actual microphone and voice (only unit-tested with fakes so far).
 4. Phase 5 vision's approved scope is now closed: `WebcamLandmarkAdapter`, `visionai --gesture-frames N`, `visionai --gesture-listen`, five gesture-to-capability mappings, closed-fist voice capture, and the matching `visionai-ui` Gesture Control button (with the same voice-trigger parity) are unit-tested and live-verified through both CLI and GUI. Keep camera frames/landmarks out of events and storage by default.
-5. Phase 6 Intelligence's provider and command-suggestion slices are done, including explicit human confirmation and dispatch through the unmodified policy/dispatcher path, now available on both the CLI and the desktop window (Ask AI, Suggest Command), plus real OS keychain secret storage now available on *both* the CLI (`--set-api-key`/`--delete-api-key`, Windows Credential Manager via `keyring`, alongside the still-working env var) and the desktop Settings dialog (masked API-key entry, keychain deletion -- corrected here: this was previously, incorrectly, still listed below as a CLI-only remaining option; it was actually completed in an earlier session, per the "2026-09-05 update" bullet in Implemented and Tested), and session-scoped, explicitly clearable conversation memory for the desktop window's Ask AI feature (`visionai.intelligence.memory.ConversationMemory`; deliberately not added to the stateless CLI `--ask`, and not persisted to disk). Text-safety validation across this phase's LLM-facing surfaces (and every other independent control-character check in the codebase) was also hardened against Unicode bidi-override/invisible characters this session -- see the Implemented and Tested bullet above. The focused tests cover approval, cancellation, and rejection of unlisted/prompt-injected model output on both surfaces, plus conversation-memory retention/eviction/deletion. Remaining options are clarification (an LLM asking a follow-up question when a request is ambiguous -- a genuine new-feature design decision, not yet scoped) and a local/offline provider (needs a real downloadable model and cannot be live-verified in a display/hardware-less Linux sandbox); a real prompt-injection test suite against a *live* LLM (Section 17) still needs a real network call/API key this sandbox does not have, though a fakes-only/deterministic-fallback-only version of that suite is now substantially covered (see `tests/unit/test_command_suggestion.py`'s malformed-suggestion corpus and this session's `SafeText` hardening tests).
+5. Phase 6 Intelligence's provider and command-suggestion slices are done, including explicit human confirmation and dispatch through the unmodified policy/dispatcher path, now available on both the CLI and the desktop window (Ask AI, Suggest Command), plus real OS keychain secret storage now available on *both* the CLI (`--set-api-key`/`--delete-api-key`, Windows Credential Manager via `keyring`, alongside the still-working env var) and the desktop Settings dialog (masked API-key entry, keychain deletion -- corrected here: this was previously, incorrectly, still listed below as a CLI-only remaining option; it was actually completed in an earlier session, per the "2026-09-05 update" bullet in Implemented and Tested), and session-scoped, explicitly clearable conversation memory for the desktop window's Ask AI feature (`visionai.intelligence.memory.ConversationMemory`; deliberately not added to the stateless CLI `--ask`, and not persisted to disk). Text-safety validation across this phase's LLM-facing surfaces (and every other independent control-character check in the codebase) was also hardened against Unicode bidi-override/invisible characters this session -- see the Implemented and Tested bullet above. The focused tests cover approval, cancellation, and rejection of unlisted/prompt-injected model output on both surfaces, plus conversation-memory retention/eviction/deletion. A local/offline provider is also now done (`visionai.intelligence.local_provider.LocalLlamaProvider`, behind the optional `local_llm` extra -- `gpt4all`; never downloads a model itself, and is not live-verified with a real model file in this display/hardware-less Linux sandbox -- see `docs/DECISIONS/0006-local-offline-llm-provider.md`). The only remaining option is clarification (an LLM asking a follow-up question when a request is ambiguous -- a genuine new-feature design decision, not yet scoped); a real prompt-injection test suite against a *live* LLM (Section 17) still needs a real network call/API key this sandbox does not have, though a fakes-only/deterministic-fallback-only version of that suite is now substantially covered (see `tests/unit/test_command_suggestion.py`'s malformed-suggestion corpus and this session's `SafeText` hardening tests).
 
 ## Known Defects
 
@@ -388,10 +443,10 @@ cd visionai
 
 - Python: 3.12.3 (this session built a fresh `.venv312` from `requirements/dev.txt` in a new Linux sandbox container with no display/camera/microphone/Windows APIs; hosted CI on `windows-latest` remains the authoritative full-environment run). This container was again missing `libegl1`/`libopengl0`/`libportaudio2` (`libgl1` was already present) -- headless `pytest-qt` could not import `QtGui` at all without `libEGL.so.1`, and `sounddevice`'s real-backend smoke test raised `OSError: PortAudio library not found` -- both were installed via `apt-get` before the suite would run to completion. Neither is a Python/project dependency change -- both are container-image setup gaps, not application code.
 - Ruff: passed (whole repo)
-- mypy: passed for 52 source files, except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing).
-- pytest: 418 tests total (6 more than the prior session's 412 -- `test_url_validation.py` gained 6 net tests: 7 new, covering `UrlPolicy.validate_redirect()`'s host-match/host-change branches plus four other previously-untested edge cases, minus 1 old test removed when it was split into two single-purpose tests; no other test file changed). In this Linux sandbox: 392 passed, 25 failed, 1 skipped, 89% coverage -- this session's baseline check (before any change) showed the identical 25 failures, all the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/policy/url_validation.py` (this session's newly-tested module) has 100% line coverage, confirmed directly in the whole-suite report, up from 85% at session start.
+- mypy: passed for 53 source files (one more than the prior session's 52 -- the new `local_provider.py`), except the same one sandbox-only false positive as every prior session (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing). `local_provider.py` uses `importlib.import_module("gpt4all")` rather than a static import specifically so this passes without the optional `local_llm` extra installed, mirroring `webcam.py`'s `cv2`/`mediapipe` pattern.
+- pytest: 435 tests total (17 more than the prior session's 418 -- 5 new in `tests/unit/test_local_provider.py`, 6 new each in `tests/unit/test_app.py`/`tests/unit/test_main_window.py` covering `_build_llm_provider()`'s branches; no other test file changed). In this Linux sandbox: 409 passed, 25 failed, 1 skipped, 90% coverage -- this session's baseline check (before any change) showed the identical 25 failures, all the same exclusively `WindowsLockStateAdapter` failing-closed-with-no-real-Windows-desktop pattern every prior sandbox session has documented, not a regression; the identical 25-test failure set (by name) reproduced after this session's change. `src/visionai/intelligence/local_provider.py` (this session's new module) is at 87% coverage -- the uncovered lines are exactly the real `import_module("gpt4all")` construction path, an explicit accepted gap since the `local_llm` extra is deliberately not installed in this environment (see `docs/DECISIONS/0006-local-offline-llm-provider.md`). `src/visionai/intelligence/anthropic_provider.py` incidentally reached 100% coverage (was 89%) as a side effect of this session's new `_build_llm_provider()` branch tests.
 - Bandit: passed (whole repo, `src`)
-- pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv)
+- pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv; also separately checked `requirements/local_llm.txt` alone -- no known vulnerabilities found for `gpt4all==2.8.2` either, though it is not part of the standard audited/tested dependency surface)
 
 ## Last Updated
 

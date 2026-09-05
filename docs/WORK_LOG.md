@@ -1,5 +1,102 @@
 # Work Log
 
+## 2026-09-05 autonomous cycle: local/offline LLM provider (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`
+  (already up to date at `73c6f4b`), read the docs and recent git log, built a
+  Python 3.12 virtualenv from `requirements/dev.txt`, installed the headless
+  Qt/PortAudio system libraries (`libegl1`, `libopengl0`, `libgl1`,
+  `libportaudio2` -- a fresh container each run, so this setup step recurs),
+  and ran the baseline verification suite before touching anything. Baseline
+  matched the documented sandbox state exactly: ruff/bandit/pip-audit clean,
+  mypy clean except the known `ctypes.windll` false positive, pytest 392
+  passed/25 failed/1 skipped, 89% coverage -- all 25 failures the same
+  exclusively `WindowsLockStateAdapter` fail-closed pattern every prior
+  sandbox session has documented, not a regression.
+- The prior session's own log entry (below) had framed every option under
+  Approved Next Tasks item 5 as needing "either a human product decision or
+  real network/hardware access this sandbox does not have," including the
+  local/offline LLM provider, and picked a coverage-gap task instead. Revisited
+  that framing: like `WebcamLandmarkAdapter`'s original slice, the provider's
+  *boundary layer* (an injectable-client class behind the unmodified
+  `LLMProvider` Protocol, wired into `Settings`/`_build_llm_provider()`) does
+  not itself need real hardware or a live model to implement and unit-test --
+  only the final real-model live inference does, which is exactly the
+  "not yet live-verified" shape this project already accepts for `--gesture-
+  frames`/`--gesture-listen` before their first live camera check. Picked this
+  as the one narrow, well-scoped task for this run instead.
+- Chose `gpt4all` over the more obvious `llama-cpp-python` after actually
+  checking real PyPI release metadata for both (matching how
+  `docs/DECISIONS/0003-accepted-protobuf-cve.md` checked mediapipe's actual
+  wheel support before pinning it, rather than assuming): `llama-cpp-python`
+  0.3.35 ships only an sdist on PyPI, meaning every install -- including a
+  Windows end user's -- would need a working C++ build toolchain; `gpt4all`
+  2.8.2 ships prebuilt `py3-none` wheels for `win_amd64`, `manylinux1_x86_64`,
+  and macOS, MIT-licensed, no compiler needed.
+- Added `visionai.intelligence.local_provider.LocalLlamaProvider`, mirroring
+  `AnthropicProvider`'s exact shape: an injectable client (a `_LocalModel`
+  Protocol exposing gpt4all's real `generate(prompt, max_tokens=...)` method),
+  a broad catch-and-wrap of both client failures and `LLMReply`'s own
+  `SafeText` validation failures into `core.errors.ProviderError`, and the
+  identical fixed, code-owned no-execution-authority system prompt folded
+  into one prompt string (gpt4all's `generate()` takes one prompt, not a
+  separate system-role message the way Anthropic's Messages API does). The
+  real client is always constructed with `allow_download=False` -- the one
+  property that actually makes this "local/offline" rather than just another
+  cloud vendor, since a local provider that could reach the network to fetch
+  a model on first use would defeat the point. `gpt4all` itself is imported
+  via `importlib.import_module()`, not a static import, mirroring
+  `webcam.py`'s pattern for `cv2`/`mediapipe` -- required for mypy to pass,
+  since (deliberately, like `vision`/mediapipe) the new `local_llm` extra is
+  not added to `requirements/dev.txt`.
+- Extended `Settings.llm_provider` with a `"local"` value and added
+  `Settings.local_model_path` (`VISIONAI_LOCAL_MODEL_PATH`); wired an
+  identical new branch into both `app._build_llm_provider()` and
+  `main_window._build_llm_provider()` that raises a clear `ValueError` for an
+  unset or nonexistent model path before ever constructing the real provider.
+- While writing tests for this, found a real, unrelated, pre-existing
+  coverage gap in the exact two functions this task touched: neither
+  `app._build_llm_provider()` nor `main_window._build_llm_provider()` had
+  ever been tested for its own real branch logic -- every existing test in
+  both `tests/unit/test_app.py` and `tests/unit/test_main_window.py`
+  monkeypatched the whole function out with a fake provider instead, so the
+  "none"/"anthropic" branches (and, for `main_window.py`, the entire
+  function) were never directly exercised. Added six tests to each file
+  covering every branch (none/local-missing-path/local-missing-file/
+  local-happy-path/anthropic-missing-key/anthropic-happy-path); the
+  local-happy-path tests substitute a fake `LocalLlamaProvider` class so the
+  real `gpt4all` import is never required. The anthropic-happy-path test
+  needed no such substitute, since `anthropic` is already part of
+  `requirements/dev.txt` (via `intelligence.txt`) and constructing
+  `anthropic.Anthropic(api_key=...)` makes no network call -- this
+  incidentally brought `anthropic_provider.py` itself to 100% coverage (was
+  89%, missing exactly its own real-`anthropic`-import branch), since it is
+  the first test anywhere in this suite to reach that branch with `anthropic`
+  actually installed.
+- Added `tests/unit/test_local_provider.py` (5 tests), mirroring
+  `tests/unit/test_anthropic_provider.py` exactly, including the
+  unsafe-reply-becomes-`ProviderError` regression case (a bidi-override
+  character in a fake model's reply must raise the same domain error every
+  other failure at this boundary does, not a raw `pydantic.ValidationError`).
+- Documented the decision in `docs/DECISIONS/0006-local-offline-llm-provider.md`
+  and appended a "Done" note to `0004-llm-provider-choice.md`'s Consequences
+  section; updated `docs/ARCHITECTURE.md`'s `visionai.intelligence` bullet,
+  `docs/SECURITY.md` (a new bullet matching `AnthropicProvider`'s existing
+  one), `docs/USER_GUIDE.md`'s `--ask` paragraph, and `docs/RELEASE_NOTES.md`.
+  No application behavior outside `visionai.intelligence`/`_build_llm_provider()`
+  changed.
+- Full verification after the change: 435 tests (409 passed, 25 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 1 skipped), 90% coverage (up from 89%),
+  ruff/mypy(one known false positive)/bandit/pip-audit all clean. Separately
+  ran `pip-audit -r requirements/local_llm.txt` alone: no known
+  vulnerabilities found for `gpt4all==2.8.2` either, though it remains
+  outside the standard audited/tested dependency surface (not installed in
+  this session's `.venv312`, matching the `vision` extra's precedent) --
+  `local_provider.py`'s real `import_module("gpt4all")` construction path is
+  therefore genuinely untested in this sandbox, an explicit accepted gap, not
+  a claimed live verification.
+
 ## 2026-09-05 autonomous cycle: UrlPolicy redirect and edge-case test coverage (Linux sandbox)
 
 - Followed the standing protocol in a fresh sandbox container: pulled `main`

@@ -467,6 +467,93 @@ def test_app_ask_reports_a_provider_construction_failure(monkeypatch, capsys) ->
     assert "Could not get an answer: VISIONAI_ANTHROPIC_API_KEY is not set" in output
 
 
+def test_build_llm_provider_none_returns_the_deterministic_fallback(monkeypatch) -> None:
+    from visionai.config.settings import Settings
+    from visionai.intelligence import DeterministicFallbackProvider
+
+    monkeypatch.setattr("visionai.app.get_settings", lambda: Settings(llm_provider="none"))
+
+    provider = app._build_llm_provider()
+
+    assert isinstance(provider, DeterministicFallbackProvider)
+
+
+def test_build_llm_provider_local_without_a_configured_path_raises(monkeypatch) -> None:
+    from visionai.config.settings import Settings
+
+    monkeypatch.setattr(
+        "visionai.app.get_settings", lambda: Settings(llm_provider="local")
+    )
+
+    with pytest.raises(ValueError, match="No local model path configured"):
+        app._build_llm_provider()
+
+
+def test_build_llm_provider_local_with_a_missing_file_raises(monkeypatch, tmp_path) -> None:
+    from visionai.config.settings import Settings
+
+    missing = tmp_path / "does-not-exist.gguf"
+    monkeypatch.setattr(
+        "visionai.app.get_settings",
+        lambda: Settings(llm_provider="local", local_model_path=missing),
+    )
+
+    with pytest.raises(ValueError, match="Local model file not found"):
+        app._build_llm_provider()
+
+
+def test_build_llm_provider_local_with_a_real_file_builds_a_local_provider(
+    monkeypatch, tmp_path
+) -> None:
+    from visionai.config.settings import Settings
+
+    model_file = tmp_path / "model.gguf"
+    model_file.write_text("not a real model, just a path that exists")
+
+    class _FakeLocalProvider:
+        def __init__(self, *, model_path: str) -> None:
+            self.model_path = model_path
+
+    monkeypatch.setattr(
+        "visionai.app.get_settings",
+        lambda: Settings(llm_provider="local", local_model_path=model_file),
+    )
+    monkeypatch.setattr(
+        "visionai.intelligence.local_provider.LocalLlamaProvider", _FakeLocalProvider
+    )
+
+    provider = app._build_llm_provider()
+
+    assert isinstance(provider, _FakeLocalProvider)
+    assert provider.model_path == str(model_file)
+
+
+def test_build_llm_provider_anthropic_without_a_key_raises(monkeypatch) -> None:
+    from visionai.config.settings import Settings
+
+    monkeypatch.setattr(
+        "visionai.app.get_settings", lambda: Settings(llm_provider="anthropic")
+    )
+    monkeypatch.setattr("visionai.app.resolve_anthropic_api_key", lambda settings: None)
+
+    with pytest.raises(ValueError, match="No Anthropic API key found"):
+        app._build_llm_provider()
+
+
+def test_build_llm_provider_anthropic_with_a_key_builds_the_real_provider(monkeypatch) -> None:
+    from visionai.config.settings import Settings
+    from visionai.intelligence.anthropic_provider import AnthropicProvider
+
+    monkeypatch.setattr(
+        "visionai.app.get_settings", lambda: Settings(llm_provider="anthropic")
+    )
+    monkeypatch.setattr("visionai.app.resolve_anthropic_api_key", lambda settings: "fake-key")
+
+    provider = app._build_llm_provider()
+
+    assert isinstance(provider, AnthropicProvider)
+
+
 def test_app_suggest_uses_the_fallback_by_default(monkeypatch, capsys) -> None:
     launched: list[str] = []
     monkeypatch.setattr("sys.argv", ["visionai", "--suggest", "open notepad please"])

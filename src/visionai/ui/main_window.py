@@ -149,6 +149,18 @@ def _build_llm_provider() -> LLMProvider:
     settings = get_settings()
     if settings.llm_provider == "none":
         return DeterministicFallbackProvider()
+    if settings.llm_provider == "local":
+        from visionai.intelligence.local_provider import LocalLlamaProvider
+
+        model_path = settings.local_model_path
+        if model_path is None:
+            raise ValueError(
+                "No local model path configured. Set VISIONAI_LOCAL_MODEL_PATH to "
+                "a GGUF model file already present on disk."
+            )
+        if not model_path.is_file():
+            raise ValueError(f"Local model file not found: {model_path}")
+        return LocalLlamaProvider(model_path=str(model_path))
 
     from visionai.intelligence.anthropic_provider import AnthropicProvider
 
