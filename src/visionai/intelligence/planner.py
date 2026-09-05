@@ -47,9 +47,13 @@ def _build_prompt(phrases: tuple[str, ...], utterance: str) -> str:
 
 
 def _validate_reply(reply: str, phrases: tuple[str, ...]) -> str | None:
+    if any(ord(char) < 32 or ord(char) == 127 for char in reply):
+        return None
     if reply.upper() == "NONE":
         return None
     lowered = reply.lower()
+    if lowered == _SEARCH_TEMPLATE:
+        return None
     if lowered in {phrase.lower() for phrase in phrases if phrase != _SEARCH_TEMPLATE}:
         return reply
     if lowered.startswith(_SEARCH_PREFIX) and len(lowered) > len(_SEARCH_PREFIX):

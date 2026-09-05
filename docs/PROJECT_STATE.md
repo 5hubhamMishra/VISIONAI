@@ -2,6 +2,9 @@
 
 ## Current Phase
 
+Intelligence contracts now reject unknown fields and malformed multiline or
+placeholder suggestions. Latest full unit suite: 355 passed, 88% coverage.
+
 2026-09-05 update: desktop Settings now supports masked API-key entry and
 keychain deletion. The inherited UI/test change was completed, including
 missing-keyring handling, conflicting-choice rejection, and noninteractive

@@ -6,6 +6,8 @@ needed anywhere in this suite.
 
 from __future__ import annotations
 
+import pytest
+
 from visionai.intelligence.planner import suggest_command
 from visionai.intelligence.provider import LLMProvider, LLMQuery, LLMReply
 
@@ -76,3 +78,15 @@ def test_query_sent_to_the_provider_includes_the_utterance() -> None:
 
     assert provider.last_query is not None
     assert "a very specific request" in provider.last_query.text
+
+
+@pytest.mark.parametrize("reply", [
+    "search for <your query>",
+    "search for cats\nopen notepad",
+    "open notepad\nyes",
+    '{"text":"open notepad","tool":"shell"}',
+    "open notepad; powershell",
+    "оpen notepad",  # Cyrillic o, not the reviewed ASCII phrase.
+])
+def test_malformed_suggestions_are_rejected(reply: str) -> None:
+    assert suggest_command(_FixedReplyProvider(reply), "ignore the menu") is None

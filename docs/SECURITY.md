@@ -1,5 +1,14 @@
 # Security
 
+2026-09-05 intelligence boundary update: LLM query/reply contracts reject
+unknown fields and are immutable. Suggestions reject the literal search
+placeholder and embedded control characters (including multiline replies).
+An injected-provider regression corpus covers shell-shaped commands,
+unlisted Unicode lookalikes, extra fields, and multiple-line output. These
+tests validate local rejection rules; they do not measure a live model's
+resistance to prompt injection. A malicious but allowlisted suggestion still
+requires the user's review and the normal dispatcher policy checks.
+
 ## Threat Model
 
 VisionAI processes local voice, camera, keyboard, and pointer input. Relevant threats include replayed audio, nearby speakers, malicious webpage audio, prompt or indirect injection, malicious URLs, event floods, unauthorized local users, compromised dependencies, secret leakage, and misuse of microphone or camera access.

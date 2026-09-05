@@ -1,5 +1,16 @@
 # Work Log
 
+## 2026-09-05 Autonomous cycle: strict intelligence contracts
+
+- Reproduced four failures before the fix: query/reply silently accepted
+  extra tool fields; search placeholder and multiline search outputs passed.
+- Made provider models frozen and extra-forbid, and rejected placeholder and
+  embedded control characters in the shared suggestion validator.
+- Focused regressions: 21 passed. Full suite: 355 passed, 88% coverage;
+  Ruff and mypy passed. No live model/API calls were made.
+- Multiline search previously became search data, not a second executable
+  command. The fix enforces the documented single-phrase proposal contract.
+
 ## 2026-09-05 Autonomous cycle: desktop keychain completion
 
 - Owner requested one hour of autonomous implementation and a detailed report,

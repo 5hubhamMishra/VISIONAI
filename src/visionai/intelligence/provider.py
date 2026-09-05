@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from visionai.core.events import SafeText
 
@@ -26,12 +26,14 @@ _FALLBACK_MESSAGE = (
 class LLMQuery(BaseModel):
     """One validated, bounded question -- never raw unchecked text."""
 
+    model_config = ConfigDict(extra="forbid", frozen=True)
     text: SafeText
 
 
 class LLMReply(BaseModel):
     """One validated, bounded answer."""
 
+    model_config = ConfigDict(extra="forbid", frozen=True)
     text: SafeText
 
 

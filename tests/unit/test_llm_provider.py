@@ -36,3 +36,11 @@ def test_deterministic_fallback_provider_returns_fixed_message_with_no_io() -> N
 
     assert "No LLM provider is configured" in reply.text
     assert "VISIONAI_LLM_PROVIDER" in reply.text
+
+
+@pytest.mark.parametrize("contract", [LLMQuery, LLMReply])
+def test_llm_contract_rejects_unknown_tool_fields(
+    contract: type[LLMQuery] | type[LLMReply],
+) -> None:
+    with pytest.raises(ValidationError):
+        contract.model_validate({"text": "open notepad", "tool": "shell"})
