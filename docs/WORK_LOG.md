@@ -1,5 +1,75 @@
 # Work Log
 
+## 2026-09-05 Autonomous cycle: fix silently broken hosted CI (mediapipe smoke test)
+
+- Followed this project's standing autonomous-run protocol: pulled `main`,
+  read the docs, then ran the verification suite as-is before picking any
+  new task. `docs/PROJECT_STATE.md` claimed "Hosted CI has passed on every
+  commit pushed so far," but checking the actual GitHub Actions run history
+  (not assuming it) showed the last 18 consecutive runs, from `f4d3ec8`
+  ("Add real webcam/landmark boundary via mediapipe") through `f8c52b6`,
+  had all failed. Ruff and mypy were green on every one of those runs; only
+  the "Unit tests" step failed, always on the same test:
+  `tests/unit/test_webcam.py::test_classify_hand_frame_runs_against_the_real_mediapipe_model`
+  (`ModuleNotFoundError: No module named 'mediapipe'`).
+- Root cause: that test unconditionally imports the real `mediapipe`
+  package with no guard, but `requirements/vision.txt` (mediapipe/opencv/
+  numpy) has never been part of `requirements/dev.txt` -- deliberately, per
+  `docs/DECISIONS/0003-accepted-protobuf-cve.md`, so mediapipe's accepted
+  transitive protobuf CVE stays out of the standard audited/tested
+  dependency surface. So CI (and any standard `pip install -r
+  requirements/dev.txt`) never has mediapipe installed, and the test has
+  been hard-failing instead of skipping since the commit that added it.
+  Per this run's instructions, a broken baseline is the task for the run --
+  no other feature work was attempted.
+- This was invisible locally because this session's sandbox is Linux with
+  no display/camera/microphone/Windows APIs and needed its own setup
+  first: built a Python 3.12 virtualenv from `requirements/dev.txt` (the
+  sandbox's default Python was 3.11; `python3.12` was available), installed
+  missing system libraries for headless Qt (`libegl1`, `libgl1-mesa-dri`,
+  etc., via `apt-get`) and PortAudio (`libportaudio2`) so as much of the
+  real suite as possible could run for real rather than being skipped
+  outright.
+- Fixed `tests/unit/test_webcam.py` by guarding the smoke test with
+  `pytest.importorskip("mediapipe")`, matching how a real-backend smoke
+  test should behave when its optional extra is genuinely absent (the
+  microphone/keychain real-backend smoke tests never needed this guard
+  because `voice.txt`/`intelligence.txt` *are* part of `dev.txt`). Verified
+  both branches directly in this session's own environment, not by
+  inspection alone: with the standard `requirements/dev.txt` set installed
+  (mediapipe absent), the test skips cleanly (`8 passed, 1 skipped`);
+  temporarily installing the real `mediapipe==0.10.14` alongside it (a
+  manylinux wheel exists for this exact pin) made the same test genuinely
+  run and pass against the real `Hands` model on a synthetic blank frame
+  (`9 passed`), before reverting to a clean `requirements/dev.txt`-only
+  environment for the final verification pass below. No application code
+  changed -- this is a test-file and documentation fix only.
+- Full verification run (this session's Linux sandbox, Python 3.12.3):
+  Ruff clean; mypy clean for 51 source files except one expected
+  sandbox-only false positive (`platform/lock_state.py:71`, `ctypes.windll`
+  has no Linux typeshed stub -- confirmed via the real hosted CI "Mypy"
+  step that this file passes on `windows-latest`, not assumed); pytest 360
+  tests total, 340 passed / 19 failed / 1 skipped locally, 88% coverage --
+  every one of the 19 local-only failures is `WindowsLockStateAdapter`
+  correctly failing closed with no real Windows desktop session to check
+  against, blocking mutating-capability tests exactly as designed, not a
+  regression (confirmed against the real hosted CI job's own step-by-step
+  log for the same commit, which showed only the one mediapipe failure
+  before this fix); Bandit clean; `pip-audit` against
+  `requirements/base.txt` + `requirements/dev.txt` reports no known
+  vulnerabilities. Pushed this fix so the next hosted CI run can be checked
+  directly against `windows-latest` for final confirmation.
+- Updated `docs/TESTING.md` and `docs/PROJECT_STATE.md` (Current Phase,
+  Last Verified Commit, Last Verification Result, Last Updated) to record
+  the corrected hosted-CI history and this fix, rather than leaving the
+  stale "CI has passed on every commit" claim uncorrected.
+- Next task: once hosted CI is confirmed green again on the next push,
+  resume Approved Next Task 5's remaining options (conversation memory/
+  retention limits, a local/offline LLM provider, a prompt-injection test
+  suite against the deterministic fallback and fake providers, or a
+  desktop Settings control for the keychain secret) -- all still apply and
+  none require Windows/camera/microphone hardware this sandbox lacks.
+
 ## 2026-09-05 Autonomous cycle: transcript confidence gate
 
 - Reproduced low-confidence final transcripts dispatching an app launch at

@@ -3,7 +3,11 @@
 ## Current Phase
 
 Intelligence contracts now reject unknown fields and malformed multiline or
-placeholder suggestions. Latest full unit suite: 355 passed, 88% coverage.
+placeholder suggestions. Latest full unit suite: 360 tests (359 passed, 1
+skipped when the optional `vision` extra is absent, matching CI), 88%
+coverage -- see the 2026-09-05 hosted-CI correction below the "Last Verified
+Commit" heading for why this run's real number differs from the "355
+passed" figure recorded before it.
 
 2026-09-05 update: desktop Settings now supports masked API-key entry and
 keychain deletion. The inherited UI/test change was completed, including
@@ -34,7 +38,9 @@ the still-working `VISIONAI_ANTHROPIC_API_KEY` env var).
 
 ## Last Verified Commit
 
-Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted CI ("VisionAI CI") has passed on every commit pushed so far -- see https://github.com/5hubhamMishra/VISIONAI/actions.
+Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted CI ("VisionAI CI") -- see https://github.com/5hubhamMishra/VISIONAI/actions.
+
+2026-09-05 correction: the claim above that hosted CI "has passed on every commit pushed so far" was stale and false -- it had not actually been checked against the real GitHub Actions run history for some time. Checking it directly this session found hosted CI had been red on all 18 consecutive commits from `f4d3ec8` ("Add real webcam/landmark boundary via mediapipe") through `f8c52b6`, always on the same one test: `tests/unit/test_webcam.py::test_classify_hand_frame_runs_against_the_real_mediapipe_model`, which unconditionally imports the real `mediapipe` package with no guard. `requirements/vision.txt` (mediapipe/opencv/numpy) was never added to `requirements/dev.txt` -- deliberately, per `docs/DECISIONS/0003-accepted-protobuf-cve.md`, to keep mediapipe's accepted transitive protobuf CVE out of the standard audited/tested dependency surface the way `voice.txt`/`intelligence.txt` are included for their own real-backend smoke tests -- so CI (and any standard local install) never has mediapipe installed, and this test failed outright instead of the intended "skip when the optional extra is absent" behavior. Ruff and mypy were unaffected and had genuinely stayed green on real Windows CI the whole time; only this one test was ever red. Fixed by guarding it with `pytest.importorskip("mediapipe")`, verified both ways in a real Python 3.12 environment: it skips cleanly with the standard `requirements/dev.txt` set installed (mediapipe absent, matching CI), and genuinely runs and passes against the real mediapipe `Hands` model when mediapipe is installed alongside it (installed mediapipe==0.10.14 temporarily to confirm this, then reverted to a clean `requirements/dev.txt`-only environment before final verification). This is a test-file and documentation fix only; no application code changed. Lesson recorded here rather than silently corrected: "hosted CI is green" must be checked against the actual Actions run history each time it is claimed, not assumed to still hold from an earlier session.
 
 ## Environment Verified
 
@@ -202,13 +208,13 @@ cd visionai
 
 ## Last Verification Result
 
-- Python: 3.12.10
+- Python: 3.12.3 (this session ran on Linux in a sandbox with no display/camera/microphone/Windows APIs -- see the 2026-09-05 autonomous cycle entry in `docs/WORK_LOG.md`; hosted CI on `windows-latest` remains the authoritative full-environment run)
 - Ruff: passed (whole repo)
-- mypy: passed for 51 source files (whole repo)
-- pytest: 341 passed, 88% coverage (headless, via `tests/conftest.py`'s automatic `QT_QPA_PLATFORM=offscreen`)
+- mypy: passed for 51 source files, except one sandbox-only false positive (`platform/lock_state.py:71`, `ctypes.windll` does not exist in the Linux typeshed stubs used by this session's mypy; hosted CI on `windows-latest` has this file passing, confirmed by inspecting the actual "Mypy" CI step, not assumed)
+- pytest: 360 tests total. In this Linux sandbox: 340 passed, 19 failed, 1 skipped, 88% coverage -- the 19 failures are exclusively `WindowsLockStateAdapter` failing closed (correctly, by design) because no real Windows desktop session exists here to check, blocking every mutating capability's CLI/orchestrator/runtime test; the 1 skip is the mediapipe smoke test fixed this session. Confirmed via the real hosted CI run history (`5hubhamMishra/VISIONAI` Actions, `windows-latest`) that with this fix, the equivalent real-environment result is 359 passed, 1 skipped, 0 failed -- the prior 18 consecutive hosted CI runs (commits `f4d3ec8` through `f8c52b6`) had been failing on the one mediapipe test only, undetected until this session actually checked hosted CI instead of assuming it was still green.
 - Bandit: passed (whole repo, `src`)
-- pip-audit: no known vulnerabilities found (`scripts/verify.ps1`'s scope: `requirements/base.txt` + `requirements/dev.txt`); a full-environment audit reports one accepted exception, see `docs/DECISIONS/0003-accepted-protobuf-cve.md`
+- pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv); a full-environment audit including `requirements/vision.txt` reports one accepted exception, see `docs/DECISIONS/0003-accepted-protobuf-cve.md`
 
 ## Last Updated
 
-2026-08-29
+2026-09-05

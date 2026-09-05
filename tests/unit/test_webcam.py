@@ -14,6 +14,7 @@ cleanly and returns a well-formed `GestureCandidate`.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from visionai.platform.camera import GestureCandidate
 from visionai.platform.webcam import (
@@ -157,9 +158,18 @@ def test_classify_hand_frame_runs_against_the_real_mediapipe_model() -> None:
     A blank synthetic frame has no hand to detect -- this only proves the
     real model loads and runs cleanly and returns a well-formed
     GestureCandidate, not a specific classification.
+
+    Skipped when the optional `vision` extra is not installed: unlike
+    `voice`/`intelligence`, `vision.txt` is deliberately not part of
+    `requirements/dev.txt` (see docs/DECISIONS/0003-accepted-protobuf-cve.md,
+    which keeps mediapipe's transitive protobuf CVE out of the standard
+    audited/tested surface), so the standard suite -- including CI -- never
+    has mediapipe installed. This still runs for real wherever the `vision`
+    extra is installed, matching `list_input_devices()`'s real-backend
+    smoke test pattern.
     """
 
-    mediapipe = __import__("mediapipe")
+    mediapipe = pytest.importorskip("mediapipe")
     frame = np.zeros((240, 320, 3), dtype=np.uint8)
     hands = mediapipe.solutions.hands.Hands(max_num_hands=1)
     try:
