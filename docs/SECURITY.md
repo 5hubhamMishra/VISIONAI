@@ -9,6 +9,43 @@ tests validate local rejection rules; they do not measure a live model's
 resistance to prompt injection. A malicious but allowlisted suggestion still
 requires the user's review and the normal dispatcher policy checks.
 
+2026-09-05 text-safety hardening: `SafeText` (and every other independent
+control-character check across the codebase) previously only rejected ASCII
+control characters, leaving Unicode bidirectional-override characters
+(the "Trojan Source" set, CVE-2021-42574), zero-width/invisible format
+characters, and the Unicode line/paragraph separators completely unchecked.
+Since `SafeText` backs the exact text a human reads to decide whether to
+approve a proposed action -- an LLM-suggested search query, a `--suggest`/
+Suggest Command "Proposed: ..." line, a confirmation summary -- a value
+containing one of these characters could make displayed text misrepresent
+what it actually contains, undermining Section 9's "must display exact
+normalized action, target and effect" and Section 12's "may not confirm
+itself" guarantees even though every downstream allowlist/dispatch check
+was already correct. `visionai.core.events.contains_unsafe_characters()`/
+`strip_unsafe_characters()` are now the one shared implementation (an
+`allow_line_breaks=False` mode additionally blocks tab/newline/CR for
+values, like a URL, a search query, a suggested command phrase, or a wake
+word, that must always be a single line); `SafeText`'s own pattern, and
+five previously independent, weaker ord-based checks in
+`orchestration/text_planner.py`, `orchestration/wake_word.py`,
+`config/user_settings.py`, `policy/url_validation.py` (both `normalize_url`
+and `build_search_url`), and `intelligence/planner.py`'s `suggest_command()`
+reply validator, now all reuse it instead of drifting independently. Tab,
+newline, and carriage return remain intentionally allowed wherever
+`SafeText`'s default applies, since `ConversationMemory.build_query_text()`
+depends on real newlines between turns. Found and fixed one real
+consequence of the hardening itself, not just of the vulnerability it
+closes: `AnthropicProvider.respond()` constructed `LLMReply` from the raw
+API response text *outside* its own broad try/except, so a real reply
+containing one of these newly-rejected characters would have raised an
+uncaught `pydantic.ValidationError` instead of the intended `ProviderError`
+this boundary already promises for every other failure mode; moved the
+construction inside the existing try block (the CLI/desktop call sites
+already caught `ValidationError` too, so this was not a live end-user
+crash, but the provider's own contract was inconsistent). See
+`tests/unit/test_events.py` and
+`tests/unit/test_anthropic_provider.py::test_respond_wraps_an_unsafe_reply_as_provider_error_not_a_raw_validation_error`.
+
 ## Threat Model
 
 VisionAI processes local voice, camera, keyboard, and pointer input. Relevant threats include replayed audio, nearby speakers, malicious webpage audio, prompt or indirect injection, malicious URLs, event floods, unauthorized local users, compromised dependencies, secret leakage, and misuse of microphone or camera access.
@@ -17,7 +54,7 @@ VisionAI processes local voice, camera, keyboard, and pointer input. Relevant th
 
 - Deny-by-default foundation: every capability must be explicitly registered with a manifest before it is reachable, and the one capability with a real side effect (`app.open`) uses an exact-executable allowlist rather than trusting caller-supplied input.
 - The application state machine is safe under concurrent access from multiple recognition threads (voice, gesture): transitions are serialized so only one of several racing callers can ever succeed, and the audit trail cannot be corrupted by interleaved transitions.
-- Typed contracts reject control characters, oversized text, invalid confidence values, and malformed mappings.
+- Typed contracts reject control characters, oversized text, invalid confidence values, and malformed mappings. `SafeText` also rejects Unicode bidirectional-override characters, invisible zero-width format characters, and line/paragraph separators -- the "Trojan Source" character set that can make a human-facing confirmation/proposal string display differently from what it actually contains -- via one shared `contains_unsafe_characters()`/`strip_unsafe_characters()` implementation reused across every independent control-character check in the codebase, not five separately drifting ones.
 - Event bus is bounded to provide backpressure; closing it is guaranteed to be observed by consumers (via a separate close signal) even if the bounded queue is full at that moment, after draining any already-queued events.
 - Raw media retention defaults to disabled.
 - Log redaction covers common key-value secret patterns, including secrets passed as lazy %-style logging arguments rather than baked into the message template; the filter is attached to every configured handler so it applies to all named application loggers, not only the root logger.

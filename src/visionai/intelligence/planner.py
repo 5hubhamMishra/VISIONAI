@@ -15,6 +15,7 @@ attempt -- always returns `None` here, the same as an explicit "no match."
 
 from __future__ import annotations
 
+from visionai.core.events import contains_unsafe_characters
 from visionai.intelligence.provider import LLMProvider, LLMQuery
 from visionai.orchestration.text_planner import reviewed_phrases
 
@@ -47,7 +48,9 @@ def _build_prompt(phrases: tuple[str, ...], utterance: str) -> str:
 
 
 def _validate_reply(reply: str, phrases: tuple[str, ...]) -> str | None:
-    if any(ord(char) < 32 or ord(char) == 127 for char in reply):
+    # A command phrase must be a single line, unlike `SafeText` (which
+    # exempts tab/newline/CR for multi-turn conversation context).
+    if contains_unsafe_characters(reply, allow_line_breaks=False):
         return None
     if reply.upper() == "NONE":
         return None

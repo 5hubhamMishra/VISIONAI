@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 from visionai.config.user_settings import DEFAULT_WAKE_WORD
 from visionai.core.cancellation import CancellationToken
-from visionai.core.events import TranscriptEvent
+from visionai.core.events import TranscriptEvent, contains_unsafe_characters
 from visionai.orchestration.event_orchestrator import InputAdapter
 
 
@@ -26,7 +26,7 @@ def _normalize(word: str) -> str:
     normalized = " ".join(word.split()).lower()
     if not normalized:
         raise ValueError("wake word must not be empty")
-    if any(ord(char) < 0x20 or ord(char) == 0x7F for char in normalized):
+    if contains_unsafe_characters(normalized, allow_line_breaks=False):
         raise ValueError("wake word must not contain control characters")
     return normalized
 

@@ -1,5 +1,15 @@
 # Testing
 
+2026-09-05 text-safety hardening: full verification passed with 399 tests
+(373 passed/25 failed -- the same pre-existing, exclusively
+`WindowsLockStateAdapter` fail-closed pattern every sandbox session shows,
+not a regression -- 1 skipped) and 88% coverage. Added a parametrized
+`SafeText`/`contains_unsafe_characters()` regression corpus (bidi override,
+zero-width space/non-joiner, bidi isolate, line/paragraph separator, BOM,
+word joiner) proving each is rejected while tab/newline/CR remain accepted,
+plus a regression proving `AnthropicProvider.respond()` converts an unsafe
+reply into `ProviderError` rather than a raw `pydantic.ValidationError`.
+
 2026-09-05 desktop keychain slice: full verification passed with 347 tests
 and 88% coverage. Settings regressions cover missing optional keyring,
 conflicting key choices without writes, save/delete, and storage failures.
@@ -28,6 +38,7 @@ Phase 0 tests cover core contracts and invariants:
 - Audit persistence tests cover JSON Lines round-trip, malformed log rejection, and `clear()` for both `InMemoryAuditSink` and `JsonlAuditSink` -- including that clearing a `JsonlAuditSink` that was never written to is a safe no-op rather than an error.
 - Lock-state tests cover conservative defaults, policy-context construction from adapters, Windows wrapper failure handling, injected successful session lookup, and a live smoke test against the real `OpenInputDesktop`/`CloseDesktop` Windows API calls (confirms no crash and a correct result on an unlocked session; does not confirm the genuinely-locked path, which needs a human to lock the screen -- see `docs/PROJECT_STATE.md` Known Defects).
 - Security input tests cover unknown fields from model output, control characters in intent slots, prompt-injection strings that remain data, and malformed model plans with extra tool fields.
+- `SafeText`/text-safety tests (`test_events.py`) cover a parametrized corpus of Unicode bidi-override (right-to-left override), zero-width space/non-joiner, bidi isolate, line separator, paragraph separator, byte-order mark, and word-joiner characters, proving `SafeText` rejects each one and `contains_unsafe_characters()` flags it; a companion test proves tab/newline/CR remain accepted (`ConversationMemory` depends on real newlines), and `allow_line_breaks=False` additionally rejects them for single-line-only values; `strip_unsafe_characters()` is proven to remove exactly the flagged characters and nothing else. `test_anthropic_provider.py` covers a real-API-shaped reply containing a bidi-override character being converted to `ProviderError`, not a raw `pydantic.ValidationError`.
 - Concurrency regression tests reproduce and then verify the fix for three races found during review: `FixedWindowRateLimiter` (100 threads racing through a barrier must not exceed the configured limit), `StateMachine` (50 threads racing a transition must yield exactly one success and an unbroken history chain, reproduced with `sys.setswitchinterval` tightened to widen the race window), and `EventBus.close()` (closing a completely full queue must not deadlock a consumer waiting in `next_event()`).
 - Logging redaction tests exercise the actual filter against realistic `LogRecord`s, not only the pure `redact_message()` helper: lazy `%s`-style arguments, dict-style arguments, and messages with no secret at all, plus a test that `configure_logging()` attaches the filter to installed handlers (not just the root logger).
 - System info capability tests cover `system.time`, `system.date`, `system.battery` (including the "no battery detected" fallback), and `system.health`, both as isolated handlers with injected fakes and end to end through `build_runtime()`'s real dispatcher and policy path.

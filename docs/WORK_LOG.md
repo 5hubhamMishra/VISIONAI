@@ -1,5 +1,86 @@
 # Work Log
 
+## 2026-09-05 autonomous cycle: Unicode text-safety hardening (Linux sandbox)
+
+- Followed the standing protocol in a fresh sandbox container: pulled `main`,
+  read the docs and recent git log, built a Python 3.12 virtualenv from
+  `requirements/dev.txt`, installed the headless Qt/PortAudio system
+  libraries (`libegl1`, `libgl1-mesa-dri`, `libportaudio2`), and ran the
+  baseline verification suite before touching anything. Baseline matched the
+  documented sandbox state exactly: ruff/bandit/pip-audit clean, mypy clean
+  except the known `ctypes.windll` false positive, pytest 361 passed/25
+  failed/1 skipped -- all 25 failures confirmed by inspection to be the same
+  `WindowsLockStateAdapter` fail-closed-with-no-real-Windows-desktop pattern
+  every prior sandbox session has documented, not a regression.
+- Checked `docs/PROJECT_STATE.md`'s Approved Next Tasks for a well-scoped
+  item; found item 5 (Phase 6 Intelligence) was itself stale -- it still
+  listed "a desktop Settings control for the keychain secret" as CLI-only
+  and remaining, but that was already shipped in an earlier session (the
+  "2026-09-05 update" bullet in Implemented and Tested). Corrected the
+  wording rather than re-implementing already-done work.
+- With nothing genuinely well-scoped left unclaimed in that list for this
+  hardware-less environment, looked for a real bug instead (this run's
+  instructions call out schema/validation hardening and security tests as
+  good fits) and traced `SafeText` (`visionai.core.events`, backing
+  `LLMQuery`/`LLMReply`, `Intent`, `ActionRequest.arguments`,
+  `ActionPlan.summary`, both prompt types) end to end. Found it -- and five
+  other independent, duplicated control-character checks across the
+  codebase -- rejected only ASCII control characters, leaving Unicode
+  bidirectional-override characters (the "Trojan Source" set,
+  CVE-2021-42574), invisible zero-width format characters, and the Unicode
+  line/paragraph separators completely unchecked. Traced a concrete path:
+  `orchestration/text_planner.py::_plan_browser_search` and
+  `intelligence/planner.py::suggest_command()` both let such characters
+  through into a `browser.search` query, which then appears verbatim in the
+  `summary` a human reads in `--suggest`/Suggest Command's proposal line --
+  exactly the text Section 9's "must display exact normalized action,
+  target and effect" depends on being trustworthy.
+- Added `contains_unsafe_characters()`/`strip_unsafe_characters()` to
+  `core/events.py` (an `allow_line_breaks=False` mode additionally blocks
+  tab/newline/CR for single-line-only values -- a URL, a search query, a
+  suggested command phrase, a wake word) as the one shared implementation,
+  then replaced the five independently drifting checks in
+  `orchestration/text_planner.py` (twice), `orchestration/wake_word.py`,
+  `config/user_settings.py`, `policy/url_validation.py` (twice), and
+  `intelligence/planner.py` with calls to it. Caught and fixed a real
+  regression from my own first pass before it was ever committed: naively
+  swapping `browser.search`'s control-character check to the new helper's
+  default (which permits tab/newline/CR, matching `SafeText`'s
+  `ConversationMemory`-driven exemption) broke an existing test expecting a
+  newline-containing search query to be rejected -- fixed by using
+  `allow_line_breaks=False` for every single-line-only context instead of
+  applying the exemption everywhere.
+- Running the full suite after the change (not just reviewing it) surfaced
+  a second real bug the hardening itself introduced: `AnthropicProvider.
+  respond()` constructed `LLMReply` from the raw API response text outside
+  its own broad try/except, so a real reply containing a newly-rejected
+  character would raise an uncaught `pydantic.ValidationError` instead of
+  the `ProviderError` this boundary already promises for every other
+  failure. The CLI/desktop call sites already caught `ValidationError` too,
+  so this was not a live end-user crash, but the provider's own contract
+  was inconsistent -- fixed by moving the construction inside the existing
+  try block, in the same session.
+- Verified: a parametrized `test_events.py` corpus (right-to-left override,
+  zero-width space, zero-width non-joiner, bidi isolate, line separator,
+  paragraph separator, byte-order mark, word joiner) proves each is
+  rejected by both `SafeText` and `contains_unsafe_characters()`; a
+  companion test proves tab/newline/CR remain accepted; `allow_line_breaks=
+  False` is proven to additionally reject line breaks; `strip_unsafe_
+  characters()` is proven to remove exactly the flagged characters and
+  nothing else; a new `test_anthropic_provider.py` test proves the
+  unsafe-reply-to-`ProviderError` fix. All new Unicode test literals use
+  explicit `\uXXXX` escapes rather than embedded literal characters, to
+  keep the source files reviewable and avoid the exact class of
+  editor/diff-mangling risk this fix is about.
+- Full verification after the change: 399 tests (373 passed, 25 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 1 skipped), 88% coverage, ruff clean, mypy clean (one known
+  sandbox-only false positive), Bandit clean, pip-audit clean.
+- Updated `docs/SECURITY.md`, `docs/TESTING.md`, and `docs/PROJECT_STATE.md`
+  (Current Phase, a new Implemented and Tested bullet, the corrected
+  Approved Next Tasks item 5, Last Verification Result, Last Updated) in
+  the same commit as the code change.
+
 ## 2026-09-05 autonomous hour: desktop thread lifetime and privacy
 
 - Integrated remote CI/memory commits through merge 3ca75c0, retaining the

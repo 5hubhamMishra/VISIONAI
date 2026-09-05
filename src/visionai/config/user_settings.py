@@ -16,17 +16,17 @@ from typing import cast, get_args
 
 from visionai.config.settings import LogLevel, get_settings
 from visionai.core.errors import StorageError
+from visionai.core.events import contains_unsafe_characters
 
 _VALID_LOG_LEVELS = frozenset(get_args(LogLevel))
 
 DEFAULT_WAKE_WORD = "visionai"
-_CONTROL_CHARS = frozenset(chr(c) for c in (*range(0x00, 0x20), 0x7F))
 
 
 def _normalize_wake_word(word: str) -> str | None:
     """Collapse whitespace and lowercase; return None if empty or unsafe."""
 
-    if any(char in _CONTROL_CHARS for char in word):
+    if contains_unsafe_characters(word, allow_line_breaks=False):
         return None
     normalized = " ".join(word.split()).lower()
     return normalized or None

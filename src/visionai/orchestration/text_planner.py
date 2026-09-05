@@ -14,11 +14,16 @@ from visionai.capabilities.applications import ALLOWED_APPLICATIONS
 from visionai.capabilities.browser import ALLOWED_SITES
 from visionai.capabilities.media import ALLOWED_MEDIA_ACTIONS
 from visionai.capabilities.registry import CapabilityRegistry
-from visionai.core.events import ActionPlan, ActionRequest, Intent
+from visionai.core.events import (
+    ActionPlan,
+    ActionRequest,
+    Intent,
+    contains_unsafe_characters,
+    strip_unsafe_characters,
+)
 
 _SPACE = re.compile(r"\s+")
 _SAFE_SLOT = re.compile(r"^[a-z0-9 _.-]+$")
-_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _APP_PHRASE = re.compile(r"^(?:open|launch|start)\s+(.+)$")
 _SITE_PHRASE = re.compile(r"^(?:open|go to|visit)\s+(.+)$")
 _SEARCH_PHRASE = re.compile(r"^(?:search(?: for)?|google|find|look up)\s+(.+)$")
@@ -145,7 +150,7 @@ class TextCommandPlanner:
     def _plan_browser_search(
         self, source_text: str, query: str
     ) -> tuple[Intent, ActionPlan] | None:
-        if any(ord(char) < 32 or ord(char) == 127 for char in query) or not query.strip():
+        if contains_unsafe_characters(query, allow_line_breaks=False) or not query.strip():
             return None
         return self._capability_plan(
             source_text=source_text,
@@ -184,7 +189,7 @@ class TextCommandPlanner:
         # was already made against the raw text; this only sanitizes what
         # goes into the informational Intent below, which carries no
         # executable authority (steps stays empty regardless).
-        safe_text = _CONTROL_CHARS.sub("", source_text)
+        safe_text = strip_unsafe_characters(source_text)
         intent = Intent(
             name="conversation.reply",
             confidence=0.3,
