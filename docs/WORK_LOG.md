@@ -1,5 +1,59 @@
 # Work Log
 
+## 2026-09-06 platform/microphone.py Test Coverage (Linux Sandbox Cycle)
+
+- Started against local commit `c2088fc` (the prior session's `platform/
+  stt.py` coverage cycle); baseline verified clean and unchanged from the
+  prior session's documented state before any work started (fresh
+  `.venv312` built from `requirements/dev.txt` against the system's real
+  Python 3.12.3 in a new container, again needing `libegl1`/`libopengl0`/
+  `libportaudio2` via `apt-get`; Ruff clean; mypy clean for 54 files except
+  the same sandbox-only `ctypes.windll` false positive every session shows;
+  Bandit clean; pip-audit clean; pytest collected 553 tests -- 515 passed,
+  28 failed, 10 skipped, 94% coverage -- all 28 failures confirmed by
+  message to be the documented `WindowsLockStateAdapter` fail-closed
+  pattern, not a regression. Noted for the record: this session's own
+  collection count (553) differs slightly from the 555 the prior session's
+  entry recorded for this same commit; every other signal -- 28 failures
+  with identical names/reasons, 10 skips, Ruff/mypy/Bandit/pip-audit all
+  clean -- matches exactly, so this is treated as a stale prior count, not
+  evidence of a regression or missing test file).
+- Scanned the coverage report for a real, narrow, hardware-free gap and
+  found one in `visionai.platform.microphone` (92% covered, lines 80-88,
+  111, 116): `_default_stream_factory()` -- the real production stream
+  builder, which imports `sounddevice` and constructs a real
+  `sd.InputStream`, wrapping its raw callback to hand `MicrophoneCapture`
+  a defensive copy of each audio frame -- had zero direct coverage, since
+  every existing test in `tests/unit/test_microphone.py` injects a fake
+  `stream_factory` straight into `MicrophoneCapture`. `MicrophoneCapture.
+  __init__()`'s `sample_rate` validation (non-int, bool, non-positive) and
+  its `max_samples < 1` edge case (a duration so short it rounds below one
+  sample at the given rate) were also untested -- only the sibling
+  `max_duration_seconds` validation branch had a test. Same shape of gap
+  already closed for `capabilities/browser.py`/`applications.py`/
+  `media.py`'s default adapters and `platform/stt.py`'s
+  `_default_model_factory()`/`default_transcriber()` in earlier sessions.
+- Added four tests to `tests/unit/test_microphone.py`, mirroring
+  `test_stt.py`'s `monkeypatch.setattr(module, "import_module", ...)`
+  pattern (no real PortAudio backend or attached microphone touched):
+  one calling `_default_stream_factory()` directly with a fake
+  `sounddevice.InputStream` that captures its exact constructor arguments
+  (`samplerate`/`channels`/`dtype`/`device`) and proves the wrapped
+  callback both forwards frames to the caller's `on_audio` and hands back
+  a real defensive copy (mutating the original array after the callback
+  runs does not change what was already received); one parametrized over
+  six invalid `sample_rate` values (`0`, `-1`, `True`, `False`, `1.5`,
+  `"16000"`) asserting each raises `ValueError`; one proving a
+  `max_duration_seconds` short enough to round below one sample at a given
+  `sample_rate` (rate=1, duration=0.4) raises `ValueError` distinctly from
+  the existing non-positive/non-finite duration checks. No application
+  code changed -- this was a pure test gap, not a bug.
+  `platform/microphone.py` reached 100% line coverage (was 92%). Full
+  verification after the change: 561 tests (523 passed, 28 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 10 skipped), 94% overall coverage, Ruff/mypy (one known
+  sandbox-only false positive)/Bandit/pip-audit all clean.
+
 ## 2026-09-06 platform/stt.py Test Coverage (Linux Sandbox Cycle)
 
 - Started against local commit `583c3a1` (the prior session's `app.py` CLI

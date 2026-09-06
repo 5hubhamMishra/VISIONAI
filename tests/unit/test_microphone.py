@@ -10,9 +10,12 @@ the test runner's actual audio hardware is not under our control.
 
 from __future__ import annotations
 
+import types
+
 import numpy as np
 import pytest
 
+import visionai.platform.microphone as microphone_module
 from visionai.config.user_settings import UserSettingsStore
 from visionai.platform.microphone import (
     MicrophoneCapture,
@@ -109,6 +112,17 @@ def test_capture_rejects_invalid_duration_limits(duration: float) -> None:
         MicrophoneCapture(max_duration_seconds=duration)
 
 
+@pytest.mark.parametrize("sample_rate", [0, -1, True, False, 1.5, "16000"])
+def test_capture_rejects_invalid_sample_rate(sample_rate: object) -> None:
+    with pytest.raises(ValueError, match="sample rate"):
+        MicrophoneCapture(sample_rate=sample_rate)  # type: ignore[arg-type]
+
+
+def test_capture_rejects_a_duration_that_rounds_to_less_than_one_sample() -> None:
+    with pytest.raises(ValueError, match="at least one sample"):
+        MicrophoneCapture(sample_rate=1, max_duration_seconds=0.4)
+
+
 def test_stop_with_no_frames_captured_returns_empty_array() -> None:
     capture = MicrophoneCapture(stream_factory=_factory([]))
 
@@ -142,6 +156,41 @@ def test_start_after_stop_is_allowed_again() -> None:
     audio = capture.stop()
 
     assert audio.tolist() == pytest.approx([0.5])
+
+
+def test_default_stream_factory_builds_a_real_inputstream_with_the_given_parameters(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+    received_frames: list[np.ndarray] = []
+
+    class _FakeInputStream:
+        def __init__(self, *, samplerate, channels, dtype, device, callback) -> None:
+            captured["samplerate"] = samplerate
+            captured["channels"] = channels
+            captured["dtype"] = dtype
+            captured["device"] = device
+            self._callback = callback
+
+    fake_sounddevice = types.SimpleNamespace(InputStream=_FakeInputStream)
+    monkeypatch.setattr(microphone_module, "import_module", lambda name: fake_sounddevice)
+
+    stream = microphone_module._default_stream_factory(16_000, 3, received_frames.append)
+
+    assert isinstance(stream, _FakeInputStream)
+    assert captured == {
+        "samplerate": 16_000,
+        "channels": 1,
+        "dtype": "float32",
+        "device": 3,
+    }
+
+    indata = np.array([0.5, 0.25], dtype=np.float32)
+    stream._callback(indata, 2, object(), object())
+    indata[0] = 999.0
+
+    assert len(received_frames) == 1
+    assert received_frames[0].tolist() == [0.5, 0.25]
 
 
 def test_list_input_devices_runs_against_the_real_backend() -> None:
