@@ -1,6 +1,11 @@
 import logging
 
-from visionai.observability.logging import RedactionFilter, configure_logging, redact_message
+from visionai.observability.logging import (
+    RedactionFilter,
+    configure_logging,
+    get_logger,
+    redact_message,
+)
 
 
 def test_redacts_common_secret_values() -> None:
@@ -47,6 +52,22 @@ def test_redaction_filter_does_not_corrupt_messages_with_no_secret() -> None:
 
     assert RedactionFilter().filter(record) is True
     assert record.getMessage() == "processed 3 events in 0.2s"
+
+
+def test_get_logger_returns_the_standard_named_logger() -> None:
+    """get_logger() is a thin, public delegation to logging.getLogger(name)
+    -- never exercised directly anywhere in this codebase (only accessed
+    indirectly via `logging.getLogger()` calls in tests, or not at all).
+    Asserts the delegation itself: the same name always resolves to the
+    same underlying Logger instance, and it is a real logging.Logger, not
+    a wrapper.
+    """
+    logger = get_logger("visionai.some.module")
+
+    assert isinstance(logger, logging.Logger)
+    assert logger.name == "visionai.some.module"
+    assert logger is logging.getLogger("visionai.some.module")
+    assert get_logger("visionai.some.module") is logger
 
 
 def test_configure_logging_attaches_redaction_filter_to_every_handler() -> None:

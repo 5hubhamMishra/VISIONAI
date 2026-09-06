@@ -10,10 +10,45 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-06, `platform/webcam.py` coverage
-cycle): 561 tests, 528 passed, 28 failed (documented `WindowsLockStateAdapter`
-fail-closed pattern, not a regression), 10 skipped, 95% coverage, Ruff, mypy
-(one known sandbox-only false positive), Bandit, and pip-audit all clean.
+Latest Linux sandbox verification (2026-09-06, `observability/logging.py`
+coverage cycle): 567 tests, 529 passed, 28 failed (documented
+`WindowsLockStateAdapter` fail-closed pattern, not a regression), 10 skipped,
+95% coverage, Ruff, mypy (one known sandbox-only false positive), Bandit, and
+pip-audit all clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, `observability/logging.py`
+coverage): started against local commit `2416f95` (the prior session's
+`platform/webcam.py` coverage cycle); baseline verified clean and unchanged
+from the prior session's documented state before any work started (fresh
+`.venv312` built from `requirements/dev.txt` against the system's real
+Python 3.12.3 in a new container, again needing `libegl1`/`libopengl0`/
+`libportaudio2` via `apt-get` before pytest-qt/sounddevice would import;
+Ruff clean; mypy clean for 54 files except the same sandbox-only
+`ctypes.windll` false positive every session shows; Bandit clean; pip-audit
+clean; pytest collected 566 tests -- 528 passed, 28 failed, 10 skipped, 95%
+coverage -- all 28 failures confirmed by message to be the documented
+`WindowsLockStateAdapter` fail-closed pattern, not a regression, exactly
+matching the prior session's recorded result). The prior session's own
+"Next task" notes flagged `observability/logging.py` (94%, line 56) as a
+remaining hardware-free coverage gap. Confirmed it was real: `get_logger()`
+-- the module's public, exported factory for every application logger
+(`visionai.observability.__all__` re-exports it, though no source module
+actually calls it yet) -- had zero direct test coverage; the existing
+`tests/unit/test_logging.py` only exercised `redact_message()`,
+`RedactionFilter`, and `configure_logging()`, and only reached
+`logging.getLogger()` indirectly through those. This is the same
+"thin public delegation, zero callers, zero tests" shape already closed for
+`CancellationToken.wait()` and `FixedWindowRateLimiter.reset()` in earlier
+sessions. Added one test to `tests/unit/test_logging.py` asserting
+`get_logger(name)` returns a real `logging.Logger` with the requested name,
+that it is the identical object `logging.getLogger(name)` would return (the
+delegation itself), and that two calls with the same name return the same
+instance. No application code changed -- this was a pure test gap, not a
+bug. `observability/logging.py` reached 100% line coverage (was 94%). Full
+verification after the change: 567 tests (529 passed, 28 failed -- identical
+failing-test names to the pre-change baseline, confirming no regressions --
+10 skipped), 95% overall coverage, Ruff/mypy(one known false positive)/
+Bandit/pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, `capabilities/system_info.py`
 coverage): started against local commit `b77765c` (the prior session's
@@ -1186,7 +1221,14 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `platform/webcam.py` coverage
+- 2026-09-06, Linux sandbox (this session, `observability/logging.py`
+  coverage cycle): 567 tests -- 529 passed, 28 failed (all the documented
+  `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
+  regression), 10 skipped -- 95% overall coverage, Ruff clean, mypy clean
+  for 54 source files except the one documented sandbox-only
+  `ctypes.windll` false positive, Bandit clean, pip-audit clean.
+  `observability/logging.py` now at 100% line coverage (was 94%).
+- 2026-09-06, Linux sandbox (prior session, `platform/webcam.py` coverage
   cycle): 566 tests -- 528 passed, 28 failed (all the documented
   `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
   regression), 10 skipped -- 95% overall coverage, Ruff clean, mypy clean
@@ -1299,4 +1341,4 @@ cd visionai
 
 ## Last Updated
 
-2026-09-06 (Linux sandbox coverage cycle: `platform/microphone.py`)
+2026-09-06 (Linux sandbox coverage cycle: `observability/logging.py`)
