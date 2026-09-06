@@ -1,6 +1,12 @@
+import types
+
+import pytest
+
+import visionai.capabilities.media as media_module
 from visionai.capabilities import CapabilityRegistry
 from visionai.capabilities.media import (
     ALLOWED_MEDIA_ACTIONS,
+    default_key_presser,
     make_media_control_handler,
     media_control_manifest,
     media_manifests,
@@ -70,6 +76,29 @@ def test_handler_reports_key_presser_failure_without_raising() -> None:
 
     assert result.success is False
     assert "Could not control media" in result.message
+
+
+def test_default_key_presser_delegates_to_pyautogui_press(monkeypatch) -> None:
+    pressed: list[str] = []
+    fake_pyautogui = types.SimpleNamespace(press=pressed.append)
+    monkeypatch.setattr(media_module, "import_module", lambda name: fake_pyautogui)
+
+    default_key_presser("volumeup")
+
+    assert pressed == ["volumeup"]
+
+
+def test_default_key_presser_raises_oserror_when_pyautogui_is_not_installed(
+    monkeypatch,
+) -> None:
+    def raise_import_error(name: str) -> None:
+        raise ImportError(f"No module named '{name}'")
+
+    monkeypatch.setattr(media_module, "import_module", raise_import_error)
+
+    with pytest.raises(OSError, match="pyautogui is not installed") as excinfo:
+        default_key_presser("mute")
+    assert isinstance(excinfo.value.__cause__, ImportError)
 
 
 def test_runtime_dispatches_media_control_and_audits_it() -> None:

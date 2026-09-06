@@ -10,10 +10,51 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-06, `core/event_bus.py` coverage
-cycle): 514 tests, 476 passed, 28 failed (documented `WindowsLockStateAdapter`
-fail-closed pattern, not a regression), 10 skipped, 91% coverage, Ruff, mypy
-(one known sandbox-only false positive), Bandit, and pip-audit all clean.
+Latest Linux sandbox verification (2026-09-06, `capabilities/media.py`
+coverage cycle): 516 tests, 478 passed, 28 failed (documented
+`WindowsLockStateAdapter` fail-closed pattern, not a regression), 10 skipped,
+92% coverage, Ruff, mypy (one known sandbox-only false positive), Bandit, and
+pip-audit all clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, `capabilities/media.py`
+coverage): started against local commit `1c0aee7` (the prior session's
+`core/event_bus.py` coverage cycle); baseline verified clean and unchanged
+from the prior session's documented state before any work started (fresh
+`.venv312` built from `requirements/dev.txt` in a new container, again
+needing `libegl1`/`libopengl0`/`libportaudio2` via `apt-get` -- `libgl1` was
+already present -- before pytest-qt/sounddevice would import; Ruff clean;
+mypy clean for 54 files except the same sandbox-only `ctypes.windll` false
+positive every session shows; Bandit clean; pip-audit clean; pytest 514
+tests -- 476 passed, 28 failed, 10 skipped, 91% coverage -- all 28 failures
+confirmed by message to be the documented `WindowsLockStateAdapter`
+fail-closed pattern, not a regression, exactly matching the prior session's
+recorded result). The prior session's report flagged `capabilities/media.py`
+(85% covered, lines 39-43) as a remaining hardware-free coverage gap,
+explicitly noting it was testable with a monkeypatched `pyautogui`, no real
+hardware needed. Confirmed it was real: `default_key_presser()` -- the
+`media.control` capability's real production key presser, which dynamically
+imports `pyautogui` and calls `pyautogui.press(key)`, converting an
+`ImportError` into an `OSError` when the optional dependency is absent --
+had zero direct coverage; every existing test in `tests/unit/test_media.py`
+injected a fake `key_presser`, so neither the successful `pyautogui.press()`
+delegation nor the "pyautogui not installed" failure path was ever exercised.
+This is the same shape of gap already closed for `capabilities/browser.py`'s
+`default_browser_opener()` and `capabilities/applications.py`'s
+`default_launcher()` in earlier sessions. Added two tests to `tests/unit/
+test_media.py`, monkeypatching the module's imported `import_module` symbol
+(mirroring the existing `webbrowser.open`/`subprocess.Popen` monkeypatch
+pattern used for the other two default openers, adapted here since this
+module resolves its optional dependency via `importlib.import_module` rather
+than a static import): one asserting `default_key_presser()` delegates to a
+fake `pyautogui.press()`, one asserting it raises `OSError` with the
+"pyautogui is not installed" message (chained from the original
+`ImportError`) when the import fails. No application code changed -- this
+was a pure test gap, not a bug. `capabilities/media.py` reached 100% line
+coverage (was 85%). Full verification after the change: 516 tests (478
+passed, 28 failed -- identical failing-test names to the pre-change
+baseline, confirming no regressions -- 10 skipped), 92% coverage (up from
+91%, reflecting this module's own coverage gain), Ruff/mypy(one known false
+positive)/Bandit/pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, observability/audit.py coverage):
 started against local commit `10452d6` (the prior session's `capabilities/
@@ -843,7 +884,14 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `core/event_bus.py` coverage
+- 2026-09-06, Linux sandbox (this session, `capabilities/media.py` coverage
+  cycle): 516 tests -- 478 passed, 28 failed (all the documented
+  `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
+  regression), 10 skipped -- 92% coverage, Ruff clean, mypy clean for 54
+  source files except the one documented sandbox-only `ctypes.windll` false
+  positive, Bandit clean, pip-audit clean. `capabilities/media.py` now at
+  100% line coverage (was 85%).
+- 2026-09-06, Linux sandbox (prior session, `core/event_bus.py` coverage
   cycle): 514 tests -- 476 passed, 28 failed (all the documented
   `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
   regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
@@ -902,4 +950,4 @@ cd visionai
 
 ## Last Updated
 
-2026-09-06 (Linux sandbox coverage cycle: `capabilities/applications.py`)
+2026-09-06 (Linux sandbox coverage cycle: `capabilities/media.py`)

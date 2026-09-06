@@ -1,5 +1,71 @@
 # Work Log
 
+## 2026-09-06 capabilities/media.py Test Coverage (Linux Sandbox Cycle)
+
+- Started against local commit `1c0aee7` (the prior session's
+  `core/event_bus.py` coverage cycle); baseline verified clean and
+  unchanged from the prior session's documented state before any work
+  started (fresh `.venv312` built from `requirements/dev.txt` in a new
+  container, again needing `libegl1`/`libopengl0`/`libportaudio2` via
+  `apt-get` -- `libgl1` was already present -- before pytest-qt/sounddevice
+  would import; Ruff clean; mypy clean for 54 files except the same
+  sandbox-only `ctypes.windll` false positive every session shows; Bandit
+  clean; pip-audit clean; pytest 514 tests -- 476 passed, 28 failed, 10
+  skipped, 91% coverage -- all 28 failures confirmed by message to be the
+  documented `WindowsLockStateAdapter` fail-closed pattern, not a
+  regression, exactly matching the prior session's recorded result).
+- The prior session's report flagged `capabilities/media.py` (85% covered,
+  lines 39-43) as a remaining hardware-free coverage gap, explicitly noting
+  it was testable with a monkeypatched `pyautogui`, no real hardware
+  needed. Confirmed it was real: `default_key_presser()` -- the
+  `media.control` capability's real production key presser, which
+  dynamically imports `pyautogui` via `importlib.import_module` and calls
+  `pyautogui.press(key)`, converting an `ImportError` into an `OSError`
+  when the optional dependency is not installed -- had zero direct
+  coverage. Every existing test in `tests/unit/test_media.py` constructed
+  its handler with an injected fake `key_presser`, so neither
+  `default_key_presser()`'s successful delegation to `pyautogui.press()`
+  nor its "pyautogui is not installed" failure path was ever exercised.
+  This is the same shape of gap already closed for
+  `capabilities/browser.py`'s `default_browser_opener()` and
+  `capabilities/applications.py`'s `default_launcher()` in earlier
+  sessions -- the one remaining "real production entry point, never
+  directly invoked by any test" gap among the built-in capability handlers.
+- Added two tests to `tests/unit/test_media.py`: one monkeypatching the
+  module's imported `import_module` symbol to return a fake `pyautogui`
+  module and asserting `default_key_presser()` delegates to its `press()`
+  with the exact key; one monkeypatching `import_module` to raise
+  `ImportError` and asserting `default_key_presser()` raises `OSError`
+  with the "pyautogui is not installed" message, chained from the original
+  `ImportError` via `__cause__`. The monkeypatch target is the module-level
+  `import_module` name (mirroring the existing `webbrowser.open`/
+  `subprocess.Popen` monkeypatch pattern used for the other two default
+  openers) rather than `sys.modules`, since this module resolves its
+  optional dependency dynamically rather than through a static import. No
+  application code changed -- this was a pure test gap, not a bug.
+  `capabilities/media.py` reached 100% line coverage (was 85%). Full
+  verification after the change: 516 tests (478 passed, 28 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 10 skipped), 92% coverage (up from 91%, reflecting this
+  module's own coverage gain), Ruff/mypy (one known sandbox-only false
+  positive)/Bandit/pip-audit all clean.
+- Next task: `Approved Next Tasks` items 3 and 5's remaining entries (real
+  voice/STT/wake-word live verification with actual hardware, the
+  `WindowsLockStateAdapter` locked-workstation manual check, and running
+  the now-written live prompt-injection suite with a real API key) all
+  still need real hardware, a live network/model, or a human product
+  decision this sandbox cannot provide. Remaining hardware-free coverage
+  gaps for a future sandbox session to consider, none inspected closely
+  enough yet to confirm they are genuine gaps rather than already-
+  reasonable branches: `capabilities/system_info.py` (96%, lines 53-54/57,
+  battery-sensor fallback branches), `observability/logging.py` (94%, line
+  56), `orchestration/text_planner.py` (99%, line 92),
+  `orchestration/event_orchestrator.py` (92%, lines
+  176/234-238/268-271/278-281/286/378/386, not yet inspected for which
+  branches are hardware-free). Also still unresolved from prior sessions:
+  the `AGENTS.md` removal decision under Required Decisions, still
+  awaiting a human call.
+
 ## 2026-09-06 core/event_bus.py Test Coverage (Linux Sandbox Cycle)
 
 - Started against local commit `7a1cfdd` (the prior session's
