@@ -7,6 +7,8 @@ from visionai.config.routines import RoutineStore
 from visionai.config.secrets import InMemorySecretStore
 from visionai.config.user_settings import UserSettingsStore
 from visionai.core.cancellation import CancellationToken
+from visionai.core.errors import ProviderError, StorageError
+from visionai.core.events import ActionPlan
 from visionai.platform.camera import GestureCandidate, LandmarkAdapter, StaticLandmarkAdapter
 from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.platform.microphone import MicrophoneDevice
@@ -118,6 +120,31 @@ def test_app_rejects_wake_word_text_without_matching_wake_word(
     assert exit_code == 1
     assert "No wake-word command detected." in output
     assert launched == []
+
+
+def test_app_wake_word_text_reports_plan_summary_when_permission_is_required(
+    monkeypatch, capsys, tmp_path
+) -> None:
+    """When the matched command still needs a permission grant (never
+    executed directly by `--wake-word-text`), no `ActionResult` is ever
+    published -- only the planned `ActionPlan` -- so the reported message
+    falls back to the plan's own summary."""
+    store = UserSettingsStore(tmp_path / "settings.json")
+    store.set_wake_word("hey visionai")
+    monkeypatch.setattr("visionai.app.default_user_settings_store", lambda: store)
+    monkeypatch.setattr(
+        "sys.argv", ["visionai", "--wake-word-text", "hey visionai clear history"]
+    )
+    monkeypatch.setattr(
+        "visionai.app.build_runtime",
+        lambda: build_runtime(lock_state=StaticLockStateAdapter(locked=False)),
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Clear the local audit history." in output
 
 
 class _FakeMicrophoneCapture:
@@ -244,6 +271,33 @@ def test_app_reports_no_gesture_detected_within_frame_budget(monkeypatch, capsys
 
     assert exit_code == 0
     assert "No gesture detected." in output
+
+
+@dataclass
+class _ClosableLandmarkAdapter:
+    """Tracks whether `--gesture-frames` closes the adapter once it is done."""
+
+    inner: LandmarkAdapter
+    closed: bool = field(default=False, init=False)
+
+    def read_candidate(self) -> GestureCandidate:
+        return self.inner.read_candidate()
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_app_gesture_frames_closes_the_landmark_adapter_when_done(monkeypatch, capsys) -> None:
+    adapter = _ClosableLandmarkAdapter(StaticLandmarkAdapter(candidates=[]))
+    monkeypatch.setattr("sys.argv", ["visionai", "--gesture-frames", "3"])
+    monkeypatch.setattr("visionai.app._build_landmark_adapter", lambda: adapter)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "No gesture detected." in output
+    assert adapter.closed is True
 
 
 def test_app_gesture_listen_counts_confirmed_votes_until_cancelled(monkeypatch, capsys) -> None:
@@ -395,6 +449,58 @@ def test_app_gesture_listen_reports_when_voice_capture_is_unavailable(
     assert "Stopped. Confirmed 2 gesture(s)." in output
 
 
+def test_app_gesture_listen_reports_no_speech_recognized(monkeypatch, capsys) -> None:
+    candidates = [
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+    ]
+    adapter = StaticLandmarkAdapter(candidates=candidates)
+    times = iter([0.0, 0.5, 0.6, 1.1])
+    monkeypatch.setattr("sys.argv", ["visionai", "--gesture-listen"])
+    monkeypatch.setattr("visionai.app._build_landmark_adapter", lambda: adapter)
+    monkeypatch.setattr(
+        "visionai.app.TemporalGestureRecognizer",
+        lambda: TemporalGestureRecognizer(min_hold_ms=400, clock=lambda: next(times)),
+    )
+    monkeypatch.setattr("visionai.app._build_microphone_capture", lambda: _FakeMicrophoneCapture())
+    monkeypatch.setattr("visionai.app._build_transcriber", lambda: (lambda audio: "   "))
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "No speech recognized." in output
+    assert "Voice command sent." not in output
+
+
+class _BrokenLandmarkAdapter:
+    """Raises on every read, and tracks whether cleanup still ran."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def read_candidate(self) -> GestureCandidate:
+        raise RuntimeError("camera error")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_app_gesture_listen_reports_a_worker_failure(monkeypatch, capsys) -> None:
+    adapter = _BrokenLandmarkAdapter()
+    monkeypatch.setattr("sys.argv", ["visionai", "--gesture-listen"])
+    monkeypatch.setattr("visionai.app._build_landmark_adapter", lambda: adapter)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Listening failed: gesture listener failed: camera error" in output
+    assert adapter.closed is True
+
+
 def test_app_lists_microphones_without_building_runtime(monkeypatch, capsys) -> None:
     monkeypatch.setattr("sys.argv", ["visionai", "--list-microphones"])
     monkeypatch.setattr(
@@ -411,6 +517,57 @@ def test_app_lists_microphones_without_building_runtime(monkeypatch, capsys) -> 
 
     assert exit_code == 0
     assert "3: Desk Mic (2 input channels)" in output
+
+
+def test_app_lists_microphones_reports_none_found(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("sys.argv", ["visionai", "--list-microphones"])
+    monkeypatch.setattr("visionai.app._list_input_devices", lambda: [])
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "No microphone input devices found." in output
+
+
+def test_list_input_devices_delegates_to_the_real_lister(monkeypatch) -> None:
+    devices = [MicrophoneDevice(index=1, name="Mic", max_input_channels=1)]
+    monkeypatch.setattr("visionai.platform.microphone.list_input_devices", lambda: devices)
+
+    assert app._list_input_devices() == devices
+
+
+def test_build_microphone_capture_delegates_to_the_real_default(monkeypatch) -> None:
+    sentinel = object()
+    monkeypatch.setattr(
+        "visionai.platform.microphone.default_microphone_capture", lambda: sentinel
+    )
+
+    assert app._build_microphone_capture() is sentinel
+
+
+def test_build_transcriber_delegates_to_the_real_default(monkeypatch) -> None:
+    sentinel = object()
+    monkeypatch.setattr("visionai.platform.stt.default_transcriber", lambda: sentinel)
+
+    assert app._build_transcriber() is sentinel
+
+
+def test_build_landmark_adapter_constructs_the_real_webcam_adapter(monkeypatch) -> None:
+    created: list[bool] = []
+
+    class _FakeWebcamLandmarkAdapter:
+        def __init__(self) -> None:
+            created.append(True)
+
+    monkeypatch.setattr(
+        "visionai.platform.webcam.WebcamLandmarkAdapter", _FakeWebcamLandmarkAdapter
+    )
+
+    adapter = app._build_landmark_adapter()
+
+    assert isinstance(adapter, _FakeWebcamLandmarkAdapter)
+    assert created == [True]
 
 
 def test_app_reports_microphone_listing_failure(monkeypatch, capsys) -> None:
@@ -486,6 +643,37 @@ def test_app_delete_api_key_removes_it(monkeypatch, capsys) -> None:
     assert exit_code == 0
     assert "API key removed from the OS keychain, if it was there." in output
     assert store.get("anthropic_api_key") is None
+
+
+def test_app_set_api_key_reports_a_storage_failure(monkeypatch, capsys) -> None:
+    class _BrokenStore:
+        def set(self, key: str, value: str) -> None:
+            raise StorageError("keychain unavailable")
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--set-api-key"])
+    monkeypatch.setattr("getpass.getpass", lambda prompt: "sk-ant-fake-key")
+    monkeypatch.setattr("visionai.app.default_secret_store", lambda: _BrokenStore())
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Could not store the key: keychain unavailable" in output
+
+
+def test_app_delete_api_key_reports_a_storage_failure(monkeypatch, capsys) -> None:
+    class _BrokenStore:
+        def delete(self, key: str) -> None:
+            raise StorageError("keychain unavailable")
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--delete-api-key"])
+    monkeypatch.setattr("visionai.app.default_secret_store", lambda: _BrokenStore())
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Could not remove the key: keychain unavailable" in output
 
 
 def test_app_ask_uses_the_fallback_by_default_and_builds_no_runtime(monkeypatch, capsys) -> None:
@@ -734,6 +922,116 @@ def test_app_suggest_asks_once_then_confirms_the_resolved_command(monkeypatch, c
     assert launched == ["notepad.exe"]
 
 
+def test_app_suggest_reports_a_provider_construction_failure(monkeypatch, capsys) -> None:
+    def _broken_provider() -> object:
+        raise ValueError("no key configured")
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--suggest", "open notepad"])
+    monkeypatch.setattr("visionai.app._build_llm_provider", _broken_provider)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Could not get a suggestion: no key configured" in output
+
+
+def test_app_suggest_reports_a_provider_error_during_suggestion(monkeypatch, capsys) -> None:
+    class _FakeProvider:
+        def respond(self, query: object) -> object:
+            raise ProviderError("model unavailable")
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--suggest", "open notepad"])
+    monkeypatch.setattr("visionai.app._build_llm_provider", lambda: _FakeProvider())
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Could not get a suggestion: model unavailable" in output
+
+
+def test_app_suggest_clarification_cancelled_reports_no_match(monkeypatch, capsys) -> None:
+    class _FakeProvider:
+        def respond(self, query: object) -> object:
+            from visionai.intelligence import LLMReply
+
+            return LLMReply(text="CLARIFY: Which app should I open?")
+
+    def _interrupted(prompt: str) -> str:
+        raise EOFError
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--suggest", "open something"])
+    monkeypatch.setattr("visionai.app._build_llm_provider", lambda: _FakeProvider())
+    monkeypatch.setattr("builtins.input", _interrupted)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Which app should I open?" in output
+    assert "No matching command found." in output
+
+
+def test_app_suggest_confirmation_prompt_interrupted_cancels(monkeypatch, capsys) -> None:
+    launched: list[str] = []
+
+    class _FakeProvider:
+        def respond(self, query: object) -> object:
+            from visionai.intelligence import LLMReply
+
+            return LLMReply(text="open notepad")
+
+    def _interrupted(prompt: str) -> str:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("sys.argv", ["visionai", "--suggest", "can you open notepad"])
+    monkeypatch.setattr("visionai.app._build_llm_provider", lambda: _FakeProvider())
+    monkeypatch.setattr(
+        "visionai.app.build_runtime", lambda: build_runtime(launcher=launched.append)
+    )
+    monkeypatch.setattr("builtins.input", _interrupted)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Cancelled." in output
+    assert launched == []
+
+
+def test_app_suggest_reports_no_match_when_the_real_planner_rejects_the_resolved_phrase(
+    monkeypatch, capsys
+) -> None:
+    """Defense in depth: `suggest_command_result` only ever returns a phrase
+    already in `reviewed_phrases()`, which by construction always plans to a
+    real command -- but if that ever drifted out of sync, a validated phrase
+    that no longer plans to anything must still be reported as no match,
+    never dispatched blindly."""
+    launched: list[str] = []
+
+    class _FakeProvider:
+        def respond(self, query: object) -> object:
+            from visionai.intelligence import LLMReply
+
+            return LLMReply(text="open notepad")
+
+    runtime = build_runtime(launcher=launched.append)
+    monkeypatch.setattr(
+        runtime.planner, "plan", lambda text: (None, ActionPlan(steps=(), summary="drifted"))
+    )
+    monkeypatch.setattr("sys.argv", ["visionai", "--suggest", "open notepad please"])
+    monkeypatch.setattr("visionai.app._build_llm_provider", lambda: _FakeProvider())
+    monkeypatch.setattr("visionai.app.build_runtime", lambda: runtime)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "No matching command found." in output
+    assert launched == []
+
+
 def test_app_rejects_unknown_text_command(monkeypatch, capsys) -> None:
     monkeypatch.setattr("sys.argv", ["visionai", "--text", "open calc & powershell"])
 
@@ -742,6 +1040,20 @@ def test_app_rejects_unknown_text_command(monkeypatch, capsys) -> None:
 
     assert exit_code == 1
     assert "No executable action selected." in output
+
+
+def test_app_text_command_dispatch_failure_returns_nonzero(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("sys.argv", ["visionai", "--text", "open notepad"])
+    monkeypatch.setattr(
+        "visionai.app.build_runtime",
+        lambda: build_runtime(lock_state=StaticLockStateAdapter(locked=True)),
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "locked" in output
 
 
 def test_app_runs_browser_search(monkeypatch) -> None:
@@ -756,6 +1068,24 @@ def test_app_runs_browser_search(monkeypatch) -> None:
 
     assert exit_code == 0
     assert opened == ["https://www.google.com/search?q=hello+world"]
+
+
+def test_app_runs_browser_open_with_site_argument(monkeypatch) -> None:
+    opened: list[str] = []
+    monkeypatch.setattr("sys.argv", ["visionai", "browser.open", "--site", "github"])
+    monkeypatch.setattr(
+        "visionai.capabilities.browser.webbrowser.open",
+        lambda url: not opened.append(url),
+    )
+    monkeypatch.setattr(
+        "visionai.app.build_runtime",
+        lambda: build_runtime(lock_state=StaticLockStateAdapter(locked=False)),
+    )
+
+    exit_code = app.main()
+
+    assert exit_code == 0
+    assert opened == ["https://github.com/"]
 
 
 def test_app_runs_media_control_with_injected_key_presser(monkeypatch) -> None:
@@ -797,6 +1127,32 @@ def test_app_rejects_unallowlisted_app_open_without_launching_anything(monkeypat
 
     assert exit_code == 1
     assert "not an allowlisted application" in output
+
+
+def test_app_routine_save_reports_usage_when_no_phrases_given(monkeypatch, capsys) -> None:
+    monkeypatch.setattr("sys.argv", ["visionai", "--routine-save", "morning"])
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Usage: --routine-save NAME PHRASE [PHRASE ...]" in output
+
+
+def test_app_routine_save_reports_a_storage_failure_for_an_unsafe_name(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    store = RoutineStore(tmp_path / "routines.json")
+    monkeypatch.setattr(
+        "sys.argv", ["visionai", "--routine-save", "bad\x00name", "what time is it"]
+    )
+    monkeypatch.setattr("visionai.app.default_routine_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "Could not save routine:" in output
 
 
 def test_app_routine_save_stores_a_valid_routine(monkeypatch, tmp_path, capsys) -> None:
@@ -873,6 +1229,62 @@ def test_app_routine_run_reports_an_unknown_routine(monkeypatch, tmp_path, capsy
 
     assert exit_code == 1
     assert "No saved routine named" in output
+
+
+def test_app_routine_run_stops_when_a_saved_phrase_no_longer_plans(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    """`RoutineStore` has no opinion on phrase safety -- saved directly here,
+    bypassing `--routine-save`'s own check, to prove `--routine-run`
+    re-validates every step live rather than trusting what was once saved."""
+    store = RoutineStore(tmp_path / "routines.json")
+    store.save("errands", ["order me a pizza"])
+    monkeypatch.setattr("sys.argv", ["visionai", "--routine-run", "errands"])
+    monkeypatch.setattr("visionai.app.default_routine_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "no longer plans to a command" in output
+
+
+def test_app_routine_run_stops_when_a_saved_phrase_now_needs_confirmation(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    store = RoutineStore(tmp_path / "routines.json")
+    store.save("cleanup", ["clear history"])
+    monkeypatch.setattr("sys.argv", ["visionai", "--routine-run", "cleanup"])
+    monkeypatch.setattr("visionai.app.default_routine_store", lambda: store)
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert "now requires permission or confirmation" in output
+
+
+def test_app_routine_run_completes_successfully_when_unlocked(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    launched: list[str] = []
+    store = RoutineStore(tmp_path / "routines.json")
+    store.save("morning", ["what time is it", "open notepad"])
+    monkeypatch.setattr("sys.argv", ["visionai", "--routine-run", "morning"])
+    monkeypatch.setattr("visionai.app.default_routine_store", lambda: store)
+    monkeypatch.setattr(
+        "visionai.app.build_runtime",
+        lambda: build_runtime(
+            launcher=launched.append, lock_state=StaticLockStateAdapter(locked=False)
+        ),
+    )
+
+    exit_code = app.main()
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert launched == ["notepad.exe"]
+    assert "Opening notepad." in output
 
 
 def test_app_routine_list_reports_saved_names(monkeypatch, tmp_path, capsys) -> None:

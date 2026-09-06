@@ -1,5 +1,80 @@
 # Work Log
 
+## 2026-09-06 app.py CLI Test Coverage (Linux Sandbox Cycle)
+
+- Started against local commit `c2ca571` (the prior session's
+  `capabilities/system_info.py` coverage cycle); baseline verified clean and
+  unchanged from the prior session's documented state before any work
+  started (fresh `.venv312` built from `requirements/dev.txt` against the
+  system's real Python 3.12.3 in a new container, needing `libegl1`/
+  `libopengl0`/`libportaudio2` via `apt-get`; Ruff clean; mypy clean for 54
+  files except the same sandbox-only `ctypes.windll` false positive every
+  session shows; Bandit clean; pip-audit clean; pytest 526 tests -- 488
+  passed, 28 failed, 10 skipped, 92% coverage -- all 28 failures confirmed by
+  message to be the documented `WindowsLockStateAdapter` fail-closed
+  pattern, not a regression, exactly matching the prior session's recorded
+  result).
+- Scanned the coverage report for the largest real, hardware-free gap and
+  found it in `app.py` (85% covered, 58 statements missed): almost entirely
+  untested edge cases in `main()`'s own CLI argument dispatch, plus four
+  `_build_*` factory functions whose one-line delegation to the real
+  `visionai.platform` backends (microphone, STT, webcam, device listing) was
+  never exercised -- every existing test replaced the whole factory with a
+  fake rather than the deeper function it calls. This is the same shape of
+  gap already closed for `capabilities/browser.py`'s
+  `default_browser_opener()`, `capabilities/applications.py`'s
+  `default_launcher()`, and `capabilities/media.py`'s `default_key_presser()`
+  in earlier sessions.
+- Added 28 tests to `tests/unit/test_app.py` and 1 to
+  `tests/unit/test_text_planner.py` (a previously-untested blank/
+  whitespace-only `--text` input), all using existing fakes/monkeypatches --
+  no real microphone, camera, or `WindowsLockStateAdapter` hardware behavior
+  touched or claimed verified. Covered: the four factory-delegation branches
+  (fakes only replace the deeper `list_input_devices`/
+  `default_microphone_capture`/`default_transcriber`/`WebcamLandmarkAdapter`
+  functions, never real hardware); `--set-api-key`/`--delete-api-key`
+  reporting a keychain `StorageError`; `--list-microphones` with zero
+  devices; `--gesture-listen` reporting a worker failure and running the
+  adapter's `close()`; the "No speech recognized." branch of the
+  closed-fist/open-palm voice-capture flow; `--gesture-frames` closing the
+  landmark adapter when done; `--suggest` reporting a provider-construction
+  failure, a live `ProviderError` from the model, an EOF/Ctrl+C during the
+  clarification follow-up question, an EOF/Ctrl+C at the final yes/no
+  confirmation, and a defense-in-depth regression test proving a validated
+  phrase is still reported as "No matching command found." if the real
+  planner ever returned no steps for it (not a currently-reachable real-data
+  path today, since `suggest_command_result` only ever returns a phrase
+  already in `reviewed_phrases()`, which by construction always plans to a
+  real command); `--wake-word-text` falling back to the plan's own summary
+  when the matched command only reaches a pending permission request, never
+  an `ActionResult`; `--routine-save` with no phrases, and with a
+  control-character name that the CLI's own phrase check does not catch but
+  `RoutineStore.save()` still rejects; `--routine-run` stopping on a saved
+  phrase that no longer plans to anything or that now requires confirmation
+  (both saved directly via `RoutineStore`, bypassing `--routine-save`'s own
+  check, to prove `--routine-run` re-validates live rather than trusting
+  what was saved) and completing all steps successfully when unlocked;
+  `--text` and generic capability dispatch (`browser.open --site`)
+  exercised end to end.
+- `app.py` reached 98% line coverage (was 85%). The remaining 7 lines are two
+  `KeyboardInterrupt`-during-a-background-thread-join loops
+  (`--wake-word-listen`/`--gesture-listen`'s Ctrl+C handling) and the
+  module's own `if __name__ == "__main__":` guard -- deliberately left
+  rather than adding a fragile thread-timing test or a subprocess-based test
+  for one line, matching this project's existing precedent of leaving that
+  exact guard line uncovered in `ui/main_window.py` too.
+- No application code changed -- this was a pure test-coverage gap, not a
+  bug. Verified: full suite after the change is 550 tests (512 passed, 28
+  failed -- identical failing-test names to the pre-change baseline,
+  confirming no regressions -- 10 skipped), 94% overall coverage, Ruff/mypy
+  (one known sandbox-only false positive)/Bandit/pip-audit all clean, run
+  directly in this Linux sandbox.
+- Noted but did not act on (per this run's scope and the standing
+  `Required Decisions` entry): `AGENTS.md` remains in the repo root, added by
+  a prior session under the repo owner's own git identity and consistent
+  with `docs/DECISIONS/0007-phase7-routines-first-slice.md`'s recorded
+  Phase 7 approval; still flagged for a human decision, not touched here.
+
 ## 2026-09-06 capabilities/system_info.py Test Coverage (Linux Sandbox Cycle)
 
 - Started against local commit `b77765c` (the prior session's

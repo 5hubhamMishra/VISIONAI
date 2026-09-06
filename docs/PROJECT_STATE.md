@@ -10,11 +10,10 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-06, `orchestration/
-event_orchestrator.py` coverage cycle): 523 tests, 485 passed, 28 failed
-(documented `WindowsLockStateAdapter` fail-closed pattern, not a regression),
-10 skipped, 92% coverage, Ruff, mypy (one known sandbox-only false positive),
-Bandit, and pip-audit all clean.
+Latest Linux sandbox verification (2026-09-06, `app.py` CLI coverage cycle):
+550 tests, 512 passed, 28 failed (documented `WindowsLockStateAdapter`
+fail-closed pattern, not a regression), 10 skipped, 94% coverage, Ruff, mypy
+(one known sandbox-only false positive), Bandit, and pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, `capabilities/system_info.py`
 coverage): started against local commit `b77765c` (the prior session's
@@ -54,6 +53,72 @@ verification after the change: 526 tests (488 passed, 28 failed -- identical
 failing-test names to the pre-change baseline, confirming no regressions --
 10 skipped), 92% coverage, Ruff/mypy(one known false positive)/Bandit/
 pip-audit all clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, `app.py` CLI coverage): started
+against local commit `c2ca571` (the prior session's `system_info.py`
+coverage cycle); baseline verified clean and unchanged from the prior
+session's documented state before any work started (fresh `.venv312` built
+from `requirements/dev.txt` against the system's real Python 3.12.3 in a new
+container, again needing `libegl1`/`libopengl0`/`libportaudio2` via
+`apt-get`; Ruff clean; mypy clean for 54 files except the same sandbox-only
+`ctypes.windll` false positive every session shows; Bandit clean; pip-audit
+clean; pytest 526 tests -- 488 passed, 28 failed, 10 skipped, 92% coverage --
+all 28 failures confirmed by message to be the documented
+`WindowsLockStateAdapter` fail-closed pattern, not a regression, exactly
+matching the prior session's recorded result). `app.py` (the CLI entry
+point) was 85% covered, 58 statements missed, by far the largest gap of any
+module -- almost entirely untested edge cases in `main()`'s own CLI argument
+dispatch (storage/provider construction failures, empty-result branches,
+Ctrl+C/EOF during an interactive prompt, a routine step that no longer
+plans or now needs confirmation, `--text`/`--routine-run` dispatch failure)
+plus four `_build_*` factory functions (`_build_microphone_capture`,
+`_build_transcriber`, `_build_landmark_adapter`, `_list_input_devices`)
+whose one-line delegation to the real `visionai.platform` backends was never
+exercised, since every existing test replaces the whole factory with a fake
+rather than the deeper function it calls -- the same shape of gap already
+closed for `default_browser_opener()`/`default_launcher()`/
+`default_key_presser()` in earlier sessions, closed here the same way: the
+fakes only replace `list_input_devices`/`default_microphone_capture`/
+`default_transcriber`/`WebcamLandmarkAdapter` themselves (never real
+hardware, matching the "unit tests with existing fakes are fine" scope for
+a display/camera/mic-less Linux sandbox), so only the delegation line in
+`app.py` is newly covered. Added 28 tests to `tests/unit/test_app.py` (one
+more to `tests/unit/test_text_planner.py` for a previously-untested blank/
+whitespace-only `--text` input) covering: the four factory-delegation
+branches; `--set-api-key`/`--delete-api-key` reporting a keychain
+`StorageError`; `--list-microphones` with zero devices; `--gesture-listen`
+reporting a worker failure and running the adapter's `close()`; the
+"No speech recognized." branch of the closed-fist/open-palm voice-capture
+flow; `--gesture-frames` closing the landmark adapter when done; `--suggest`
+reporting a provider-construction failure, a live `ProviderError` from the
+model, an EOF/Ctrl+C during the clarification follow-up question, an EOF/
+Ctrl+C at the final yes/no confirmation, and (a defense-in-depth regression
+test, not a currently-reachable real-data path: `suggest_command_result`
+only ever returns a phrase already in `reviewed_phrases()`, which by
+construction always plans to a real command) a validated phrase reported as
+"No matching command found." if the real planner ever returned no steps for
+it; `--wake-word-text` falling back to the plan's own summary when the
+matched command only reaches a pending permission request, never an
+`ActionResult`; `--routine-save` with no phrases, and with a control-
+character name that the CLI's own phrase check does not catch but
+`RoutineStore.save()` still rejects; `--routine-run` stopping on a saved
+phrase that no longer plans to anything or that now requires confirmation
+(both saved directly via `RoutineStore`, bypassing `--routine-save`'s own
+check, to prove `--routine-run` re-validates live rather than trusting what
+was saved) and completing all steps successfully when unlocked; `--text`
+and generic capability dispatch (`browser.open --site`) exercised end to
+end. `app.py` reached 98% line coverage (was 85%); the remaining 7 lines are
+two `KeyboardInterrupt`-during-a-background-thread-join loops (`--wake-word-
+listen`/`--gesture-listen`'s Ctrl+C handling) and the module's own
+`if __name__ == "__main__":` guard, the same accepted gap `ui/main_window.py`
+already has for its own such guard -- deliberately left rather than adding a
+fragile thread-timing test or a subprocess-based test for one line, matching
+this project's precedent of leaving that exact guard line uncovered. No
+application code changed -- this was a pure test gap, not a bug. Full
+verification after the change: 550 tests (512 passed, 28 failed -- identical
+failing-test names to the pre-change baseline, confirming no regressions --
+10 skipped), 94% overall coverage, Ruff/mypy (one known false positive)/
+Bandit/pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, `orchestration/
 event_orchestrator.py` coverage): started against local commit `010fbaf`
@@ -979,7 +1044,16 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `capabilities/system_info.py`
+- 2026-09-06, Linux sandbox (this session, `app.py` CLI coverage cycle): 550
+  tests -- 512 passed, 28 failed (all the documented `WindowsLockStateAdapter`
+  fail-closed pattern, confirmed by message, not a regression), 10 skipped --
+  94% overall coverage, Ruff clean, mypy clean for 54 source files except the
+  one documented sandbox-only `ctypes.windll` false positive, Bandit clean,
+  pip-audit clean. `app.py` now at 98% line coverage (was 85%); remaining
+  gaps are two `KeyboardInterrupt`-during-thread-join branches and the
+  module's own `if __name__ == "__main__":` guard (see Current Phase for
+  detail).
+- 2026-09-06, Linux sandbox (prior session, `capabilities/system_info.py`
   coverage cycle): 526 tests -- 488 passed, 28 failed (all the documented
   `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
   regression), 10 skipped -- 92% coverage, Ruff clean, mypy clean for 54

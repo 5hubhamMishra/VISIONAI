@@ -72,6 +72,16 @@ def test_planner_maps_media_phrases() -> None:
     assert step.arguments["action"] == "volume_up"
 
 
+def test_planner_reports_empty_command_for_blank_text() -> None:
+    runtime = build_runtime()
+
+    intent, plan = runtime.planner.plan("   ")
+
+    assert intent.name == "conversation.reply"
+    assert plan.steps == ()
+    assert plan.summary == "Empty command."
+
+
 def test_planner_does_not_emit_action_for_unknown_text() -> None:
     runtime = build_runtime()
 
