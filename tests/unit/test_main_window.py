@@ -18,7 +18,9 @@ from visionai.core.events import (
     ActionPlan,
     ActionRequest,
     ActionResult,
+    ConfirmationRequest,
     Intent,
+    PermissionRequest,
     RiskLevel,
 )
 from visionai.core.state import StateMachine
@@ -236,6 +238,98 @@ def _build_sensitive_runtime(
         registry=registry,
         state_machine=state,
     )
+
+
+def test_runtime_worker_run_with_nothing_set_emits_empty_outputs(qtbot: Any) -> None:
+    """`_RuntimeWorker.run()`'s fall-through branch: no text, confirmation, or
+    permission at all. Every existing test replaces `run()` itself with a
+    fake, so this real branch (and `finished.emit([])`) had no direct
+    coverage."""
+
+    from visionai.ui.main_window import _RuntimeWorker
+
+    worker = _RuntimeWorker(runtime=build_runtime())
+    received: list[list[Any]] = []
+    worker.finished.connect(received.append)
+
+    worker.run()
+
+    assert received == [[]]
+
+
+def test_runtime_worker_run_processes_a_text_command_directly(qtbot: Any) -> None:
+    """`_RuntimeWorker.run()`'s `text` branch, threaded through the real
+    `_process_runtime_text()`/`_drain_runtime_outputs()` helpers -- a
+    read-only capability, so no lock-state override is needed."""
+
+    from visionai.ui.main_window import _RuntimeWorker
+
+    worker = _RuntimeWorker(runtime=build_runtime(), text="what time is it")
+    received: list[list[Any]] = []
+    worker.finished.connect(received.append)
+
+    worker.run()
+
+    assert len(received) == 1
+    outputs = received[0]
+    results = [o for o in outputs if isinstance(o, ActionResult)]
+    assert len(results) == 1
+    assert results[0].message.startswith("It is ")
+
+
+def test_runtime_worker_run_grants_permission_then_requests_confirmation(
+    qtbot: Any, tmp_path: Any
+) -> None:
+    """`_RuntimeWorker.run()`'s `permission` branch and the real
+    `_grant_runtime_permission()` helper it calls."""
+
+    from visionai.ui.main_window import _RuntimeWorker
+
+    calls: list[ActionRequest] = []
+    runtime = _build_sensitive_runtime(calls, tmp_path, granted=False)
+    text_worker = _RuntimeWorker(runtime=runtime, text="do the sensitive thing")
+    text_outputs: list[list[Any]] = []
+    text_worker.finished.connect(text_outputs.append)
+    text_worker.run()
+    permission = next(o for o in text_outputs[0] if isinstance(o, PermissionRequest))
+
+    permission_worker = _RuntimeWorker(runtime=runtime, permission=permission)
+    received: list[list[Any]] = []
+    permission_worker.finished.connect(received.append)
+    permission_worker.run()
+
+    assert len(received) == 1
+    assert any(isinstance(o, ConfirmationRequest) for o in received[0])
+    assert calls == []
+
+
+def test_runtime_worker_run_confirms_pending_request_and_dispatches(
+    qtbot: Any, tmp_path: Any
+) -> None:
+    """`_RuntimeWorker.run()`'s `confirmation` branch and the real
+    `_confirm_runtime_request()` helper it calls."""
+
+    from visionai.ui.main_window import _RuntimeWorker
+
+    calls: list[ActionRequest] = []
+    runtime = _build_sensitive_runtime(calls, tmp_path, granted=True)
+    text_worker = _RuntimeWorker(runtime=runtime, text="do the sensitive thing")
+    text_outputs: list[list[Any]] = []
+    text_worker.finished.connect(text_outputs.append)
+    text_worker.run()
+    confirmation = next(o for o in text_outputs[0] if isinstance(o, ConfirmationRequest))
+
+    confirmation_worker = _RuntimeWorker(runtime=runtime, confirmation=confirmation)
+    received: list[list[Any]] = []
+    confirmation_worker.finished.connect(received.append)
+    confirmation_worker.run()
+
+    assert len(received) == 1
+    results = [o for o in received[0] if isinstance(o, ActionResult)]
+    assert len(results) == 1
+    assert results[0].success is True
+    assert results[0].message == "Sensitive action done."
+    assert len(calls) == 1
 
 
 class _EmptyAudit:

@@ -10,11 +10,61 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-06, `ui/main_window.py` factory
-coverage cycle): 570 tests, 532 passed, 28 failed (documented
+Latest Linux sandbox verification (2026-09-06, `ui/main_window.py`
+`_RuntimeWorker` coverage cycle): 574 tests, 536 passed, 28 failed (documented
 `WindowsLockStateAdapter` fail-closed pattern, not a regression), 10 skipped,
-95% coverage, Ruff, mypy (one known sandbox-only false positive), Bandit, and
+96% coverage, Ruff, mypy (one known sandbox-only false positive), Bandit, and
 pip-audit all clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, `ui/main_window.py`
+`_RuntimeWorker` coverage): started against local commit `16ff179` (the
+prior session's `ui/main_window.py` factory-delegation coverage cycle);
+baseline verified clean and unchanged from the prior session's documented
+state before any work started (fresh `.venv312` built from
+`requirements/dev.txt` against the system's real Python 3.12.3 in a new
+container, again needing `libportaudio2`/`libegl1`/`libopengl0` via
+`apt-get`; Ruff clean; mypy clean for 54 files except the same
+sandbox-only `ctypes.windll` false positive every session shows; Bandit
+clean; pip-audit clean; pytest collected 570 tests -- 532 passed, 28
+failed, 10 skipped, 95% coverage -- all 28 failures confirmed by message to
+be the documented `WindowsLockStateAdapter` fail-closed pattern, not a
+regression, exactly matching the prior session's recorded result). The
+prior session's report described `ui/main_window.py`'s remaining 141
+missing lines as entirely a `QThread`-body tooling blind spot uncapturable
+by `coverage.py`. Re-checked that claim directly rather than trusting it,
+and found it only partly held: `_RuntimeWorker.run()` (lines 196-210) and
+the four plain `async def` module-level helpers it delegates to --
+`_process_runtime_text()`, `_confirm_runtime_request()`,
+`_grant_runtime_permission()`, `_drain_runtime_outputs()` (lines 213-238)
+-- are ordinary Python, not `QThread`-internal state; every existing test
+in `tests/unit/test_main_window.py` monkeypatches `_RuntimeWorker.run`
+itself with a fake instead of ever calling the real method, so they only
+looked like part of the blind spot. Same "thin public delegation, zero
+direct test coverage" shape already closed for `app.py`'s and
+`main_window.py`'s own `_build_*` factories in earlier sessions, one level
+up at the worker/helper boundary. Added four tests to
+`tests/unit/test_main_window.py`, constructing real `_RuntimeWorker`
+instances and calling their real `.run()` synchronously in the test thread
+(no `QThread.start()`, no real camera/microphone/keychain/Windows API
+touched): the "nothing set" fall-through branch; the `text` branch via a
+real `build_runtime()` and the read-only "what time is it" command
+(unaffected by the sandbox's `WindowsLockStateAdapter` fail-closed
+behavior, since lock checks only gate above-read-only risk levels); and,
+reusing the file's existing synthetic `_build_sensitive_runtime()` fixture,
+the `permission` branch (`_grant_runtime_permission()` grants and surfaces
+the resulting `ConfirmationRequest`) and the `confirmation` branch
+(`_confirm_runtime_request()` confirms and dispatches through the real
+handler to the exact `ActionResult`). No application code changed -- this
+was a pure test gap, not a bug. `ui/main_window.py` reached 84% line
+coverage (was 82%; the remaining 124 lines are still the genuine
+`QThread`-body blind spot -- `_GestureListenWorker`/`_AskWorker`/
+`_SuggestWorker` session internals and dialog button handlers that need a
+real running `QThread` to execute -- a distinct, larger follow-up, not
+closed this cycle). Full verification after the change: 574 tests (536
+passed, 28 failed -- identical failing-test names to the pre-change
+baseline, confirming no regressions -- 10 skipped), 96% overall coverage
+(up from 95%), Ruff/mypy(one known false positive)/Bandit/pip-audit all
+clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, `ui/main_window.py` factory
 coverage): started against local commit `4ee10bb` (the prior session's
@@ -1270,7 +1320,17 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `observability/logging.py`
+- 2026-09-06, Linux sandbox (this session, `ui/main_window.py`
+  `_RuntimeWorker` coverage cycle): 574 tests -- 536 passed, 28 failed (all
+  the documented `WindowsLockStateAdapter` fail-closed pattern, confirmed by
+  message, not a regression), 10 skipped -- 96% overall coverage, Ruff
+  clean, mypy clean for 54 source files except the one documented
+  sandbox-only `ctypes.windll` false positive, Bandit clean, pip-audit
+  clean. `ui/main_window.py` now at 84% line coverage (was 82%); the
+  remaining 124 lines are the genuine `QThread`-body tooling blind spot
+  (worker session internals and dialog button handlers needing a real
+  running `QThread`), a distinct, larger follow-up.
+- 2026-09-06, Linux sandbox (prior session, `observability/logging.py`
   coverage cycle): 567 tests -- 529 passed, 28 failed (all the documented
   `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
   regression), 10 skipped -- 95% overall coverage, Ruff clean, mypy clean

@@ -1,5 +1,63 @@
 # Work Log
 
+## 2026-09-06 ui/main_window.py _RuntimeWorker Test Coverage (Linux Sandbox Cycle)
+
+- Started against local commit `16ff179` (the prior session's `ui/
+  main_window.py` factory-delegation coverage cycle); baseline verified
+  clean and unchanged from the prior session's documented state before any
+  work started (fresh `.venv312` built from `requirements/dev.txt` against
+  the system's real Python 3.12.3 in a new container, again needing
+  `libportaudio2`/`libegl1`/`libopengl0` via `apt-get` before pytest-qt/
+  sounddevice would import; Ruff clean; mypy clean for 54 files except the
+  same sandbox-only `ctypes.windll` false positive every session shows;
+  Bandit clean; pip-audit clean; pytest collected 570 tests -- 532 passed,
+  28 failed, 10 skipped, 95% coverage -- all 28 failures confirmed by
+  message to be the documented `WindowsLockStateAdapter` fail-closed
+  pattern, not a regression, exactly matching the prior session's recorded
+  result).
+- The prior session's own report described `ui/main_window.py`'s remaining
+  141 missing lines as entirely a `QThread`-body tooling blind spot (this
+  project's coverage configuration has no `concurrency = thread` setting,
+  and `QThread` does not go through Python's `threading` module, so
+  `coverage.py`'s automatic new-thread trace hook never attaches to it).
+  Re-inspected that claim directly rather than taking it at face value, and
+  found it was only partly true: `_RuntimeWorker.run()` (lines 196-210) and
+  the four plain `async def` module-level helpers it calls --
+  `_process_runtime_text()`, `_confirm_runtime_request()`,
+  `_grant_runtime_permission()`, `_drain_runtime_outputs()` (lines 213-238)
+  -- are ordinary Python code, not `QThread`-internal state; they only
+  *looked* uncovered because every existing test in
+  `tests/unit/test_main_window.py` monkeypatches `_RuntimeWorker.run`
+  itself with a fake rather than ever calling the real method. This is the
+  exact "thin public delegation, zero direct test coverage" shape already
+  closed for `app.py`'s and `main_window.py`'s own `_build_*` factories in
+  earlier sessions -- just one level up, at the worker/helper boundary
+  instead of a factory function.
+- Added four tests to `tests/unit/test_main_window.py`, constructing real
+  `_RuntimeWorker` instances directly and calling their real `.run()`
+  method synchronously in the test thread (no `QThread.start()`, no real
+  camera/microphone/keychain/Windows API touched): one for the "nothing
+  set" fall-through branch (asserts `finished.emit([])`); one for the
+  `text` branch using a real `build_runtime()` and the read-only "what time
+  is it" command (unaffected by the sandbox's `WindowsLockStateAdapter`
+  fail-closed behavior, since lock checks only gate above-read-only risk
+  levels); and two reusing the file's existing synthetic `_build_sensitive_runtime()`
+  fixture (a `test.sensitive` capability requiring permission and
+  confirmation) to drive the `permission` and `confirmation` branches end
+  to end -- one proving `_grant_runtime_permission()` grants and then
+  surfaces the resulting `ConfirmationRequest`, one proving
+  `_confirm_runtime_request()` confirms and dispatches through the real
+  handler, asserting the exact `ActionResult`. No application code
+  changed -- this was a pure test gap, not a bug. `ui/main_window.py`
+  reached 84% line coverage (was 82%; the remaining 124 lines are still the
+  genuine `QThread`-body blind spot -- `_GestureListenWorker`/`_AskWorker`/
+  `_SuggestWorker` internals and dialog button handlers that need a real
+  running `QThread` to execute -- a distinct, larger follow-up, not closed
+  this cycle). Full verification after the change: 574 tests (536 passed,
+  28 failed -- identical failing-test names to the pre-change baseline,
+  confirming no regressions -- 10 skipped), 96% overall coverage (up from
+  95%), Ruff/mypy (one known false positive)/Bandit/pip-audit all clean.
+
 ## 2026-09-06 platform/microphone.py Test Coverage (Linux Sandbox Cycle)
 
 - Started against local commit `c2088fc` (the prior session's `platform/
