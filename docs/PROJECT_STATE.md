@@ -10,11 +10,60 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-06, `observability/logging.py`
-coverage cycle): 567 tests, 529 passed, 28 failed (documented
+Latest Linux sandbox verification (2026-09-06, `ui/main_window.py` factory
+coverage cycle): 570 tests, 532 passed, 28 failed (documented
 `WindowsLockStateAdapter` fail-closed pattern, not a regression), 10 skipped,
 95% coverage, Ruff, mypy (one known sandbox-only false positive), Bandit, and
 pip-audit all clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, `ui/main_window.py` factory
+coverage): started against local commit `4ee10bb` (the prior session's
+`observability/logging.py` coverage cycle); baseline verified clean and
+unchanged from the prior session's documented state before any work started
+(fresh `.venv312` built from `requirements/dev.txt` against the system's real
+Python 3.12.3 in a new container, again needing `libportaudio2`/`libegl1`/
+`libopengl0` via `apt-get` before pytest-qt/sounddevice would import; Ruff
+clean; mypy clean for 54 files except the same sandbox-only `ctypes.windll`
+false positive every session shows; Bandit clean; pip-audit clean; pytest
+collected 567 tests -- 529 passed, 28 failed, 10 skipped, 95% coverage -- all
+28 failures confirmed by message to be the documented
+`WindowsLockStateAdapter` fail-closed pattern, not a regression, exactly
+matching the prior session's recorded result). The prior session's own "Next
+task" notes flagged `ui/main_window.py` (81%, 147 missing lines, the largest
+remaining gap) as not yet inspected closely enough to confirm which lines
+were genuinely hardware-free versus needing a running Qt event loop.
+Inspected it directly: most of the missing lines (worker `run()` bodies,
+dialog button handlers, `_GestureListenWorker`/`_AskWorker`/`_SuggestWorker`
+session internals) only execute inside a real `QThread`, which this
+project's coverage configuration (no `concurrency = thread` setting, and
+`QThread` does not go through Python's `threading` module so `coverage.py`'s
+automatic new-thread trace hook never attaches to it) cannot observe even
+though `tests/unit/test_main_window.py` already drives them end to end --
+not a missing test, a tooling blind spot out of scope for this narrow cycle.
+Three lines were a genuine, narrow, hardware-free gap of the exact
+"thin public delegation, zero direct test coverage" shape already closed for
+`app.py`'s own four `_build_*` factories in an earlier session:
+`main_window.py`'s own `_build_landmark_adapter()` (line 121-123, real
+`WebcamLandmarkAdapter()` construction), `_build_microphone_capture()`
+(133-135, real `default_microphone_capture()` delegation), and
+`_build_transcriber()` (141-143, real `default_transcriber()` delegation)
+had zero direct coverage -- every existing `test_main_window.py` test
+replaces the whole factory with a fake rather than calling the real function
+these mirror in `app.py`. Added three tests to `tests/unit/test_main_window.py`,
+copied from `test_app.py`'s existing equivalents for the exact same
+functions in `app.py` (monkeypatching `visionai.platform.webcam.
+WebcamLandmarkAdapter`, `visionai.platform.microphone.
+default_microphone_capture`, and `visionai.platform.stt.default_transcriber`
+respectively -- no real camera, microphone, or PortAudio/mediapipe backend
+touched). No application code changed -- this was a pure test gap, not a
+bug. `ui/main_window.py` reached 82% line coverage (was 81%; the remaining
+141 lines are the `QThread`-body tooling blind spot described above, a
+distinct and larger follow-up, not closed this cycle). Full verification
+after the change: 570 tests (532 passed, 28 failed -- identical
+failing-test names to the pre-change baseline, confirming no regressions --
+10 skipped), 95% overall coverage (unchanged at the rounded total, reflecting
+this module's small share of the codebase), Ruff/mypy(one known false
+positive)/Bandit/pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, `observability/logging.py`
 coverage): started against local commit `2416f95` (the prior session's

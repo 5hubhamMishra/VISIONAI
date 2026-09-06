@@ -966,6 +966,39 @@ def test_build_llm_provider_anthropic_with_a_key_builds_the_real_provider(
     assert isinstance(provider, AnthropicProvider)
 
 
+def test_build_microphone_capture_delegates_to_the_real_default(monkeypatch: Any) -> None:
+    sentinel = object()
+    monkeypatch.setattr(
+        "visionai.platform.microphone.default_microphone_capture", lambda: sentinel
+    )
+
+    assert main_window_module._build_microphone_capture() is sentinel
+
+
+def test_build_transcriber_delegates_to_the_real_default(monkeypatch: Any) -> None:
+    sentinel = object()
+    monkeypatch.setattr("visionai.platform.stt.default_transcriber", lambda: sentinel)
+
+    assert main_window_module._build_transcriber() is sentinel
+
+
+def test_build_landmark_adapter_constructs_the_real_webcam_adapter(monkeypatch: Any) -> None:
+    created: list[bool] = []
+
+    class _FakeWebcamLandmarkAdapter:
+        def __init__(self) -> None:
+            created.append(True)
+
+    monkeypatch.setattr(
+        "visionai.platform.webcam.WebcamLandmarkAdapter", _FakeWebcamLandmarkAdapter
+    )
+
+    adapter = main_window_module._build_landmark_adapter()
+
+    assert isinstance(adapter, _FakeWebcamLandmarkAdapter)
+    assert created == [True]
+
+
 def test_main_window_and_children_inherit_native_os_theming(qtbot: Any) -> None:
     """No widget hardcodes its own colors -- contrast comes from the OS theme.
 
