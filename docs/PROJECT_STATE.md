@@ -10,8 +10,8 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-06, `app.py` CLI coverage cycle):
-550 tests, 512 passed, 28 failed (documented `WindowsLockStateAdapter`
+Latest Linux sandbox verification (2026-09-06, `platform/stt.py` coverage
+cycle): 555 tests, 517 passed, 28 failed (documented `WindowsLockStateAdapter`
 fail-closed pattern, not a regression), 10 skipped, 94% coverage, Ruff, mypy
 (one known sandbox-only false positive), Bandit, and pip-audit all clean.
 
@@ -53,6 +53,43 @@ verification after the change: 526 tests (488 passed, 28 failed -- identical
 failing-test names to the pre-change baseline, confirming no regressions --
 10 skipped), 92% coverage, Ruff/mypy(one known false positive)/Bandit/
 pip-audit all clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, `platform/stt.py` coverage):
+started against local commit `583c3a1` (the prior session's `app.py` CLI
+coverage cycle); baseline verified clean and unchanged from the prior
+session's documented state before any work started (fresh `.venv312` built
+from `requirements/dev.txt` against the system's real Python 3.12.3 in a new
+container, again needing `libegl1`/`libopengl0`/`libportaudio2` via
+`apt-get`; Ruff clean; mypy clean for 54 files except the same sandbox-only
+`ctypes.windll` false positive every session shows; Bandit clean; pip-audit
+clean; pytest 550 tests -- 512 passed, 28 failed, 10 skipped, 94% coverage --
+all 28 failures confirmed by message to be the documented
+`WindowsLockStateAdapter` fail-closed pattern, not a regression, exactly
+matching the prior session's recorded result). Scanned the coverage report
+for a real, narrow, hardware-free gap and found one in `visionai.platform.
+stt` (76% covered, lines 35-42, 74-75, 81-82): `_default_model_factory()`'s
+real `faster_whisper` import/construction and its `ImportError`/`OSError`/
+`RuntimeError`/`ValueError`-to-`SpeechToTextError` conversion,
+`FasterWhisperTranscriber.__call__()`'s own `transcribe()`-failure handling,
+and `default_transcriber()`'s real `Settings`-driven construction all had
+zero direct coverage -- every existing test injected a fake `model_factory`
+straight into `FasterWhisperTranscriber`, so none of these three real
+production code paths were ever exercised. Same shape of gap already closed
+for `capabilities/browser.py`/`applications.py`/`media.py`'s own default
+adapters in earlier sessions. Added three tests to `tests/unit/test_stt.py`,
+monkeypatching the module's `import_module` and `get_settings` symbols
+(mirroring `test_media.py`'s existing `import_module` monkeypatch pattern;
+no real model download, no microphone, no `WindowsLockStateAdapter`
+behavior touched or claimed verified): the `ImportError`-to-
+`SpeechToTextError` path, the `transcribe()`-failure-to-`SpeechToTextError`
+path, and `default_transcriber()` threading real settings values into the
+real model factory end to end (a fake `WhisperModel` captures its exact
+constructor arguments). No application code changed -- this was a pure test
+gap, not a bug. `platform/stt.py` reached 100% line coverage (was 76%). Full
+verification after the change: 555 tests (517 passed, 28 failed -- identical
+failing-test names to the pre-change baseline, confirming no regressions --
+10 skipped), 94% overall coverage, Ruff/mypy(one known false positive)/
+Bandit/pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, `app.py` CLI coverage): started
 against local commit `c2ca571` (the prior session's `system_info.py`
@@ -1044,7 +1081,14 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `app.py` CLI coverage cycle): 550
+- 2026-09-06, Linux sandbox (this session, `platform/stt.py` coverage
+  cycle): 555 tests -- 517 passed, 28 failed (all the documented
+  `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
+  regression), 10 skipped -- 94% overall coverage, Ruff clean, mypy clean
+  for 54 source files except the one documented sandbox-only
+  `ctypes.windll` false positive, Bandit clean, pip-audit clean.
+  `platform/stt.py` now at 100% line coverage (was 76%).
+- 2026-09-06, Linux sandbox (prior session, `app.py` CLI coverage cycle): 550
   tests -- 512 passed, 28 failed (all the documented `WindowsLockStateAdapter`
   fail-closed pattern, confirmed by message, not a regression), 10 skipped --
   94% overall coverage, Ruff clean, mypy clean for 54 source files except the
@@ -1134,4 +1178,4 @@ cd visionai
 
 ## Last Updated
 
-2026-09-06 (Linux sandbox coverage cycle: `capabilities/system_info.py`)
+2026-09-06 (Linux sandbox coverage cycle: `platform/stt.py`)

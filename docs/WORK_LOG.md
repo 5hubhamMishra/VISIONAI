@@ -1,5 +1,55 @@
 # Work Log
 
+## 2026-09-06 platform/stt.py Test Coverage (Linux Sandbox Cycle)
+
+- Started against local commit `583c3a1` (the prior session's `app.py` CLI
+  coverage cycle); baseline verified clean and unchanged from the prior
+  session's documented state before any work started (fresh `.venv312` built
+  from `requirements/dev.txt` against the system's real Python 3.12.3 in a
+  new container, again needing `libegl1`/`libopengl0`/`libportaudio2` via
+  `apt-get`; Ruff clean; mypy clean for 54 files except the same
+  sandbox-only `ctypes.windll` false positive every session shows; Bandit
+  clean; pip-audit clean; pytest 550 tests -- 512 passed, 28 failed, 10
+  skipped, 94% coverage -- all 28 failures confirmed by message to be the
+  documented `WindowsLockStateAdapter` fail-closed pattern, not a
+  regression, exactly matching the prior session's recorded result).
+- Scanned the coverage report for a real, narrow, hardware-free gap and
+  found one in `visionai.platform.stt` (76% covered, lines 35-42, 74-75,
+  81-82): the module's real production pieces -- `_default_model_factory()`
+  (imports `faster_whisper` and constructs a real `WhisperModel`,
+  converting `ImportError`/`OSError`/`RuntimeError`/`ValueError` into
+  `SpeechToTextError`), `FasterWhisperTranscriber.__call__()`'s own
+  `transcribe()`-failure handling, and `default_transcriber()` (reads
+  `Settings.stt_model_size`/`stt_device`/`stt_compute_type` and builds the
+  real transcriber) -- had zero direct coverage. Every existing test in
+  `tests/unit/test_stt.py` injected a fake `model_factory` straight into
+  `FasterWhisperTranscriber`, so none of these three real code paths were
+  ever exercised. This is the same shape of gap already closed for
+  `capabilities/browser.py`'s `default_browser_opener()`,
+  `capabilities/applications.py`'s `default_launcher()`, and
+  `capabilities/media.py`'s `default_key_presser()` in earlier sessions --
+  a real production adapter whose fake-injection tests never reach its own
+  default factory/config wiring.
+- Added three tests to `tests/unit/test_stt.py`, all hardware-free
+  (monkeypatching the module's `import_module` and `get_settings` symbols,
+  mirroring `test_media.py`'s existing `import_module` monkeypatch
+  pattern; no real `faster-whisper` model download, no microphone, no
+  `WindowsLockStateAdapter` behavior touched or claimed verified):
+  one proving `_default_model_factory()` raises `SpeechToTextError` chained
+  from the original `ImportError` when `faster_whisper` is unavailable; one
+  proving `FasterWhisperTranscriber.__call__()` wraps a model's own
+  `transcribe()` failure (`RuntimeError`) as `SpeechToTextError` rather than
+  letting it propagate raw; and one proving `default_transcriber()` reads
+  `Settings.stt_model_size`/`stt_device`/`stt_compute_type` and threads them
+  correctly into the real `_default_model_factory()` end to end (a fake
+  `WhisperModel` captures the exact constructor arguments it was built
+  with). No application code changed -- this was a pure test gap, not a
+  bug. `platform/stt.py` reached 100% line coverage (was 76%). Full
+  verification after the change: 555 tests (517 passed, 28 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 10 skipped), 94% overall coverage, Ruff/mypy (one known
+  sandbox-only false positive)/Bandit/pip-audit all clean.
+
 ## 2026-09-06 app.py CLI Test Coverage (Linux Sandbox Cycle)
 
 - Started against local commit `c2ca571` (the prior session's
