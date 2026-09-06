@@ -10,11 +10,87 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-06, `app.py`
-`KeyboardInterrupt`-during-thread-join coverage cycle): 616 tests, 578
-passed, 28 failed (documented `WindowsLockStateAdapter` fail-closed
-pattern, not a regression), 10 skipped, 99% coverage, Ruff, mypy (one
-known sandbox-only false positive), Bandit, and pip-audit all clean.
+Latest Linux sandbox verification (2026-09-06, this session, coverage-gap
+audit cycle -- no application or test code changed): 616 tests, 578 passed,
+28 failed (documented `WindowsLockStateAdapter` fail-closed pattern, not a
+regression), 10 skipped, 99% coverage, Ruff, mypy (one known sandbox-only
+false positive), Bandit, and pip-audit all clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, coverage-gap audit -- no code
+change): started against local commit `b18784e` (the prior session's
+`app.py` `KeyboardInterrupt`-during-thread-join coverage cycle); baseline
+verified clean and unchanged from the prior session's documented state
+before any work started (fresh `.venv312` built from `requirements/dev.txt`
+against the system's real Python 3.12.3 in a new container, again needing
+`libportaudio2`/`libegl1`/`libopengl0` via `apt-get`; Ruff clean; mypy clean
+for 54 files except the same sandbox-only `ctypes.windll` false positive
+every session shows; Bandit clean; pip-audit clean; pytest collected 616
+tests -- 578 passed, 28 failed, 10 skipped, 99% coverage -- all 28 failures
+confirmed by message to be the documented `WindowsLockStateAdapter`
+fail-closed pattern, not a regression, exactly matching the prior session's
+recorded result). The prior session's own "Next task" note asked a future
+sandbox session to take a harder look at whether `orchestration/
+event_orchestrator.py`'s remaining two gaps (lines 234-238, an
+`except VisionAIError` branch in `confirm()`; line 386, a state-desync
+guard in `_transition_to_interpreting()`) were genuinely closable with a
+fake service seam, rather than accepting that earlier assessment again.
+Did exactly that rather than re-accepting the prior note. For lines
+234-238: traced `ConfirmationService.create()`/`validate()` in
+`policy/confirmation.py` and confirmed the orchestrator always populates
+its own `_pending_confirmations` dict and the service's internal `_pending`
+dict together, keyed by the same confirmation ID, from the same `request`
+object (`_request_confirmation()`), so `original != request` can never
+happen through the public orchestrator API -- the only way
+`EventOrchestrator.confirm()` can hit its own `except VisionAIError` branch
+is the TTL-expiry branch inside `validate()`, and `confirm()` never exposes
+`validate()`'s own injectable `now` parameter (already used directly by
+`tests/unit/test_confirmation.py` to close this exact branch one layer
+down, at the service level) to its caller at all. Closing it through the
+orchestrator would need either a real wall-clock sleep past the
+confirmation TTL (already rejected once as fragile-by-nature, not merely
+fragile-in-a-naive-implementation, unlike the `KeyboardInterrupt`-join case
+a recent session found a deterministic alternative for) or monkeypatching
+`visionai.policy.confirmation.datetime` directly -- confirmed, by
+searching the whole `tests/` tree, that no test anywhere in this codebase
+does that; every existing time-dependent test instead uses an injected
+clock *parameter* (`TemporalGestureRecognizer`, `ConfirmationService.
+validate(now=...)` itself), a design seam `EventOrchestrator.confirm()`
+does not currently have. Adding one would be a real (if small) production
+API change, not the "pure test gap, zero application code changed" shape
+every coverage cycle so far has deliberately stayed within. For line 386:
+traced `_discard_all_pending_permissions()`/`_discard_all_pending_
+confirmations()` and confirmed both pending dicts are always populated and
+emptied in lockstep with the exact state transitions the guard checks
+(`_request_permission`/`_request_confirmation` populate a dict and
+transition state together; `grant_permission`/`cancel_pending_permission`/
+`cancel_pending_confirmation` always pop the dict entry and cancel the
+matching state together) -- so by the time line 386's `if` runs, both
+discard loops have already cancelled the state back out of
+`AWAITING_PERMISSION`/`AWAITING_CONFIRMATION` in every reachable case, and
+the only way to make line 386's condition true is a genuine state/dict
+desync no public method can produce: directly poking `orchestrator._state`
+or clearing `orchestrator._pending_permissions`/`_pending_confirmations`
+from a test. Confirmed no test anywhere in this codebase reaches into an
+orchestrator's private attributes this way (`tests/unit/
+test_event_orchestrator.py` grepped directly) -- this line is a defensive
+belt-and-suspenders guard against a desync the current implementation's
+invariants already make unreachable through any public path, not an
+undertested behavior. Both conclusions agree with, rather than merely
+repeat, the prior sessions' assessment. Scanned the full coverage report
+for any other hardware-free gap first: none remain -- every module is at
+100% except `app.py` (99%, only its own precedented `__main__` guard),
+`ui/main_window.py` (99%, the same precedented guard), `event_orchestrator.
+py` (97%, the two lines just re-examined above), and `platform/
+lock_state.py` (77%, the real Windows `ctypes.windll` lock-state branches,
+explicitly out of scope for this display/camera/Windows-API-less Linux
+sandbox per the master prompt). No application or test code changed this
+cycle -- this was a verification-and-investigation cycle, not a fix, and is
+recorded here rather than silently doing nothing so the next session does
+not have to redo the same two-line investigation a third time. Full
+verification: unchanged from the baseline above (616 tests, 578 passed, 28
+failed -- identical failing-test names, confirming no regressions -- 10
+skipped, 99% coverage, Ruff/mypy(one known false positive)/Bandit/pip-audit
+all clean).
 
 2026-09-06 autonomous cycle (Linux sandbox, `app.py`
 `KeyboardInterrupt`-during-thread-join coverage): started against local
@@ -1488,6 +1564,8 @@ Current `main` HEAD, pushed to https://github.com/5hubhamMishra/VISIONAI. Hosted
 
 6. Phase 7's first slice, named routines restricted to Risk 0/1 phrases, is done on the CLI (`--routine-save`/`--routine-run`/`--routine-list`/`--routine-delete`) -- see `docs/DECISIONS/0007-phase7-routines-first-slice.md`. Remaining Phase 7 options, none yet approved to start: real multi-step confirmation UX so a routine could include a permission/confirmation-gated step, macro preview/dry-run, a desktop UI surface for routines, plugin manifests/permissions, multimodal pointing+voice, personalization, and a local LLM model manager.
 
+Narrow hardware-free coverage gaps in this Linux sandbox are now exhausted, confirmed directly (not just repeated) by the 2026-09-06 coverage-gap audit cycle above: every module is at 100% line coverage except `app.py`/`ui/main_window.py` (99% each, only their own precedented `__main__` guards), `orchestration/event_orchestrator.py` (97%, its remaining two lines require either a real wall-clock sleep, a `datetime`-monkeypatching technique used nowhere else in this codebase, or a small production API change to add an injectable clock -- none of which fit the "pure test gap" scope every prior coverage cycle deliberately stayed within), and `platform/lock_state.py` (77%, genuinely Windows-only, out of scope for this sandbox). A future sandbox session should not keep scanning for coverage gaps -- there are none left to find here. The remaining approved-but-unstarted work (items 3 and 5's live hardware/model verification, the `WindowsLockStateAdapter` locked-workstation manual check, the live prompt-injection suite) all need real Windows hardware, a live network/model, or a human running a command themselves; none of it fits this sandbox. A future sandbox session with nothing else queued should say so plainly, per the master prompt, rather than inventing further busywork.
+
 ## Known Defects
 
 - Existing `../jarvis` prototype is still untrusted reference material, but its previously documented concrete OS command injection path has been locally quarantined in this workspace. The quarantine is not part of the `visionai/` Git repository, so a separate `jarvis` copy or restore must not be assumed safe.
@@ -1534,7 +1612,20 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `app.py`
+- 2026-09-06, Linux sandbox (this session, coverage-gap audit cycle -- no
+  application or test code changed): 616 tests -- 578 passed, 28 failed
+  (all the documented `WindowsLockStateAdapter` fail-closed pattern,
+  confirmed by message, not a regression), 10 skipped -- 99% overall
+  coverage, Ruff clean, mypy clean for 54 source files except the one
+  documented sandbox-only `ctypes.windll` false positive, Bandit clean,
+  pip-audit clean. Confirmed this matches the prior session's recorded
+  baseline exactly (same 616/578/28/10/99%), then investigated
+  `event_orchestrator.py`'s remaining two coverage lines directly and
+  confirmed, rather than repeated, the prior sessions' conclusion that
+  they are not closable within this codebase's "pure test gap, zero
+  application code changed" scope -- see the Current Phase narrative
+  above for the full trace. No code changed this cycle.
+- 2026-09-06, Linux sandbox (prior session, `app.py`
   `KeyboardInterrupt`-during-thread-join coverage cycle): 616 tests -- 578
   passed, 28 failed (all the documented `WindowsLockStateAdapter`
   fail-closed pattern, confirmed by message, not a regression), 10 skipped
@@ -1697,7 +1788,6 @@ cd visionai
 
 ## Last Updated
 
-2026-09-06 (Linux sandbox coverage cycle: `app.py`
-`KeyboardInterrupt`-during-thread-join branches; this line had gone stale
-across several intervening coverage cycles that updated the sections above
-but not this one -- corrected here rather than left further out of date)
+2026-09-06 (Linux sandbox coverage-gap audit cycle: confirmed no further
+hardware-free coverage gaps remain in this sandbox and re-examined
+`event_orchestrator.py`'s last two lines directly; no code changed)
