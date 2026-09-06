@@ -10,11 +10,65 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-06, `ui/main_window.py` dialog/
-GUI-slot-handler coverage cycle): 614 tests, 576 passed, 28 failed
-(documented `WindowsLockStateAdapter` fail-closed pattern, not a
-regression), 10 skipped, 99% coverage, Ruff, mypy (one known sandbox-only
-false positive), Bandit, and pip-audit all clean.
+Latest Linux sandbox verification (2026-09-06, `app.py`
+`KeyboardInterrupt`-during-thread-join coverage cycle): 616 tests, 578
+passed, 28 failed (documented `WindowsLockStateAdapter` fail-closed
+pattern, not a regression), 10 skipped, 99% coverage, Ruff, mypy (one
+known sandbox-only false positive), Bandit, and pip-audit all clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, `app.py`
+`KeyboardInterrupt`-during-thread-join coverage): started against local
+commit `9155823` (the prior session's `ui/main_window.py` dialog/
+GUI-slot-handler coverage cycle); baseline verified clean and unchanged
+from the prior session's documented state before any work started (fresh
+`.venv312` built from `requirements/dev.txt` against the system's real
+Python 3.12.3 in a new container, again needing `libportaudio2`/`libegl1`/
+`libopengl0` via `apt-get`; Ruff clean; mypy clean for 54 files except the
+same sandbox-only `ctypes.windll` false positive every session shows;
+Bandit clean; pip-audit clean; pytest collected 614 tests -- 576 passed, 28
+failed, 10 skipped, 99% coverage -- all 28 failures confirmed by message to
+be the documented `WindowsLockStateAdapter` fail-closed pattern, not a
+regression, exactly matching the prior session's recorded result). Several
+prior sessions' own "Next task" notes had flagged `app.py`'s two
+`KeyboardInterrupt`-during-background-thread-join loops (`--wake-word-listen`
+and `--gesture-listen`'s own Ctrl+C handling, lines 192-194/287-289) as
+deliberately left uncovered, reasoning that closing them would need either
+"a fragile thread-timing test" or a subprocess-based test for one line.
+Re-examined that reasoning directly rather than accepting it again: the
+actual fragility risk in a naive version of this test is a real wall-clock
+race (raising `KeyboardInterrupt` from a signal handler or a timed thread at
+an unpredictable moment), not the general idea of testing this branch at
+all. A deterministic alternative exists and needed no wall-clock timing:
+both functions already call `worker.join(timeout=0.2)` in a `while
+worker.is_alive():` loop before their `except KeyboardInterrupt:` handler,
+so monkeypatching `threading.Thread.join` itself to raise `KeyboardInterrupt`
+on its first call only (then delegate to the real `Thread.join` on every
+later call, including the handler's own post-cancellation `worker.join()`)
+exercises the real branch with no timing dependency at all -- confirmed
+stable over 20 back-to-back runs in isolation before adding it as a real
+test. Added two tests to `tests/unit/test_app.py`: one for
+`_run_wake_word_listen` (a fake microphone capture and a transcriber that
+never returns a matching phrase, so the real background thread only stops
+once `cancellation.cancel()` runs; `_WAKE_WORD_LISTEN_CHUNK_SECONDS`
+monkeypatched to `0.0`, the same seam an existing test already uses, so the
+async loop's own `asyncio.sleep()` adds no wall-clock delay either) and one
+for `_run_gesture_listen` (`StaticLandmarkAdapter(candidates=[])`, which
+never confirms a gesture on its own, so the same real-thread-plus-injected-
+interrupt shape applies with no sleep at all, since `GestureCaptureLoop` has
+none). Both assert `cancellation.is_cancelled is True`, a `0` return count,
+and that the mocked `join` was actually called at least twice (the raising
+call plus the real post-cancellation join), so the test would fail loudly if
+someone ever removed the `except KeyboardInterrupt` handling rather than
+silently passing either way. No application code changed -- this was a pure
+test gap, not a bug. `app.py` reached 99% line coverage (was 98%); the only
+remaining line is the module's own `if __name__ == "__main__":` guard,
+left uncovered to match this codebase's own established precedent
+(`ui/main_window.py:1346` is the identical pattern). Full verification
+after the change: 616 tests (578 passed, 28 failed -- identical
+failing-test names to the pre-change baseline, confirming no regressions --
+10 skipped), 99% overall coverage (unchanged at the rounded total,
+reflecting this module's small share of the codebase), Ruff/mypy(one known
+false positive)/Bandit/pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, `ui/main_window.py` dialog/
 GUI-slot-handler coverage): started against local commit `3c727b0` (the
@@ -1480,7 +1534,18 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `ui/main_window.py` dialog/
+- 2026-09-06, Linux sandbox (this session, `app.py`
+  `KeyboardInterrupt`-during-thread-join coverage cycle): 616 tests -- 578
+  passed, 28 failed (all the documented `WindowsLockStateAdapter`
+  fail-closed pattern, confirmed by message, not a regression), 10 skipped
+  -- 99% overall coverage, Ruff clean, mypy clean for 54 source files
+  except the one documented sandbox-only `ctypes.windll` false positive,
+  Bandit clean, pip-audit clean. `app.py` now at 99% line coverage (was
+  98%); the only remaining line is the trailing `if __name__ ==
+  "__main__":` guard, left uncovered to match this codebase's own
+  established precedent (`ui/main_window.py:1346` is the identical
+  pattern).
+- 2026-09-06, Linux sandbox (prior session, `ui/main_window.py` dialog/
   GUI-slot-handler coverage cycle): 614 tests -- 576 passed, 28 failed (all
   the documented `WindowsLockStateAdapter` fail-closed pattern, confirmed by
   message, not a regression), 10 skipped -- 99% overall coverage, Ruff
@@ -1632,4 +1697,7 @@ cd visionai
 
 ## Last Updated
 
-2026-09-06 (Linux sandbox coverage cycle: `observability/logging.py`)
+2026-09-06 (Linux sandbox coverage cycle: `app.py`
+`KeyboardInterrupt`-during-thread-join branches; this line had gone stale
+across several intervening coverage cycles that updated the sections above
+but not this one -- corrected here rather than left further out of date)

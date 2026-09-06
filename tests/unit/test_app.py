@@ -1,3 +1,4 @@
+import threading
 from dataclasses import dataclass, field
 
 import pytest
@@ -243,6 +244,40 @@ def test_app_wake_word_listen_reads_nothing_when_already_cancelled(
     assert launched == []
 
 
+def test_run_wake_word_listen_handles_keyboard_interrupt_during_join(monkeypatch) -> None:
+    """A Ctrl+C while waiting on the worker thread cancels it and waits for a clean stop.
+
+    `worker.join(timeout=0.2)` is mocked to raise `KeyboardInterrupt` on its
+    first call only, deterministically exercising `_run_wake_word_listen`'s
+    `except KeyboardInterrupt` branch without any real timing/sleep-based
+    race -- the transcriber never returns a matching command, so the real
+    background thread only stops once `cancellation.cancel()` runs.
+    """
+
+    token = CancellationToken()
+    runtime = build_runtime(launcher=lambda _: None)
+    monkeypatch.setattr("visionai.app._WAKE_WORD_LISTEN_CHUNK_SECONDS", 0.0)
+
+    real_join = threading.Thread.join
+    calls = {"n": 0}
+
+    def fake_join(self: threading.Thread, timeout: float | None = None) -> None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise KeyboardInterrupt
+        real_join(self, timeout)
+
+    monkeypatch.setattr(threading.Thread, "join", fake_join)
+
+    result = app._run_wake_word_listen(
+        runtime, _FakeMicrophoneCapture(), lambda audio: "", "visionai", token
+    )
+
+    assert token.is_cancelled is True
+    assert result == 0
+    assert calls["n"] >= 2
+
+
 def test_app_reports_first_confirmed_gesture(monkeypatch, capsys) -> None:
     candidates = [GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9)] * 3
     adapter = StaticLandmarkAdapter(candidates=candidates)
@@ -378,6 +413,40 @@ def test_cancelled_gesture_session_discards_pending_voice(monkeypatch, desktop: 
     assert stopped == [True]
     assert transcribed == []
     assert launched == []
+
+
+def test_run_gesture_listen_handles_keyboard_interrupt_during_join(monkeypatch) -> None:
+    """A Ctrl+C while waiting on the worker thread cancels it and waits for a clean stop.
+
+    Mirrors `test_run_wake_word_listen_handles_keyboard_interrupt_during_join`:
+    `worker.join(timeout=0.2)` is mocked to raise `KeyboardInterrupt` on its
+    first call only, deterministically exercising `_run_gesture_listen`'s
+    `except KeyboardInterrupt` branch. `StaticLandmarkAdapter(candidates=[])`
+    never confirms a gesture on its own, so the real background thread only
+    stops once `cancellation.cancel()` runs.
+    """
+
+    token = CancellationToken()
+    adapter = StaticLandmarkAdapter(candidates=[])
+    recognizer = TemporalGestureRecognizer()
+    runtime = build_runtime(lock_state=StaticLockStateAdapter(locked=False))
+
+    real_join = threading.Thread.join
+    calls = {"n": 0}
+
+    def fake_join(self: threading.Thread, timeout: float | None = None) -> None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise KeyboardInterrupt
+        real_join(self, timeout)
+
+    monkeypatch.setattr(threading.Thread, "join", fake_join)
+
+    result = app._run_gesture_listen(runtime, adapter, recognizer, token)
+
+    assert token.is_cancelled is True
+    assert result == 0
+    assert calls["n"] >= 2
 
 
 def test_app_gesture_listen_closed_fist_starts_and_open_palm_sends_voice_command(
