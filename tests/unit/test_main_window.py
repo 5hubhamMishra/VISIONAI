@@ -1,11 +1,14 @@
+import sys
+from datetime import UTC, datetime, timedelta
 from threading import Event
 from types import SimpleNamespace
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QWidget
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QSystemTrayIcon, QWidget
 
 from visionai.capabilities import CapabilityManifest, CapabilityRegistry, IdempotencyMode
 from visionai.capabilities.dispatcher import SerializedDispatcher
@@ -39,7 +42,7 @@ from visionai.policy import (
 from visionai.recognition import TemporalGestureRecognizer
 from visionai.runtime import build_runtime
 from visionai.ui import main_window as main_window_module
-from visionai.ui.main_window import MainWindow, _SettingsDialog
+from visionai.ui.main_window import MainWindow, _SettingsDialog, _TextPromptDialog
 
 
 @pytest.mark.parametrize("failed", [False, True])
@@ -2083,3 +2086,552 @@ def test_main_window_ignores_empty_input(qtbot: Any) -> None:
 
     assert window._output.toPlainText() == ""
     assert window._history.count() == 0
+
+
+def test_text_prompt_dialog_returns_the_entered_text(qtbot: Any) -> None:
+    """`_TextPromptDialog.__init__`/`.text()`: every existing Ask AI/Suggest
+    Command test replaces `_prompt_for_text()` itself with a fake, so this
+    class's own real construction and accessor had no direct coverage."""
+
+    dialog = _TextPromptDialog("Ask AI", "Question")
+    qtbot.addWidget(dialog)
+
+    assert dialog.windowTitle() == "Ask AI"
+    dialog._input.setText("what is 2+2?")
+
+    assert dialog.text() == "what is 2+2?"
+
+
+def test_prompt_for_text_returns_stripped_text_when_the_dialog_is_accepted(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    """`_prompt_for_text()`'s real body, threaded through the real
+    `_TextPromptDialog.exec()` call -- every existing caller-facing test
+    replaces `_prompt_for_text` itself, so this never ran for real."""
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    def fake_exec(self: _TextPromptDialog) -> int:
+        self._input.setText("  open notepad  ")
+        return int(QDialog.DialogCode.Accepted)
+
+    monkeypatch.setattr(_TextPromptDialog, "exec", fake_exec)
+
+    assert window._prompt_for_text("Ask AI", "Question") == "open notepad"
+
+
+def test_prompt_for_text_returns_none_when_the_dialog_is_cancelled(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(
+        _TextPromptDialog, "exec", lambda self: int(QDialog.DialogCode.Rejected)
+    )
+
+    assert window._prompt_for_text("Ask AI", "Question") is None
+
+
+def test_prompt_for_text_returns_none_for_blank_input(qtbot: Any, monkeypatch: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    def fake_exec(self: _TextPromptDialog) -> int:
+        self._input.setText("   ")
+        return int(QDialog.DialogCode.Accepted)
+
+    monkeypatch.setattr(_TextPromptDialog, "exec", fake_exec)
+
+    assert window._prompt_for_text("Ask AI", "Question") is None
+
+
+def test_ask_new_settings_returns_the_selected_values_when_accepted(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    """`_ask_new_settings()`'s real body, threaded through the real
+    `_SettingsDialog.exec()` call -- every existing settings-button test
+    replaces `_ask_new_settings` itself, so this never ran for real."""
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    def fake_exec(self: _SettingsDialog) -> int:
+        self._log_level_combo.setCurrentText("DEBUG")
+        self._wake_word_input.setText("friday")
+        return int(QDialog.DialogCode.Accepted)
+
+    monkeypatch.setattr(_SettingsDialog, "exec", fake_exec)
+
+    result = window._ask_new_settings("INFO", None, [], "visionai", api_key_configured=False)
+
+    assert result == ("DEBUG", None, "friday", "", False)
+
+
+def test_ask_new_settings_returns_none_when_the_dialog_is_cancelled(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(
+        _SettingsDialog, "exec", lambda self: int(QDialog.DialogCode.Rejected)
+    )
+
+    assert window._ask_new_settings("INFO", None, [], "visionai") is None
+
+
+def test_show_settings_falls_back_to_no_microphones_when_listing_fails(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    """`show_settings()`'s `except Exception: devices = []` branch: every
+    existing settings test runs on this sandbox's real (hardware-free,
+    non-raising) `list_input_devices()`, so the failure branch itself was
+    never exercised."""
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    def _broken_list_input_devices() -> list[Any]:
+        raise OSError("no audio backend available")
+
+    monkeypatch.setattr(
+        "visionai.platform.microphone.list_input_devices", _broken_list_input_devices
+    )
+    seen_devices: list[Any] = []
+    monkeypatch.setattr(
+        window,
+        "_ask_new_settings",
+        lambda current, device, devices, wake_word, api_key_configured=False: (
+            seen_devices.append(devices) or None
+        ),
+    )
+
+    window.show_settings()
+
+    assert seen_devices == [[]]
+
+
+def test_show_settings_reports_failure_to_clear_the_stored_api_key(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(
+        window,
+        "_ask_new_settings",
+        lambda *args, **kwargs: ("INFO", None, "visionai", "", True),
+    )
+
+    class _BrokenSecretStore:
+        def delete(self, name: str) -> None:
+            raise StorageError("keychain unavailable")
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window.default_secret_store", lambda: _BrokenSecretStore()
+    )
+    shown: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda parent, title, text: shown.append(text)
+    )
+
+    window.show_settings()
+
+    assert shown == ["Could not remove the key: keychain unavailable"]
+
+
+def test_ask_confirmation_reflects_the_users_answer(qtbot: Any, monkeypatch: Any) -> None:
+    """`_ask_confirmation()`'s real body: every existing dispatch test
+    replaces this method itself with a fake, so its own real
+    `QMessageBox.question()` call never ran."""
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    confirmation = ConfirmationRequest(
+        request_id=uuid4(),
+        action_summary="Do the sensitive thing.",
+        risk_level=RiskLevel.SENSITIVE,
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    seen: list[tuple[str, str]] = []
+
+    def fake_question(parent: Any, title: str, text: str, buttons: Any, default: Any) -> Any:
+        seen.append((title, text))
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "question", fake_question)
+    assert window._ask_confirmation(confirmation) is True
+    assert seen == [("Confirm action", "Do the sensitive thing.")]
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.No)
+    assert window._ask_confirmation(confirmation) is False
+
+
+def test_ask_permission_reflects_the_users_answer(qtbot: Any, monkeypatch: Any) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    permission = PermissionRequest(
+        request_id=uuid4(),
+        capability_id="system.clear_history",
+        action_summary="Allow clearing history?",
+        risk_level=RiskLevel.SENSITIVE,
+    )
+    seen: list[tuple[str, str]] = []
+
+    def fake_question(parent: Any, title: str, text: str, buttons: Any, default: Any) -> Any:
+        seen.append((title, text))
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "question", fake_question)
+    assert window._ask_permission(permission) is True
+    assert seen == [
+        ("Grant permission", "Allow system.clear_history?\n\nAllow clearing history?")
+    ]
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.No)
+    assert window._ask_permission(permission) is False
+
+
+def test_ask_execute_confirmation_reflects_the_users_answer(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    assert window._ask_execute_confirmation("Open Notepad.") is True
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.No)
+    assert window._ask_execute_confirmation("Open Notepad.") is False
+
+
+def test_render_result_reports_the_error_message_for_a_stale_confirmation(qtbot: Any) -> None:
+    """`_render_result()`'s `elif error is not None` branch: every existing
+    dispatch test produces either a real `ActionResult` or a pending
+    confirmation/permission request, never a bare `ErrorEvent` with no
+    `ActionResult` alongside it."""
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    stale = ConfirmationRequest(
+        request_id=uuid4(),
+        action_summary="Do the thing.",
+        risk_level=RiskLevel.SENSITIVE,
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    window._start_worker(confirmation=stale)
+    qtbot.waitUntil(lambda: not window._is_worker_running(), timeout=5000)
+
+    assert window._output.toPlainText() == "Error: confirmation is missing or already used"
+
+
+def test_on_worker_finished_discards_a_pending_confirmation_while_closing(
+    qtbot: Any, tmp_path: Any
+) -> None:
+    """`_on_worker_finished()`'s closing-cleanup branch for a
+    `ConfirmationRequest`: reachable only when the window is already
+    closing when a worker's outputs arrive, never exercised by any
+    existing test."""
+
+    from visionai.ui.main_window import _RuntimeWorker
+
+    calls: list[ActionRequest] = []
+    runtime = _build_sensitive_runtime(calls, tmp_path, granted=True)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    text_worker = _RuntimeWorker(runtime=runtime, text="do the sensitive thing")
+    outputs: list[list[Any]] = []
+    text_worker.finished.connect(outputs.append)
+    text_worker.run()
+    confirmation = next(o for o in outputs[0] if isinstance(o, ConfirmationRequest))
+
+    window._closing = True
+    window._on_worker_finished([confirmation])
+
+    assert runtime.orchestrator.cancel_pending_confirmation(confirmation.id) is False
+    assert calls == []
+
+
+def test_on_worker_finished_discards_a_pending_permission_while_closing(
+    qtbot: Any, tmp_path: Any
+) -> None:
+    """`_on_worker_finished()`'s closing-cleanup branch for a
+    `PermissionRequest`: same shape as the confirmation case above, never
+    exercised by any existing test."""
+
+    from visionai.ui.main_window import _RuntimeWorker
+
+    calls: list[ActionRequest] = []
+    runtime = _build_sensitive_runtime(calls, tmp_path, granted=False)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    text_worker = _RuntimeWorker(runtime=runtime, text="do the sensitive thing")
+    outputs: list[list[Any]] = []
+    text_worker.finished.connect(outputs.append)
+    text_worker.run()
+    permission = next(o for o in outputs[0] if isinstance(o, PermissionRequest))
+
+    window._closing = True
+    window._on_worker_finished([permission])
+
+    assert runtime.orchestrator.cancel_pending_permission(permission.id) is False
+    assert calls == []
+
+
+class _BusyOrchestrator(QObject):
+    """Reports `started` but never registers a cancellable operation --
+    models being busy in planning/policy before real dispatch begins."""
+
+    started = Signal()
+
+    def __init__(self, *, output_bus: EventBus, release: Event) -> None:
+        super().__init__()
+        self._output_bus = output_bus
+        self._release = release
+
+    async def process_event(self, event: Any) -> None:
+        self.started.emit()
+        self._release.wait(timeout=2)
+        await self._output_bus.publish(
+            ActionResult(request_id=event.id, success=True, message="Busy command complete.")
+        )
+
+
+def _build_busy_runtime(release: Event) -> Any:
+    output_bus = EventBus(max_size=10)
+    return SimpleNamespace(
+        audit=_EmptyAudit(),
+        operations=OperationController(),
+        output_bus=output_bus,
+        orchestrator=_BusyOrchestrator(output_bus=output_bus, release=release),
+        registry=SimpleNamespace(list=lambda: ()),
+        state_machine=StateMachine(),
+    )
+
+
+def test_stop_current_operation_reports_nothing_cancellable_while_worker_runs(
+    qtbot: Any,
+) -> None:
+    """`stop_current_operation()`'s `else` branch: reached when a worker is
+    running but no active operation was ever registered for it (e.g. still
+    in planning/policy) -- every existing stop-button test uses a runtime
+    that does register one, so `cancel_active_operation()` never returned
+    False here before."""
+
+    release = Event()
+    runtime = _build_busy_runtime(release)
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window._command_input.setText("busy command")
+    try:
+        with qtbot.waitSignal(runtime.orchestrator.started, timeout=5000):
+            window.run_current_command()
+        assert window._is_worker_running() is True
+
+        thread_before = window._worker_thread
+        window.run_current_command()
+        assert window._worker_thread is thread_before
+
+        window.stop_current_operation()
+
+        assert window._output.toPlainText() == "No operation is currently running."
+    finally:
+        release.set()
+        qtbot.waitUntil(lambda: window._worker_thread is None, timeout=5000)
+
+
+def test_prepare_close_cancels_an_active_gesture_session(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    """`_prepare_close()`'s own `self._gesture_cancellation.cancel()` call:
+    the only existing mid-session gesture cancellation test cancels via the
+    Gesture Control button's own toggle path, never by closing the window
+    while a session is active."""
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_landmark_adapter",
+        lambda: StaticLandmarkAdapter(candidates=[]),
+    )
+
+    qtbot.mouseClick(window._gesture_button, Qt.MouseButton.LeftButton)
+    qtbot.waitUntil(lambda: window._gesture_thread is not None, timeout=5000)
+    cancellation = window._gesture_cancellation
+    assert cancellation is not None
+    assert cancellation.is_cancelled is False
+
+    assert window._prepare_close() is False
+
+    assert cancellation.is_cancelled is True
+    qtbot.waitUntil(lambda: window._gesture_thread is None, timeout=5000)
+
+
+def test_show_ask_ai_is_a_noop_while_a_question_is_already_running(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    """`show_ask_ai()`'s own `if self._ask_thread is not None: return` guard:
+    every existing Ask AI test starts from an idle window."""
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window._ask_thread = QThread(window)
+
+    prompts: list[Any] = []
+    monkeypatch.setattr(window, "_prompt_for_text", lambda *a: prompts.append(a) or "text")
+
+    window.show_ask_ai()
+
+    assert prompts == []
+
+
+def test_show_suggest_command_is_a_noop_while_a_request_is_already_running(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    """`show_suggest_command()`'s own guard, same shape as Ask AI's above."""
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window._suggest_thread = QThread(window)
+
+    prompts: list[Any] = []
+    monkeypatch.setattr(window, "_prompt_for_text", lambda *a: prompts.append(a) or "text")
+
+    window.show_suggest_command()
+
+    assert prompts == []
+
+
+def test_show_suggest_command_does_nothing_when_the_prompt_is_cancelled(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    """`show_suggest_command()`'s `if text is None: return` branch: every
+    existing Suggest Command test supplies real text from the prompt."""
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window, "_prompt_for_text", lambda *a: None)
+
+    window.show_suggest_command()
+
+    assert window._suggest_thread is None
+
+
+def test_suggest_clarification_needed_is_a_noop_while_closing(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    """`_on_suggest_clarification_needed()`'s own `if self._closing: return`
+    guard: reachable only when the window is already closing when the
+    worker's `clarification_needed` signal arrives."""
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window._closing = True
+
+    prompts: list[Any] = []
+    monkeypatch.setattr(window, "_prompt_for_text", lambda *a: prompts.append(a) or "answer")
+
+    window._on_suggest_clarification_needed("open something", "Which app?")
+
+    assert prompts == []
+
+
+def test_on_suggest_failed_reports_the_message_and_re_enables_the_button(qtbot: Any) -> None:
+    """`_on_suggest_failed()`'s real body: `_SuggestWorker.failed` is only
+    ever emitted from `run()`'s own defensive top-level exception guard, so
+    no existing test drives this GUI handler through a real worker thread."""
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window._suggest_button.setEnabled(False)
+
+    window._on_suggest_failed("Unexpected error: boom")
+
+    assert window._output.toPlainText() == "Unexpected error: boom"
+    assert window._suggest_button.isEnabled() is True
+    assert window._suggest_thread is None
+
+
+def test_on_gesture_failed_reports_the_error_and_resets_the_button(qtbot: Any) -> None:
+    """`_on_gesture_failed()`'s real body: `_GestureListenWorker.failed` is
+    only ever emitted from `run()`'s own defensive top-level exception
+    guard (a real camera failure surfaces earlier, as a `show_gesture_
+    control` startup error), so no existing test drives this GUI handler
+    through a real worker thread."""
+
+    runtime = build_runtime()
+    window = MainWindow(runtime)
+    qtbot.addWidget(window)
+    window._gesture_button.setText("Stop Gesture Control")
+    window._gesture_button.setEnabled(False)
+
+    window._on_gesture_failed("Unexpected error: boom")
+
+    assert window._output.toPlainText() == "Gesture control error: Unexpected error: boom"
+    assert window._gesture_button.text() == "Start Gesture Control"
+    assert window._gesture_button.isEnabled() is True
+    assert window._gesture_thread is None
+
+
+def test_main_launches_the_desktop_window_and_runs_the_qt_event_loop(
+    qtbot: Any, monkeypatch: Any
+) -> None:
+    """`main()`'s real body: every other test constructs `MainWindow`
+    directly against pytest-qt's own already-running `QApplication`
+    instead of calling this module entry point. `QApplication(sys.argv)`/
+    `app.exec()` are faked here -- a second real `QApplication` cannot be
+    constructed alongside pytest-qt's, and a real `exec()` would block
+    forever with no user driving the offscreen event loop -- everything
+    else (`build_runtime()`, real `MainWindow` construction, `window.
+    show()`, `window.maybe_show_onboarding()`) runs for real."""
+
+    created: list[list[str]] = []
+    shown: list[str] = []
+
+    class _FakeApplication:
+        def __init__(self, argv: list[str]) -> None:
+            created.append(argv)
+
+        def exec(self) -> int:
+            return 0
+
+    monkeypatch.setattr(main_window_module, "QApplication", _FakeApplication)
+    monkeypatch.setattr(
+        main_window_module.MainWindow, "show", lambda self: shown.append("show")
+    )
+    monkeypatch.setattr(
+        main_window_module.MainWindow,
+        "maybe_show_onboarding",
+        lambda self: shown.append("onboarding"),
+    )
+
+    exit_code = main_window_module.main()
+
+    assert exit_code == 0
+    assert created == [sys.argv]
+    assert shown == ["show", "onboarding"]

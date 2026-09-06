@@ -10,12 +10,95 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-06, `ui/main_window.py`
-`_GestureListenWorker`/`_AskWorker`/`_SuggestWorker` coverage cycle): 590
-tests, 553 passed, 28 failed (documented `WindowsLockStateAdapter`
-fail-closed pattern, not a regression), 10 skipped, 97% coverage, Ruff,
-mypy (one known sandbox-only false positive), Bandit, and pip-audit all
-clean.
+Latest Linux sandbox verification (2026-09-06, `ui/main_window.py` dialog/
+GUI-slot-handler coverage cycle): 614 tests, 576 passed, 28 failed
+(documented `WindowsLockStateAdapter` fail-closed pattern, not a
+regression), 10 skipped, 99% coverage, Ruff, mypy (one known sandbox-only
+false positive), Bandit, and pip-audit all clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, `ui/main_window.py` dialog/
+GUI-slot-handler coverage): started against local commit `3c727b0` (the
+prior session's `_GestureListenWorker`/`_AskWorker`/`_SuggestWorker`
+coverage cycle); baseline verified clean and unchanged from the prior
+session's documented state before any work started (fresh `.venv312` built
+from `requirements/dev.txt` against the system's real Python 3.12.3 in a
+new container, again needing `libportaudio2`/`libegl1`/`libopengl0` via
+`apt-get`; Ruff clean; mypy clean for 54 files except the same
+sandbox-only `ctypes.windll` false positive every session shows; Bandit
+clean; pip-audit clean; pytest collected 590 tests -- 553 passed, 28
+failed, 10 skipped, 97% coverage -- all 28 failures confirmed by message to
+be the documented `WindowsLockStateAdapter` fail-closed pattern, not a
+regression, exactly matching the prior session's recorded result). The
+prior session's own report named `ui/main_window.py`'s remaining 63-line
+gap (92% covered) as the next candidate: `_TextPromptDialog`/
+`_SettingsDialog`'s own modal `dialog.exec()` calls and the `MainWindow`
+GUI-slot-handler methods around them, not yet inspected closely enough to
+confirm how much was reachable by mocking `dialog.exec()`/`QMessageBox.
+question()` directly (matching this project's own pre-existing
+`_SettingsDialog` construction test) versus needing a real running Qt
+event loop. Inspected it directly: all of it was reachable the same
+hardware-free way, since this sandbox's `tests/conftest.py` already forces
+`QT_QPA_PLATFORM=offscreen`, so no dialog can genuinely block on a human
+click either way -- every existing dialog-adjacent test already avoided
+this by replacing the *caller* (`_prompt_for_text`, `_ask_new_settings`,
+`_ask_confirmation`, `_ask_permission`, `_ask_execute_confirmation`) with a
+fake instead of letting the real method run, leaving the dialog classes,
+the methods that construct and read them, and the `QMessageBox.question()`
+calls themselves all genuinely untested. Added 25 tests to
+`tests/unit/test_main_window.py`: `_TextPromptDialog`'s own construction
+and `.text()` (direct construction, matching the existing `_SettingsDialog`
+precedent); `_prompt_for_text()`'s real body in all three branches
+(accepted-with-text, cancelled, accepted-but-blank) via a monkeypatched
+`_TextPromptDialog.exec()` that sets the input field itself before
+returning; `_ask_new_settings()`'s real body (accepted and cancelled) the
+same way via `_SettingsDialog.exec()`; `show_settings()`'s two exception
+branches (`list_input_devices()` raising `OSError`; `default_secret_store
+().delete()` raising `StorageError`), both previously untested since every
+existing settings test runs on this sandbox's real, non-raising,
+hardware-free stand-ins; `_ask_confirmation()`/`_ask_permission()`/
+`_ask_execute_confirmation()`'s real bodies via a monkeypatched
+`QMessageBox.question()` (matching the existing `QMessageBox.warning()`
+mock precedent) asserting both the exact dialog text shown and the
+accept/decline return value; `_render_result()`'s `elif error is not None`
+branch via a real stale/unissued `ConfirmationRequest` dispatched through
+`_start_worker()`, which the real orchestrator's `confirm()` correctly
+turns into a bare `ErrorEvent` with no `ActionResult`; `_on_worker_
+finished()`'s closing-cleanup branches for both a pending
+`ConfirmationRequest` and a pending `PermissionRequest` (real ones, taken
+from `_build_sensitive_runtime()`'s own dispatch flow, discarded via
+`window._closing = True` before calling `_on_worker_finished()` directly,
+then confirmed genuinely gone by asserting the orchestrator's own
+`cancel_pending_*` returns `False` the second time); `stop_current_
+operation()`'s `else` branch (a new `_BusyOrchestrator` test fixture that
+reports `started` but never registers a cancellable operation, modelling a
+worker still in planning/policy) and `run_current_command()`'s
+already-running guard, both using that same fixture; `_prepare_close()`'s
+own `self._gesture_cancellation.cancel()` call (closing the window while a
+real gesture session is active, distinct from the existing
+button-toggle-cancels-mid-session test); `show_ask_ai()`/`show_suggest_
+command()`'s already-running guards and the latter's cancelled-prompt
+guard; `_on_suggest_clarification_needed()`'s `if self._closing: return`
+guard (distinct from its already-tested `if not answer:` decline branch);
+and, called directly rather than through a real worker thread since both
+signals are only ever emitted from their respective worker's own
+`# pragma: no cover` top-level defensive exception guard (consistent with
+that pragma, not a bug worth removing it for): `_on_gesture_failed()`'s and
+`_on_suggest_failed()`'s real bodies. Also closed `main()`'s own real body
+(the module's GUI entry point, previously entirely untested): a fake
+`QApplication` class (a second real one cannot coexist with pytest-qt's
+own, and a real `.exec()` would block forever with no user driving the
+offscreen event loop) plus monkeypatched `MainWindow.show()`/`.
+maybe_show_onboarding()`, letting `build_runtime()` and the real
+`MainWindow` construction run unmodified. Left uncovered, matching this
+codebase's own established precedent (`app.py:663` is the identical
+pattern): the trailing `if __name__ == "__main__":` guard at line 1346, a
+process-entry line no test in this codebase exercises. No application code
+changed -- this was a pure test gap, not a bug. `ui/main_window.py` reached
+99% line coverage (was 92%; only that one `__main__` guard line remains).
+Full verification after the change: 614 tests (576 passed, 28 failed --
+identical failing-test names to the pre-change baseline, confirming no
+regressions -- 10 skipped), 99% overall coverage (up from 97%), Ruff/mypy
+(one known false positive)/Bandit/pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, `ui/main_window.py`
 `_GestureListenWorker`/`_AskWorker`/`_SuggestWorker` coverage): started
@@ -1397,7 +1480,17 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `ui/main_window.py`
+- 2026-09-06, Linux sandbox (this session, `ui/main_window.py` dialog/
+  GUI-slot-handler coverage cycle): 614 tests -- 576 passed, 28 failed (all
+  the documented `WindowsLockStateAdapter` fail-closed pattern, confirmed by
+  message, not a regression), 10 skipped -- 99% overall coverage, Ruff
+  clean, mypy clean for 54 source files except the one documented
+  sandbox-only `ctypes.windll` false positive, Bandit clean, pip-audit
+  clean. `ui/main_window.py` now at 99% line coverage (was 92%); the only
+  remaining line is the trailing `if __name__ == "__main__":` guard, left
+  uncovered to match this codebase's own established precedent
+  (`app.py:663` is the identical pattern).
+- 2026-09-06, Linux sandbox (prior session, `ui/main_window.py`
   `_GestureListenWorker`/`_AskWorker`/`_SuggestWorker` coverage cycle): 590
   tests -- 553 passed, 28 failed (all the documented `WindowsLockStateAdapter`
   fail-closed pattern, confirmed by message, not a regression), 10 skipped --
