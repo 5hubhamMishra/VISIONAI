@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from visionai.config import user_settings as user_settings_module
 from visionai.config.user_settings import (
     DEFAULT_WAKE_WORD,
     UserSettingsStore,
@@ -55,6 +56,40 @@ def test_user_settings_store_rejects_malformed_json(tmp_path) -> None:
 
     with pytest.raises(StorageError):
         UserSettingsStore(path).get_log_level()
+
+
+def test_user_settings_store_rejects_a_non_object_json_root(tmp_path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(StorageError, match="root must be an object"):
+        UserSettingsStore(path).get_log_level()
+
+
+def test_user_settings_store_rejects_a_negative_microphone_device_index(tmp_path) -> None:
+    store = UserSettingsStore(tmp_path / "settings.json")
+
+    with pytest.raises(ValueError, match="non-negative or None"):
+        store.set_microphone_device_index(-1)
+
+
+def test_user_settings_store_rejects_a_boolean_microphone_device_index(tmp_path) -> None:
+    store = UserSettingsStore(tmp_path / "settings.json")
+
+    with pytest.raises(ValueError, match="non-negative or None"):
+        store.set_microphone_device_index(True)
+
+
+def test_user_settings_store_raises_storage_error_on_write_failure(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "settings.json"
+
+    def _raise_os_error(*args: object, **kwargs: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(user_settings_module, "NamedTemporaryFile", _raise_os_error)
+
+    with pytest.raises(StorageError, match="could not be written"):
+        UserSettingsStore(path).set_log_level("DEBUG")
 
 
 def test_effective_log_level_falls_back_to_environment_default(tmp_path) -> None:

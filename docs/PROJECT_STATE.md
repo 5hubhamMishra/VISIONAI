@@ -108,6 +108,37 @@ verification after the change: 507 tests (469 passed, 28 failed -- identical
 failing-test names, no regressions -- 10 skipped), 91% coverage,
 Ruff/mypy(one known false positive)/Bandit/pip-audit all clean.
 
+2026-09-06 autonomous cycle (Linux sandbox, config/user_settings.py coverage):
+started against local commit `671fffe` (the prior session's `core/
+cancellation.py` coverage cycle); baseline verified clean and unchanged from
+the prior session's documented state before any work started (fresh
+`.venv312` built from `requirements/dev.txt` in a new container, again
+needing `libegl1`/`libopengl0`/`libportaudio2` via `apt-get` -- `libgl1` was
+already present -- before pytest-qt/sounddevice would import; Ruff clean;
+mypy clean for 54 files except the same sandbox-only `ctypes.windll` false
+positive every session shows; Bandit clean; pip-audit clean; pytest 507
+tests -- 469 passed, 28 failed, 10 skipped, 91% coverage -- all 28 failures
+confirmed by message to be the documented `WindowsLockStateAdapter`
+fail-closed pattern, not a regression, exactly matching the prior session's
+recorded result). Scanned the coverage report for a real, narrow,
+hardware-free gap and found one in `visionai.config.user_settings.
+UserSettingsStore` (95% covered, lines 82, 95, 111-112) -- the same shape of
+gap already closed in `JsonPermissionStore` and `RoutineStore` by earlier
+sessions, but never yet done for this store. Confirmed it was real: `set_
+microphone_device_index()`'s negative/boolean rejection branch, `_read()`'s
+non-object-JSON-root rejection, and `_write()`'s `OSError`-to-`StorageError`
+handling were all untested -- only the read-side tolerance of an
+already-invalid stored value was covered, never the write-side validation
+or the store's own failure handling. Added five tests to `tests/unit/
+test_user_settings.py`, mirroring the existing `RoutineStore` write-failure
+test's `monkeypatch.setattr(module, "NamedTemporaryFile", ...)` pattern. No
+application code changed -- this was a pure test gap, not a bug.
+`config/user_settings.py` reached 100% line coverage (was 95%). Full
+verification after the change: 511 tests (473 passed, 28 failed -- identical
+failing-test names to the pre-change baseline, confirming no regressions --
+10 skipped), 91% coverage, Ruff/mypy(one known false positive)/Bandit/
+pip-audit all clean.
+
 Standing instructions are discoverable in AGENTS.md. Phone pairing remains
 unverified; the owner-only setup is in [REMOTE_CONTROL.md](REMOTE_CONTROL.md).
 The next bounded reliability task is complete: background CLI listening errors
@@ -747,7 +778,14 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `core/cancellation.py` coverage
+- 2026-09-06, Linux sandbox (this session, `config/user_settings.py`
+  coverage cycle): 511 tests -- 473 passed, 28 failed (all the documented
+  `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
+  regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
+  source files except the one documented sandbox-only `ctypes.windll` false
+  positive, Bandit clean, pip-audit clean. `config/user_settings.py` now at
+  100% line coverage (was 95%).
+- 2026-09-06, Linux sandbox (prior session, `core/cancellation.py` coverage
   cycle): 507 tests -- 469 passed, 28 failed (all the documented
   `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
   regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
@@ -785,4 +823,4 @@ cd visionai
 
 ## Last Updated
 
-2026-09-06 (Linux sandbox coverage cycle: `core/cancellation.py`)
+2026-09-06 (Linux sandbox coverage cycle: `config/user_settings.py`)
