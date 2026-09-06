@@ -1,5 +1,51 @@
 # Work Log
 
+## 2026-09-06 capabilities/system_info.py Test Coverage (Linux Sandbox Cycle)
+
+- Started against local commit `b77765c` (the prior session's
+  `orchestration/event_orchestrator.py` coverage cycle); baseline verified
+  clean and unchanged from the prior session's documented state before any
+  work started (fresh `.venv312` built from `requirements/dev.txt` in a new
+  container, again needing `libegl1`/`libopengl0`/`libportaudio2` via
+  `apt-get` -- `libgl1` was already present -- before pytest-qt/sounddevice
+  would import; Ruff clean; mypy clean for 54 files except the same
+  sandbox-only `ctypes.windll` false positive every session shows; Bandit
+  clean; pip-audit clean; pytest 523 tests -- 485 passed, 28 failed, 10
+  skipped, 92% coverage -- all 28 failures confirmed by message to be the
+  documented `WindowsLockStateAdapter` fail-closed pattern, not a
+  regression, exactly matching the prior session's recorded result).
+- Scanned the coverage report for a real, narrow, hardware-free gap and
+  found one in `visionai.capabilities.system_info.read_battery_status()`
+  (`capabilities/system_info.py`, 96% covered, lines 53-54 and 57). This is
+  the same shape of gap already closed for `capabilities/browser.py`'s
+  `default_browser_opener()`, `capabilities/applications.py`'s
+  `default_launcher()`, and `capabilities/media.py`'s
+  `default_key_presser()` in earlier sessions: the module's real production
+  probe -- which calls `psutil.sensors_battery()`, translates a platform's
+  `NotImplementedError`/`OSError` (no battery sensor available) into a
+  `BatteryStatus(percent=None, plugged_in=None)`, and otherwise rounds and
+  returns the real percent/plugged-in state -- had never been exercised
+  directly. Every test in `tests/unit/test_system_info.py` either
+  constructed its handler with an injected fake probe
+  (`make_system_battery_handler(lambda: BatteryStatus(...))`) or dispatched
+  through the real `runtime` (`test_runtime_dispatches_system_battery_with_
+  real_probe`), which only ever reached the "no battery" branch on this
+  sandbox's own hardware -- the exception-handling branch and the
+  battery-present branch were both untested.
+- Added three tests to `tests/unit/test_system_info.py`, calling
+  `read_battery_status()` directly and monkeypatching `psutil.sensors_
+  battery` (mirroring the existing `default_key_presser()` test's
+  monkeypatch-the-imported-module pattern): one raising `NotImplementedError`,
+  one raising `OSError` (both asserting the same no-sensor `BatteryStatus`),
+  and one returning a fake battery object asserting the real rounding and
+  pass-through of `percent`/`power_plugged`. No application code changed --
+  this was a pure test gap, not a bug. `capabilities/system_info.py`
+  reached 100% line coverage (was 96%).
+- Full verification after the change: 526 tests (488 passed, 28 failed --
+  identical failing-test names to the pre-change baseline, confirming no
+  regressions -- 10 skipped), 92% coverage, Ruff/mypy (one known sandbox-only
+  false positive)/Bandit/pip-audit all clean.
+
 ## 2026-09-06 capabilities/media.py Test Coverage (Linux Sandbox Cycle)
 
 - Started against local commit `1c0aee7` (the prior session's

@@ -16,6 +16,45 @@ event_orchestrator.py` coverage cycle): 523 tests, 485 passed, 28 failed
 10 skipped, 92% coverage, Ruff, mypy (one known sandbox-only false positive),
 Bandit, and pip-audit all clean.
 
+2026-09-06 autonomous cycle (Linux sandbox, `capabilities/system_info.py`
+coverage): started against local commit `b77765c` (the prior session's
+`orchestration/event_orchestrator.py` coverage cycle); baseline verified
+clean and unchanged from the prior session's documented state before any
+work started (fresh `.venv312` built from `requirements/dev.txt` in a new
+container, again needing `libegl1`/`libopengl0`/`libportaudio2` via
+`apt-get` -- `libgl1` was already present -- before pytest-qt/sounddevice
+would import; Ruff clean; mypy clean for 54 files except the same
+sandbox-only `ctypes.windll` false positive every session shows; Bandit
+clean; pip-audit clean; pytest 523 tests -- 485 passed, 28 failed, 10
+skipped, 92% coverage -- all 28 failures confirmed by message to be the
+documented `WindowsLockStateAdapter` fail-closed pattern, not a regression,
+exactly matching the prior session's recorded result). Scanned the coverage
+report for a real, narrow, hardware-free gap and found one in
+`visionai.capabilities.system_info.read_battery_status()` (96% covered,
+lines 53-54 and 57): the module's real production battery probe -- which
+calls `psutil.sensors_battery()`, converts a platform's `NotImplementedError`/
+`OSError` (no battery sensor) into a `BatteryStatus(percent=None,
+plugged_in=None)`, and otherwise rounds and returns the real percent/
+plugged-in state -- had never been exercised directly. Every existing test
+either injected a fake probe into the handler or dispatched through the real
+runtime, which on this sandbox's own hardware only ever reached the
+"no battery" branch; the exception-handling branch and the battery-present
+branch were both untested. This is the same shape of gap already closed for
+`capabilities/browser.py`'s `default_browser_opener()`, `capabilities/
+applications.py`'s `default_launcher()`, and `capabilities/media.py`'s
+`default_key_presser()` in earlier sessions. Added three tests to
+`tests/unit/test_system_info.py`, calling `read_battery_status()` directly
+and monkeypatching `psutil.sensors_battery`: one raising
+`NotImplementedError`, one raising `OSError` (both asserting the same
+no-sensor `BatteryStatus`), and one returning a fake battery object
+asserting the real rounding and pass-through of `percent`/`power_plugged`.
+No application code changed -- this was a pure test gap, not a bug.
+`capabilities/system_info.py` reached 100% line coverage (was 96%). Full
+verification after the change: 526 tests (488 passed, 28 failed -- identical
+failing-test names to the pre-change baseline, confirming no regressions --
+10 skipped), 92% coverage, Ruff/mypy(one known false positive)/Bandit/
+pip-audit all clean.
+
 2026-09-06 autonomous cycle (Linux sandbox, `orchestration/
 event_orchestrator.py` coverage): started against local commit `010fbaf`
 (the prior session's `capabilities/media.py` coverage cycle); baseline
@@ -940,7 +979,22 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `capabilities/media.py` coverage
+- 2026-09-06, Linux sandbox (this session, `capabilities/system_info.py`
+  coverage cycle): 526 tests -- 488 passed, 28 failed (all the documented
+  `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
+  regression), 10 skipped -- 92% coverage, Ruff clean, mypy clean for 54
+  source files except the one documented sandbox-only `ctypes.windll` false
+  positive, Bandit clean, pip-audit clean. `capabilities/system_info.py` now
+  at 100% line coverage (was 96%).
+- 2026-09-06, Linux sandbox (prior session, `orchestration/
+  event_orchestrator.py` coverage cycle): 523 tests -- 485 passed, 28 failed
+  (all the documented `WindowsLockStateAdapter` fail-closed pattern,
+  confirmed by message, not a regression), 10 skipped -- 92% coverage, Ruff
+  clean, mypy clean for 54 source files except the one documented
+  sandbox-only `ctypes.windll` false positive, Bandit clean, pip-audit
+  clean. `orchestration/event_orchestrator.py` now at 97% line coverage
+  (was 92%).
+- 2026-09-06, Linux sandbox (prior session, `capabilities/media.py` coverage
   cycle): 516 tests -- 478 passed, 28 failed (all the documented
   `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
   regression), 10 skipped -- 92% coverage, Ruff clean, mypy clean for 54
@@ -1006,4 +1060,4 @@ cd visionai
 
 ## Last Updated
 
-2026-09-06 (Linux sandbox coverage cycle: `capabilities/media.py`)
+2026-09-06 (Linux sandbox coverage cycle: `capabilities/system_info.py`)

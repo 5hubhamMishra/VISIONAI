@@ -1,4 +1,8 @@
+from dataclasses import dataclass
 from datetime import datetime
+
+import psutil
+import pytest
 
 from visionai.capabilities import CapabilityRegistry
 from visionai.capabilities.system_info import (
@@ -8,6 +12,7 @@ from visionai.capabilities.system_info import (
     make_system_date_handler,
     make_system_health_handler,
     make_system_time_handler,
+    read_battery_status,
     system_info_manifests,
 )
 from visionai.core.cancellation import CancellationToken
@@ -115,6 +120,52 @@ def test_system_battery_handler_reports_on_battery_power() -> None:
     )
 
     assert result.message == "Battery is at 42% and on battery power."
+
+
+@dataclass(frozen=True)
+class _FakePsutilBattery:
+    percent: float
+    power_plugged: bool
+
+
+def test_read_battery_status_reports_no_sensor_on_not_implemented_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_not_implemented() -> None:
+        raise NotImplementedError("no battery sensor on this platform")
+
+    monkeypatch.setattr(psutil, "sensors_battery", raise_not_implemented)
+
+    status = read_battery_status()
+
+    assert status == BatteryStatus(percent=None, plugged_in=None)
+
+
+def test_read_battery_status_reports_no_sensor_on_os_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_os_error() -> None:
+        raise OSError("battery sensor unavailable")
+
+    monkeypatch.setattr(psutil, "sensors_battery", raise_os_error)
+
+    status = read_battery_status()
+
+    assert status == BatteryStatus(percent=None, plugged_in=None)
+
+
+def test_read_battery_status_reports_real_charge_and_power_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        psutil,
+        "sensors_battery",
+        lambda: _FakePsutilBattery(percent=87.44, power_plugged=True),
+    )
+
+    status = read_battery_status()
+
+    assert status == BatteryStatus(percent=87.4, plugged_in=True)
 
 
 def test_system_health_handler_reports_cpu_and_memory() -> None:
