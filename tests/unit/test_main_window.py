@@ -28,6 +28,7 @@ from visionai.intelligence import LLMReply
 from visionai.observability import InMemoryAuditSink
 from visionai.orchestration.event_orchestrator import EventOrchestrator
 from visionai.platform.camera import GestureCandidate, StaticLandmarkAdapter
+from visionai.platform.lock_state import StaticLockStateAdapter
 from visionai.policy import (
     ConfirmationService,
     FixedWindowRateLimiter,
@@ -961,6 +962,492 @@ def test_main_window_suggest_command_clarification_declined_cancels(
     assert window._output.toPlainText() == "Cancelled."
     assert launched == []
     assert window._suggest_button.isEnabled() is True
+
+
+class _ClosingLandmarkAdapter:
+    """Wraps `StaticLandmarkAdapter` with a real, trackable `close()`.
+
+    `StaticLandmarkAdapter` itself has no `close()` method, so every
+    existing gesture test -- which all use it directly -- leaves
+    `_GestureListenWorker.run()`'s own `close()` call (guarded by
+    `getattr(..., "close", None)`) untested.
+    """
+
+    def __init__(self, candidates: list[GestureCandidate]) -> None:
+        self._inner = StaticLandmarkAdapter(candidates=candidates)
+        self.closed = False
+
+    def read_candidate(self) -> GestureCandidate:
+        return self._inner.read_candidate()
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_gesture_listen_worker_run_dispatches_mapped_command_directly(monkeypatch: Any) -> None:
+    """Ports `test_main_window_gesture_button_dispatches_mapped_command_and_stops_on_open_palm`
+    to a direct construction + synchronous `.run()` call. Every existing gesture
+    test drives this worker through a real `QThread` (`thread.start()`), which this
+    project's coverage configuration cannot trace -- calling `.run()` directly in the
+    test thread instead, exactly like `_RuntimeWorker`'s equivalent fix, makes the real
+    branches inside `_GestureListenWorker` visible to `coverage.py`.
+    """
+
+    from visionai.core.cancellation import CancellationToken
+    from visionai.ui.main_window import _GestureListenWorker
+
+    launched: list[str] = []
+    runtime = build_runtime(
+        launcher=launched.append, lock_state=StaticLockStateAdapter(locked=False)
+    )
+    candidates = [
+        GestureCandidate(gesture_id="thumbs_up", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="thumbs_up", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+    ]
+    times = iter([0.0, 0.5, 0.6, 1.1])
+    adapter = _ClosingLandmarkAdapter(candidates)
+    worker = _GestureListenWorker(
+        runtime=runtime,
+        landmark_adapter=adapter,
+        recognizer=TemporalGestureRecognizer(clock=lambda: next(times)),
+        cancellation=CancellationToken(),
+    )
+    dispatched: list[str] = []
+    finished: list[int] = []
+    worker.dispatched.connect(dispatched.append)
+    worker.finished.connect(finished.append)
+    worker.failed.connect(lambda message: pytest.fail(f"unexpected failure: {message}"))
+
+    worker.run()
+
+    assert finished == [2]
+    assert launched == ["notepad.exe"]
+    assert "Opening notepad." in dispatched
+    assert adapter.closed is True
+
+
+def test_gesture_listen_worker_closed_fist_starts_and_open_palm_sends_voice_directly(
+    monkeypatch: Any,
+) -> None:
+    """Ports `test_main_window_gesture_button_closed_fist_starts_and_open_palm_sends_voice_command`
+    the same way -- also the only path that reaches `_on_confirmed`'s
+    `elif ... and self._voice_runner is not None` branch, since the
+    QThread-driven version of this exact scenario never traced it."""
+
+    from visionai.core.cancellation import CancellationToken
+    from visionai.ui.main_window import _GestureListenWorker
+
+    launched: list[str] = []
+    runtime = build_runtime(
+        launcher=launched.append, lock_state=StaticLockStateAdapter(locked=False)
+    )
+    candidates = [
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+    ]
+    times = iter([0.0, 0.5, 0.6, 1.1])
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_microphone_capture", lambda: _FakeMicrophoneCapture()
+    )
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_transcriber", lambda: (lambda audio: "open notepad")
+    )
+    worker = _GestureListenWorker(
+        runtime=runtime,
+        landmark_adapter=StaticLandmarkAdapter(candidates=candidates),
+        recognizer=TemporalGestureRecognizer(min_hold_ms=400, clock=lambda: next(times)),
+        cancellation=CancellationToken(),
+    )
+    dispatched: list[str] = []
+    worker.dispatched.connect(dispatched.append)
+    worker.failed.connect(lambda message: pytest.fail(f"unexpected failure: {message}"))
+
+    worker.run()
+
+    assert launched == ["notepad.exe"]
+    assert "Voice command listening started. Show an open palm to send it." in dispatched
+    assert "Opening notepad." in dispatched
+
+
+def test_gesture_listen_worker_send_voice_capture_reports_no_speech_directly(
+    monkeypatch: Any,
+) -> None:
+    """`_send_voice_capture`'s "no speech recognized" branch, never reached
+    through the QThread-driven full GUI test."""
+
+    from visionai.core.cancellation import CancellationToken
+    from visionai.ui.main_window import _GestureListenWorker
+
+    runtime = build_runtime()
+    candidates = [
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+    ]
+    times = iter([0.0, 0.5, 0.6, 1.1])
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_microphone_capture", lambda: _FakeMicrophoneCapture()
+    )
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_transcriber", lambda: (lambda audio: "   ")
+    )
+    worker = _GestureListenWorker(
+        runtime=runtime,
+        landmark_adapter=StaticLandmarkAdapter(candidates=candidates),
+        recognizer=TemporalGestureRecognizer(min_hold_ms=400, clock=lambda: next(times)),
+        cancellation=CancellationToken(),
+    )
+    dispatched: list[str] = []
+    worker.dispatched.connect(dispatched.append)
+    worker.failed.connect(lambda message: pytest.fail(f"unexpected failure: {message}"))
+
+    worker.run()
+
+    assert "No speech recognized." in dispatched
+
+
+def test_gesture_listen_worker_send_voice_capture_reports_when_no_result_directly(
+    monkeypatch: Any,
+) -> None:
+    """`_send_voice_capture`'s "no `ActionResult` produced" branch: the sent
+    voice command still only prompts for permission (`system.clear_history`
+    is sensitive), so `_dispatch` returns `None` rather than an `ActionResult`,
+    and the worker reports the raw command sent instead of a result message."""
+
+    from visionai.core.cancellation import CancellationToken
+    from visionai.ui.main_window import _GestureListenWorker
+
+    runtime = build_runtime(lock_state=StaticLockStateAdapter(locked=False))
+    candidates = [
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+    ]
+    times = iter([0.0, 0.5, 0.6, 1.1])
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_microphone_capture", lambda: _FakeMicrophoneCapture()
+    )
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_transcriber", lambda: (lambda audio: "clear history")
+    )
+    worker = _GestureListenWorker(
+        runtime=runtime,
+        landmark_adapter=StaticLandmarkAdapter(candidates=candidates),
+        recognizer=TemporalGestureRecognizer(min_hold_ms=400, clock=lambda: next(times)),
+        cancellation=CancellationToken(),
+    )
+    dispatched: list[str] = []
+    worker.dispatched.connect(dispatched.append)
+    worker.failed.connect(lambda message: pytest.fail(f"unexpected failure: {message}"))
+
+    worker.run()
+
+    assert 'Voice command sent: "clear history"' in dispatched
+
+
+def test_gesture_listen_worker_reports_when_voice_capture_is_unavailable_directly(
+    monkeypatch: Any,
+) -> None:
+    """Ports `test_main_window_gesture_button_reports_when_voice_capture_is_unavailable`
+    to a direct call, reaching `_start_voice_capture`'s own except branch."""
+
+    from visionai.core.cancellation import CancellationToken
+    from visionai.ui.main_window import _GestureListenWorker
+
+    launched: list[str] = []
+    runtime = build_runtime(launcher=launched.append)
+    candidates = [
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="closed_fist", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+        GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.9),
+    ]
+    times = iter([0.0, 0.5, 0.6, 1.1])
+
+    def _broken_capture() -> object:
+        raise OSError("no microphone device available")
+
+    monkeypatch.setattr("visionai.ui.main_window._build_microphone_capture", _broken_capture)
+    worker = _GestureListenWorker(
+        runtime=runtime,
+        landmark_adapter=StaticLandmarkAdapter(candidates=candidates),
+        recognizer=TemporalGestureRecognizer(min_hold_ms=400, clock=lambda: next(times)),
+        cancellation=CancellationToken(),
+    )
+    dispatched: list[str] = []
+    worker.dispatched.connect(dispatched.append)
+    worker.failed.connect(lambda message: pytest.fail(f"unexpected failure: {message}"))
+
+    worker.run()
+
+    assert launched == []
+    assert "Voice input unavailable: no microphone device available" in dispatched
+
+
+@pytest.mark.asyncio
+async def test_gesture_listen_worker_send_voice_capture_is_a_no_op_with_no_active_runner() -> None:
+    """`_send_voice_capture`'s own defensive guard: it is only ever called from
+    `_on_confirmed`'s `elif ... and self._voice_runner is not None` branch, so
+    a freshly constructed worker (never having started voice capture) hitting
+    it directly must still return cleanly rather than assuming one exists."""
+
+    from visionai.core.cancellation import CancellationToken
+    from visionai.ui.main_window import _GestureListenWorker
+
+    worker = _GestureListenWorker(
+        runtime=build_runtime(),
+        landmark_adapter=StaticLandmarkAdapter(candidates=[]),
+        recognizer=TemporalGestureRecognizer(),
+        cancellation=CancellationToken(),
+    )
+    worker.dispatched.connect(lambda message: pytest.fail(f"unexpected message: {message}"))
+
+    await worker._send_voice_capture()
+
+    assert worker._voice_runner is None
+
+
+def test_ask_worker_run_emits_finished_with_the_reply(monkeypatch: Any) -> None:
+    """`_AskWorker.run()`'s success path, never traced through the real
+    `QThread` every existing Ask AI GUI test drives it with."""
+
+    from visionai.ui.main_window import _AskWorker
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_llm_provider", lambda: _FixedReplyProvider("four")
+    )
+    worker = _AskWorker(text="what is 2+2?")
+    finished: list[str] = []
+    worker.finished.connect(finished.append)
+    worker.failed.connect(lambda message: pytest.fail(f"unexpected failure: {message}"))
+
+    worker.run()
+
+    assert finished == ["four"]
+
+
+def test_ask_worker_run_emits_failed_on_a_provider_construction_failure(
+    monkeypatch: Any,
+) -> None:
+    """`_AskWorker.run()`'s failure path, same tracing gap as above."""
+
+    from visionai.ui.main_window import _AskWorker
+
+    def _broken_provider() -> object:
+        raise ValueError("VISIONAI_ANTHROPIC_API_KEY is not set")
+
+    monkeypatch.setattr("visionai.ui.main_window._build_llm_provider", _broken_provider)
+    worker = _AskWorker(text="what is 2+2?")
+    failed: list[str] = []
+    worker.finished.connect(lambda message: pytest.fail("unexpected success"))
+    worker.failed.connect(failed.append)
+
+    worker.run()
+
+    assert failed == ["Could not get an answer: VISIONAI_ANTHROPIC_API_KEY is not set"]
+
+
+def test_suggest_worker_propose_reports_a_provider_construction_failure(
+    monkeypatch: Any,
+) -> None:
+    """`_SuggestWorker._propose()`'s provider-construction-failure branch,
+    reached the same tracing-gap way as `_AskWorker`'s equivalent above."""
+
+    from visionai.ui.main_window import _SuggestWorker
+
+    def _broken_provider() -> object:
+        raise ValueError("VISIONAI_ANTHROPIC_API_KEY is not set")
+
+    monkeypatch.setattr("visionai.ui.main_window._build_llm_provider", _broken_provider)
+    worker = _SuggestWorker(runtime=build_runtime(), text="open notepad please")
+    messages: list[str] = []
+    worker.message.connect(messages.append)
+    worker.proposed.connect(lambda *_: pytest.fail("unexpected proposal"))
+
+    worker.run()
+
+    assert messages == ["Could not get a suggestion: VISIONAI_ANTHROPIC_API_KEY is not set"]
+
+
+def test_suggest_worker_propose_uses_the_deterministic_fallback_directly(
+    monkeypatch: Any,
+) -> None:
+    """`_SuggestWorker._propose()`'s `DeterministicFallbackProvider` branch."""
+
+    from visionai.config.settings import Settings
+    from visionai.ui.main_window import _SuggestWorker
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window.get_settings", lambda: Settings(llm_provider="none")
+    )
+    worker = _SuggestWorker(runtime=build_runtime(), text="open notepad please")
+    messages: list[str] = []
+    worker.message.connect(messages.append)
+
+    worker.run()
+
+    assert messages == [
+        "No LLM provider is configured. Set VISIONAI_LLM_PROVIDER=anthropic and "
+        "VISIONAI_ANTHROPIC_API_KEY to enable conversational answers."
+    ]
+
+
+def test_suggest_worker_propose_reports_a_provider_error_during_suggestion(
+    monkeypatch: Any,
+) -> None:
+    """`_SuggestWorker._propose()`'s `suggest_command_result()`-failure branch."""
+
+    from visionai.core.errors import ProviderError
+    from visionai.ui.main_window import _SuggestWorker
+
+    class _FailingProvider:
+        def respond(self, query: object) -> LLMReply:
+            raise ProviderError("model unavailable")
+
+    monkeypatch.setattr("visionai.ui.main_window._build_llm_provider", lambda: _FailingProvider())
+    worker = _SuggestWorker(runtime=build_runtime(), text="open notepad please")
+    messages: list[str] = []
+    worker.message.connect(messages.append)
+
+    worker.run()
+
+    assert messages == ["Could not get a suggestion: model unavailable"]
+
+
+def test_suggest_worker_propose_emits_clarification_needed_directly(monkeypatch: Any) -> None:
+    """`_SuggestWorker._propose()`'s clarification branch."""
+
+    from visionai.ui.main_window import _SuggestWorker
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_llm_provider",
+        lambda: _FixedReplyProvider("CLARIFY: Which app should I open?"),
+    )
+    worker = _SuggestWorker(runtime=build_runtime(), text="open something")
+    clarifications: list[tuple[str, str]] = []
+    worker.clarification_needed.connect(
+        lambda text, question: clarifications.append((text, question))
+    )
+    worker.message.connect(lambda message: pytest.fail(f"unexpected message: {message}"))
+
+    worker.run()
+
+    assert clarifications == [("open something", "Which app should I open?")]
+
+
+def test_suggest_worker_propose_reports_no_match_for_an_unmapped_phrase(
+    monkeypatch: Any,
+) -> None:
+    """`_SuggestWorker._propose()`'s `phrase is None` branch."""
+
+    from visionai.ui.main_window import _SuggestWorker
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_llm_provider", lambda: _FixedReplyProvider("NONE")
+    )
+    worker = _SuggestWorker(runtime=build_runtime(), text="order me a pizza")
+    messages: list[str] = []
+    worker.message.connect(messages.append)
+
+    worker.run()
+
+    assert messages == ["No matching command found."]
+
+
+def test_suggest_worker_propose_reports_no_match_when_the_real_planner_rejects_the_resolved_phrase(
+    monkeypatch: Any,
+) -> None:
+    """Defense in depth, mirroring `test_app.py`'s equivalent regression test:
+    `suggest_command_result()` only ever returns a phrase already in
+    `reviewed_phrases()`, which by construction always plans to a real
+    command -- but if that ever drifted out of sync, a validated phrase that
+    no longer plans to anything must still be reported as no match, never
+    proposed for dispatch."""
+
+    from visionai.ui.main_window import _SuggestWorker
+
+    runtime = build_runtime()
+    monkeypatch.setattr(
+        runtime.planner, "plan", lambda text: (None, ActionPlan(steps=(), summary="drifted"))
+    )
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_llm_provider",
+        lambda: _FixedReplyProvider("open notepad"),
+    )
+    worker = _SuggestWorker(runtime=runtime, text="open notepad please")
+    messages: list[str] = []
+    worker.message.connect(messages.append)
+
+    worker.run()
+
+    assert messages == ["No matching command found."]
+
+
+def test_suggest_worker_propose_emits_proposed_on_a_matching_phrase(monkeypatch: Any) -> None:
+    """`_SuggestWorker._propose()`'s success path."""
+
+    from visionai.ui.main_window import _SuggestWorker
+
+    monkeypatch.setattr(
+        "visionai.ui.main_window._build_llm_provider",
+        lambda: _FixedReplyProvider("open notepad"),
+    )
+    worker = _SuggestWorker(runtime=build_runtime(), text="open notepad please")
+    proposed: list[tuple[str, str]] = []
+    worker.proposed.connect(lambda phrase, summary: proposed.append((phrase, summary)))
+    worker.message.connect(lambda message: pytest.fail(f"unexpected message: {message}"))
+
+    worker.run()
+
+    assert proposed == [("open notepad", "Open notepad.")]
+
+
+def test_suggest_worker_dispatch_runs_the_confirmed_phrase(monkeypatch: Any) -> None:
+    """`_SuggestWorker._dispatch()`'s success path."""
+
+    from visionai.ui.main_window import _SuggestWorker
+
+    launched: list[str] = []
+    runtime = build_runtime(
+        launcher=launched.append, lock_state=StaticLockStateAdapter(locked=False)
+    )
+    worker = _SuggestWorker(runtime=runtime, phrase="open notepad")
+    messages: list[str] = []
+    worker.message.connect(messages.append)
+
+    worker.run()
+
+    assert messages == ["Opening notepad."]
+    assert launched == ["notepad.exe"]
+
+
+def test_suggest_worker_dispatch_reports_no_match_when_the_real_planner_rejects_the_phrase(
+    monkeypatch: Any,
+) -> None:
+    """Defense in depth for `_SuggestWorker._dispatch()`, the same shape as
+    `_propose()`'s equivalent regression test above: an already-confirmed
+    phrase that no longer plans to anything must be reported as no match,
+    never dispatched blindly."""
+
+    from visionai.ui.main_window import _SuggestWorker
+
+    runtime = build_runtime()
+    monkeypatch.setattr(
+        runtime.planner, "plan", lambda text: (None, ActionPlan(steps=(), summary="drifted"))
+    )
+    worker = _SuggestWorker(runtime=runtime, phrase="open notepad")
+    messages: list[str] = []
+    worker.message.connect(messages.append)
+
+    worker.run()
+
+    assert messages == ["No matching command found."]
 
 
 def test_build_llm_provider_none_returns_the_deterministic_fallback(monkeypatch: Any) -> None:

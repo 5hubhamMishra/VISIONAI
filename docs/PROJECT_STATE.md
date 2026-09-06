@@ -11,10 +11,87 @@ verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
 Latest Linux sandbox verification (2026-09-06, `ui/main_window.py`
-`_RuntimeWorker` coverage cycle): 574 tests, 536 passed, 28 failed (documented
-`WindowsLockStateAdapter` fail-closed pattern, not a regression), 10 skipped,
-96% coverage, Ruff, mypy (one known sandbox-only false positive), Bandit, and
-pip-audit all clean.
+`_GestureListenWorker`/`_AskWorker`/`_SuggestWorker` coverage cycle): 590
+tests, 553 passed, 28 failed (documented `WindowsLockStateAdapter`
+fail-closed pattern, not a regression), 10 skipped, 97% coverage, Ruff,
+mypy (one known sandbox-only false positive), Bandit, and pip-audit all
+clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, `ui/main_window.py`
+`_GestureListenWorker`/`_AskWorker`/`_SuggestWorker` coverage): started
+against local commit `68783f8` (the prior session's `ui/main_window.py`
+`_RuntimeWorker` coverage cycle); baseline verified clean and unchanged
+from the prior session's documented state before any work started (fresh
+`.venv312` built from `requirements/dev.txt` against the system's real
+Python 3.12.3 in a new container, again needing `libportaudio2`/`libegl1`/
+`libopengl0` via `apt-get`; Ruff clean; mypy clean for 54 files except the
+same sandbox-only `ctypes.windll` false positive every session shows;
+Bandit clean; pip-audit clean; pytest collected 574 tests -- 536 passed, 28
+failed, 10 skipped, 96% coverage -- all 28 failures confirmed by message to
+be the documented `WindowsLockStateAdapter` fail-closed pattern, not a
+regression, exactly matching the prior session's recorded result). The
+prior session's own report described `ui/main_window.py`'s remaining 124
+missing lines (after closing `_RuntimeWorker.run()` and its helpers) as a
+genuine `QThread`-body tooling blind spot -- `_GestureListenWorker`,
+`_AskWorker`, and `_SuggestWorker`'s own session-worker classes, all driven
+in every existing GUI test only through a real `QThread`
+(`thread.start()`), which this project's coverage configuration (no
+`concurrency = thread` setting) cannot trace, even though those tests
+already exercise the real behavior end to end and pass. Confirmed this
+directly rather than trusting the description, and found the precedent for
+closing it already existed one commit earlier in `test_app.py`: its
+`test_cancelled_gesture_session_discards_pending_voice[desktop=True]` test
+already constructs a real `_GestureListenWorker` and calls its `.run()`
+synchronously in the test thread (imported cross-module from
+`visionai.ui.main_window`), which is exactly why that one worker showed as
+*partially* covered already rather than 0%. Closed the rest of this gap the
+same way: added 17 tests to `tests/unit/test_main_window.py`, each
+constructing the real worker class directly (`_GestureListenWorker`,
+`_AskWorker`, or `_SuggestWorker`) and calling its real `.run()` (or, for
+one trivial defensive guard, `_send_voice_capture()` directly) synchronously
+in the test thread -- never through `QThread.start()`, never a real camera,
+microphone, or LLM API -- reusing the exact same fakes (`StaticLandmarkAdapter`,
+`TemporalGestureRecognizer` with an injected clock, `_FakeMicrophoneCapture`,
+`_FixedReplyProvider`/`_SequencedReplyProvider`) every existing full-GUI test
+for these same scenarios already uses. Covers: `_GestureListenWorker.run()`'s
+own `close()` call on the landmark adapter (untested by every existing test,
+since `StaticLandmarkAdapter` itself has no `close()` method -- added a small
+wrapping fake, `_ClosingLandmarkAdapter`, to make this observable);
+`_on_confirmed()`'s `elif open_palm and voice_runner is not None` branch (the
+send-half of the closed-fist-starts/open-palm-sends voice round trip, never
+reached by the QThread-driven version of this same scenario);
+`_send_voice_capture()`'s three branches in full -- no speech recognized, a
+real dispatch producing an `ActionResult` message, and a real dispatch
+producing no `ActionResult` (a still-pending `PermissionRequest` for
+`system.clear_history`, needed a real unlocked `StaticLockStateAdapter`
+override since this sandbox's own lock-state fail-closed behavior would
+otherwise block that phrase before permission is even checked, which is
+exactly why three of the new tests also needed that override to actually
+exercise their intended branch rather than hitting the documented
+fail-closed message instead) -- and its own defensive "no active voice
+runner" no-op guard; `_start_voice_capture()`'s failure branch (a broken
+microphone raising `OSError`); `_AskWorker.run()`'s success and failure
+branches in full; and `_SuggestWorker`'s `_propose()` (provider-construction
+failure, the `DeterministicFallbackProvider` branch, a live
+`suggest_command_result()` failure, the clarification-needed branch, an
+unmapped-phrase "no match" reply, a defense-in-depth regression test mirroring
+`test_app.py`'s equivalent for a validated phrase the real planner no longer
+plans to anything for, and the success/proposed path) and `_dispatch()`
+(the real dispatch-and-report success path, plus the matching
+defense-in-depth regression test). No application code changed -- this was a
+pure test gap, not a bug. `ui/main_window.py` reached 92% line coverage (was
+84%; the remaining 63 lines are `_TextPromptDialog`/`_SettingsDialog`'s own
+modal `dialog.exec()` calls and the `MainWindow` GUI-slot-handler methods
+around them -- `show_settings()`, `_prompt_for_text()`,
+`_on_suggest_clarification_needed()`/`_on_suggest_proposed()`/
+`_on_suggest_failed()`, `_ask_confirmation()`/`_ask_permission()`'s own
+`QMessageBox.question()` calls, `_on_worker_finished()`'s closing-cleanup
+branch, `main()`'s own entry point -- a distinct, separate category from the
+worker-class gap closed this cycle, and a reasonable follow-up for a future
+session). Full verification after the change: 590 tests (553 passed, 28
+failed -- identical failing-test names to the pre-change baseline, confirming
+no regressions -- 10 skipped), 97% overall coverage (up from 96%),
+Ruff/mypy(one known false positive)/Bandit/pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, `ui/main_window.py`
 `_RuntimeWorker` coverage): started against local commit `16ff179` (the
@@ -1321,6 +1398,18 @@ cd visionai
 ## Last Verification Result
 
 - 2026-09-06, Linux sandbox (this session, `ui/main_window.py`
+  `_GestureListenWorker`/`_AskWorker`/`_SuggestWorker` coverage cycle): 590
+  tests -- 553 passed, 28 failed (all the documented `WindowsLockStateAdapter`
+  fail-closed pattern, confirmed by message, not a regression), 10 skipped --
+  97% overall coverage, Ruff clean, mypy clean for 54 source files except the
+  one documented sandbox-only `ctypes.windll` false positive, Bandit clean,
+  pip-audit clean. `ui/main_window.py` now at 92% line coverage (was 84%);
+  the remaining 63 lines are `_TextPromptDialog`/`_SettingsDialog`'s own
+  modal `dialog.exec()` calls and the `MainWindow` GUI-slot-handler methods
+  around them, a distinct, separate category from the worker-class
+  `QThread`-body gap closed this cycle, and a reasonable follow-up for a
+  future session.
+- 2026-09-06, Linux sandbox (prior session, `ui/main_window.py`
   `_RuntimeWorker` coverage cycle): 574 tests -- 536 passed, 28 failed (all
   the documented `WindowsLockStateAdapter` fail-closed pattern, confirmed by
   message, not a regression), 10 skipped -- 96% overall coverage, Ruff
