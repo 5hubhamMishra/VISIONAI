@@ -672,3 +672,239 @@ async def test_orchestrator_hands_the_handler_the_exact_token_operations_tracks(
     result = (await _drain_available(output_bus))[-1]
     assert isinstance(result, ActionResult)
     assert result.success is True
+
+
+@pytest.mark.parametrize("confidence", [0.0, -0.1, 1.1])
+def test_orchestrator_rejects_an_out_of_range_min_transcript_confidence(confidence: float) -> None:
+    """The constructor's own guarantee: confidence must be in (0, 1]."""
+
+    registry = CapabilityRegistry([_sensitive_manifest()])
+    dispatcher = SerializedDispatcher(
+        registry=registry,
+        policy=PolicyEngine(registry, FixedWindowRateLimiter()),
+        audit=InMemoryAuditSink(),
+        handlers={},
+    )
+    with pytest.raises(ValueError, match="minimum transcript confidence"):
+        EventOrchestrator(
+            input_bus=EventBus(max_size=10),
+            output_bus=EventBus(max_size=10),
+            planner=_FixedPlanner(summary="Do the sensitive thing."),
+            dispatcher=dispatcher,
+            operations=OperationController(),
+            confirmation=ConfirmationService(),
+            min_transcript_confidence=confidence,
+        )
+
+
+def _permission_only_manifest() -> CapabilityManifest:
+    return CapabilityManifest(
+        id="test.permission_only",
+        description="A synthetic permission-gated, non-confirmation-gated capability.",
+        risk_level=RiskLevel.REVERSIBLE,
+        permission_required=True,
+        confirmation_required=False,
+        rate_limit_per_minute=10,
+        timeout_seconds=3,
+        idempotency=IdempotencyMode.IDEMPOTENT,
+        audit_category="test.permission_only",
+        handler_id="test.permission_only",
+    )
+
+
+class _PermissionOnlyPlanner:
+    def plan(self, text: str) -> tuple[Intent, ActionPlan]:
+        request = ActionRequest(
+            capability_id="test.permission_only", risk_level=RiskLevel.REVERSIBLE
+        )
+        intent = Intent(name="test.permission_only", confidence=1.0, source_text=text)
+        return intent, ActionPlan(steps=(request,), summary="Do the permission-only thing.")
+
+
+def _build_permission_only_dispatcher(
+    calls: list[ActionRequest],
+) -> SerializedDispatcher:
+    registry = CapabilityRegistry([_permission_only_manifest()])
+
+    def handler(request: ActionRequest, cancellation) -> ActionResult:
+        calls.append(request)
+        return ActionResult(request_id=request.id, success=True, message="done")
+
+    return SerializedDispatcher(
+        registry=registry,
+        policy=PolicyEngine(registry, FixedWindowRateLimiter()),
+        audit=InMemoryAuditSink(),
+        handlers={"test.permission_only": handler},
+    )
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_grant_permission_without_a_configured_store_is_an_error() -> None:
+    """`grant_permission()` with no `permission_store` configured at all.
+
+    A pending permission prompt can exist (policy decided it was needed)
+    even though this orchestrator was never given anywhere to persist a
+    grant -- this must degrade to an `ErrorEvent`, never crash or silently
+    treat the request as granted.
+    """
+
+    calls: list[ActionRequest] = []
+    dispatcher = _build_permission_only_dispatcher(calls)
+    output_bus = EventBus(max_size=10)
+    orchestrator = EventOrchestrator(
+        input_bus=EventBus(max_size=10),
+        output_bus=output_bus,
+        planner=_PermissionOnlyPlanner(),
+        dispatcher=dispatcher,
+        operations=OperationController(),
+        confirmation=ConfirmationService(),
+        permission_store=None,
+        policy_context_factory=lambda: PolicyContext(granted_capabilities=frozenset()),
+    )
+    event = TranscriptEvent(
+        text="do the permission-only thing", confidence=1.0, language="en", is_final=True
+    )
+    await orchestrator.process_event(event)
+    permission = (await _drain_available(output_bus))[-1]
+    assert isinstance(permission, PermissionRequest)
+
+    await orchestrator.grant_permission(permission.id)
+    outputs = await _drain_available(output_bus)
+
+    assert calls == []
+    assert isinstance(outputs[-1], ErrorEvent)
+    assert "permission store is not configured" in outputs[-1].message
+    assert orchestrator.state_machine.state is AppState.IDLE
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_grant_permission_reports_a_grant_the_context_never_reflects(
+    tmp_path: Path,
+) -> None:
+    """`grant_permission()` re-checks policy after granting, not just before.
+
+    If the injected `policy_context_factory` does not read live grants back
+    from the same store `grant_permission()` just wrote to (a misconfigured
+    runtime), the post-grant re-evaluation still reports `requires_permission`
+    -- this must surface as an explicit error rather than silently executing
+    or crashing.
+    """
+
+    calls: list[ActionRequest] = []
+    dispatcher = _build_permission_only_dispatcher(calls)
+    permissions = JsonPermissionStore(tmp_path / "permissions.json")
+    output_bus = EventBus(max_size=10)
+    orchestrator = EventOrchestrator(
+        input_bus=EventBus(max_size=10),
+        output_bus=output_bus,
+        planner=_PermissionOnlyPlanner(),
+        dispatcher=dispatcher,
+        operations=OperationController(),
+        confirmation=ConfirmationService(),
+        permission_store=permissions,
+        # Deliberately disconnected from `permissions` -- never reflects a grant.
+        policy_context_factory=lambda: PolicyContext(granted_capabilities=frozenset()),
+    )
+    event = TranscriptEvent(
+        text="do the permission-only thing", confidence=1.0, language="en", is_final=True
+    )
+    await orchestrator.process_event(event)
+    permission = (await _drain_available(output_bus))[-1]
+
+    await orchestrator.grant_permission(permission.id)
+    outputs = await _drain_available(output_bus)
+
+    assert permissions.is_granted("test.permission_only") is True
+    assert calls == []
+    assert isinstance(outputs[-1], ErrorEvent)
+    assert "permission grant was not applied" in outputs[-1].message
+    assert orchestrator.state_machine.state is AppState.IDLE
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_grant_permission_executes_directly_when_no_confirmation_is_needed(
+    tmp_path: Path,
+) -> None:
+    """A capability that needs permission but never confirmation.
+
+    Every other permission test in this file uses `test.sensitive`, which
+    also needs confirmation, so granting always lands on a
+    `ConfirmationRequest` next. This is the one path where a granted
+    permission alone is enough to execute immediately.
+    """
+
+    calls: list[ActionRequest] = []
+    dispatcher = _build_permission_only_dispatcher(calls)
+    permissions = JsonPermissionStore(tmp_path / "permissions.json")
+    output_bus = EventBus(max_size=10)
+    orchestrator = EventOrchestrator(
+        input_bus=EventBus(max_size=10),
+        output_bus=output_bus,
+        planner=_PermissionOnlyPlanner(),
+        dispatcher=dispatcher,
+        operations=OperationController(),
+        confirmation=ConfirmationService(),
+        permission_store=permissions,
+        policy_context_factory=lambda: PolicyContext(
+            granted_capabilities=permissions.granted_capabilities()
+        ),
+    )
+    event = TranscriptEvent(
+        text="do the permission-only thing", confidence=1.0, language="en", is_final=True
+    )
+    await orchestrator.process_event(event)
+    permission = (await _drain_available(output_bus))[-1]
+
+    await orchestrator.grant_permission(permission.id)
+    outputs = await _drain_available(output_bus)
+
+    assert permissions.is_granted("test.permission_only") is True
+    assert len(calls) == 1
+    assert isinstance(outputs[-1], ActionResult)
+    assert outputs[-1].success is True
+    assert orchestrator.state_machine.state is AppState.IDLE
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_recovers_state_after_an_unexpected_handler_exception() -> None:
+    """A handler bug that raises something other than a `VisionAIError`.
+
+    `_execute`'s `except` clause only catches `VisionAIError` -- everything
+    else must still leave the state machine consistent (never stuck in
+    EXECUTING) even though the exception itself is not swallowed, since an
+    unexpected bug should stay visible rather than be silently absorbed.
+    """
+
+    registry = CapabilityRegistry([_sensitive_manifest()])
+
+    def handler(request: ActionRequest, cancellation) -> ActionResult:
+        raise RuntimeError("unexpected handler bug")
+
+    dispatcher = SerializedDispatcher(
+        registry=registry,
+        policy=PolicyEngine(registry, FixedWindowRateLimiter()),
+        audit=InMemoryAuditSink(),
+        handlers={"test.sensitive": handler},
+    )
+    output_bus = EventBus(max_size=10)
+    orchestrator = EventOrchestrator(
+        input_bus=EventBus(max_size=10),
+        output_bus=output_bus,
+        planner=_FixedPlanner(summary="Do the sensitive thing."),
+        dispatcher=dispatcher,
+        operations=OperationController(),
+        confirmation=ConfirmationService(),
+        policy_context_factory=lambda: PolicyContext(
+            granted_capabilities=frozenset({"test.sensitive"})
+        ),
+    )
+    event = TranscriptEvent(
+        text="do the sensitive thing", confidence=1.0, language="en", is_final=True
+    )
+    await orchestrator.process_event(event)
+    confirmation = (await _drain_available(output_bus))[-1]
+
+    with pytest.raises(RuntimeError, match="unexpected handler bug"):
+        await orchestrator.confirm(confirmation.id)
+
+    assert orchestrator.state_machine.state is AppState.IDLE

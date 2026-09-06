@@ -10,11 +10,67 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-06, `capabilities/media.py`
-coverage cycle): 516 tests, 478 passed, 28 failed (documented
-`WindowsLockStateAdapter` fail-closed pattern, not a regression), 10 skipped,
-92% coverage, Ruff, mypy (one known sandbox-only false positive), Bandit, and
-pip-audit all clean.
+Latest Linux sandbox verification (2026-09-06, `orchestration/
+event_orchestrator.py` coverage cycle): 523 tests, 485 passed, 28 failed
+(documented `WindowsLockStateAdapter` fail-closed pattern, not a regression),
+10 skipped, 92% coverage, Ruff, mypy (one known sandbox-only false positive),
+Bandit, and pip-audit all clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, `orchestration/
+event_orchestrator.py` coverage): started against local commit `010fbaf`
+(the prior session's `capabilities/media.py` coverage cycle); baseline
+verified clean and unchanged from the prior session's documented state
+before any work started (fresh `.venv312` built from `requirements/dev.txt`
+in a new container, again needing `libegl1`/`libopengl0`/`libportaudio2` via
+`apt-get` -- `libgl1` was already present -- before pytest-qt/sounddevice
+would import; Ruff clean; mypy clean for 54 files except the same
+sandbox-only `ctypes.windll` false positive every session shows; Bandit
+clean; pip-audit clean; pytest 516 tests -- 478 passed, 28 failed, 10
+skipped, 92% coverage -- all 28 failures confirmed by message to be the
+documented `WindowsLockStateAdapter` fail-closed pattern, not a regression,
+exactly matching the prior session's recorded result). Scanned the coverage
+report for a real, narrow, hardware-free gap and found one in
+`visionai.orchestration.event_orchestrator.EventOrchestrator` (92% covered,
+17 missing lines across the permission-grant and execution-recovery paths --
+this project's core security-relevant glue between recognized input,
+policy/permission/confirmation gating, and dispatch). Confirmed four of
+those branches were real, testable gaps, not incidental: (1) the
+constructor's own `min_transcript_confidence` range validation had no test;
+(2) `grant_permission()`'s "no `permission_store` configured" branch had no
+test -- only the "store configured but denies the grant" and "store granted
+successfully" shapes were covered; (3) `grant_permission()`'s defensive
+re-check that a granted capability's context is actually reflected before
+proceeding (guarding against a misconfigured `policy_context_factory`
+disconnected from the permission store it just wrote to) was untested; (4)
+the one path where a granted permission alone -- with no confirmation
+needed -- executes immediately had no test, since every existing
+permission test used a capability that also required confirmation. Left two
+smaller branches (`confirm()`'s confirmation-expired `VisionAIError` path,
+and `_transition_to_interpreting()`'s redundant state-desync guard) closed
+but untested: both are only reachable through either a real wall-clock TTL
+wait (this codebase's own `ConfirmationService` tests deliberately avoid
+that, using an injected `now` instead, a seam `EventOrchestrator.confirm()`
+does not expose) or direct manipulation of another object's private pending-
+dict state, neither of which matches this codebase's established test
+style, so they were left as a documented remaining gap rather than forcing
+a contrived test. Added five tests to `tests/unit/test_event_orchestrator.py`
+covering the four confirmed gaps (one parametrized over three out-of-range
+confidence values), plus a fifth for a previously undocumented adjacent gap
+found while writing these: `_execute()`'s `finally` block only recovers the
+state machine from a stuck `EXECUTING` state when the handler raises
+something other than a `VisionAIError` (its `except` clause only catches
+that base class) -- confirmed real by reading `SerializedDispatcher.
+dispatch()`, which lets a handler's raw exception propagate uncaught, and
+added a test proving an unexpected handler bug still leaves the state
+machine back at `IDLE`, not stuck in `EXECUTING`, even though the exception
+itself correctly still propagates rather than being silently swallowed. No
+application code changed -- this was a pure test gap, not a bug.
+`orchestration/event_orchestrator.py` reached 97% line coverage (was 92%;
+the two documented remaining lines are the confirmation-expiry and
+state-desync branches above). Full verification after the change: 523
+tests (485 passed, 28 failed -- identical failing-test names to the
+pre-change baseline, confirming no regressions -- 10 skipped), 92% coverage,
+Ruff/mypy(one known false positive)/Bandit/pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, `capabilities/media.py`
 coverage): started against local commit `1c0aee7` (the prior session's
