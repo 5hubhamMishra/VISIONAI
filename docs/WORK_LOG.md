@@ -1,5 +1,60 @@
 # Work Log
 
+## 2026-09-06 core/event_bus.py Test Coverage (Linux Sandbox Cycle)
+
+- Started against local commit `7a1cfdd` (the prior session's
+  `capabilities/applications.py` coverage cycle); baseline verified clean
+  and unchanged from the prior session's documented state before any work
+  started (fresh `.venv312` built from `requirements/dev.txt` in a new
+  container, again needing `libegl1`/`libopengl0`/`libportaudio2` via
+  `apt-get` -- `libgl1` was already present -- before pytest-qt/sounddevice
+  would import; Ruff clean; mypy clean for 54 files except the same
+  sandbox-only `ctypes.windll` false positive every session shows; Bandit
+  clean; pip-audit clean; pytest 512 tests -- 474 passed, 28 failed, 10
+  skipped, 91% coverage -- all 28 failures confirmed by message, and by
+  directly checking `WindowsLockStateAdapter().is_locked()` returns `True`
+  on this display-less Linux sandbox (no `ctypes.windll`, so the adapter's
+  documented fail-closed default applies), to be the same known pattern,
+  not a regression, exactly matching the prior session's recorded result).
+- Scanned the coverage report for a real, narrow, hardware-free gap and
+  found one in `visionai.core.event_bus.EventBus.__init__()` (98% covered,
+  line 25, the `max_size <= 0` rejection). Confirmed it was real: no test
+  anywhere in `tests/unit/test_event_bus.py` or any other caller ever
+  constructed an `EventBus` with a non-positive `max_size`, so the
+  `ValueError` guard had zero coverage. This guard is what keeps the event
+  bus's own documented safety property true -- `asyncio.Queue(maxsize=...)`
+  itself silently treats zero or a negative number as "unbounded" rather
+  than raising, so without this explicit check a caller could accidentally
+  construct an unbounded queue and lose the backpressure guarantee this
+  bus's docstring describes as central to its design. Added one
+  parametrized test to `tests/unit/test_event_bus.py`,
+  `test_event_bus_rejects_non_positive_max_size` (covering both `0` and
+  `-1`), asserting the exact `ValueError` message. No application code
+  changed -- this was a pure test gap, not a bug. `core/event_bus.py`
+  reached 100% line coverage (was 98%). Full verification after the
+  change: 514 tests (476 passed, 28 failed -- identical failing-test names
+  to the pre-change baseline, confirming no regressions -- 10 skipped),
+  91% coverage, Ruff/mypy (one known sandbox-only false positive)/Bandit/
+  pip-audit all clean.
+- Next task: `Approved Next Tasks` items 3 and 5's remaining entries (real
+  voice/STT/wake-word live verification with actual hardware, the
+  `WindowsLockStateAdapter` locked-workstation manual check, and running
+  the now-written live prompt-injection suite with a real API key) all
+  still need real hardware, a live network/model, or a human product
+  decision this sandbox cannot provide. Remaining hardware-free coverage
+  gaps for a future sandbox session to consider, none inspected closely
+  enough yet to confirm they are genuine gaps rather than already-
+  reasonable branches: `capabilities/system_info.py` (96%, lines 53-54/57,
+  battery-sensor fallback branches), `observability/logging.py` (94%, line
+  56), `orchestration/text_planner.py` (99%, line 92), `capabilities/
+  media.py` (85%, lines 39-43, the real `pyautogui` key-press path and its
+  import-failure branch -- testable with a monkeypatched `pyautogui`, no
+  real hardware needed), `orchestration/event_orchestrator.py` (92%, lines
+  176/234-238/268-271/278-281/286/378/386, not yet inspected for which
+  branches are hardware-free). Also still unresolved from prior sessions:
+  the `AGENTS.md` removal decision under Required Decisions, still
+  awaiting a human call.
+
 ## 2026-09-06 capabilities/applications.py Test Coverage (Linux Sandbox Cycle)
 
 - Started against local commit `c9cc621` (the prior session's

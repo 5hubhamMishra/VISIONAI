@@ -7,6 +7,12 @@ from visionai.core.event_bus import EventBus
 from visionai.core.events import TranscriptEvent
 
 
+@pytest.mark.parametrize("max_size", [0, -1])
+def test_event_bus_rejects_non_positive_max_size(max_size: int) -> None:
+    with pytest.raises(ValueError, match="max_size must be greater than zero"):
+        EventBus(max_size=max_size)
+
+
 @pytest.mark.asyncio
 async def test_event_bus_publishes_events_in_order() -> None:
     bus = EventBus(max_size=2)

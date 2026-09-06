@@ -10,6 +10,10 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
+Latest Linux sandbox verification (2026-09-06, `core/event_bus.py` coverage
+cycle): 514 tests, 476 passed, 28 failed (documented `WindowsLockStateAdapter`
+fail-closed pattern, not a regression), 10 skipped, 91% coverage, Ruff, mypy
+(one known sandbox-only false positive), Bandit, and pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, observability/audit.py coverage):
 started against local commit `10452d6` (the prior session's `capabilities/
@@ -170,6 +174,35 @@ not a bug. `capabilities/applications.py` reached 100% line coverage (was
 -- identical failing-test names to the pre-change baseline, confirming no
 regressions -- 10 skipped), 91% coverage, Ruff/mypy(one known false
 positive)/Bandit/pip-audit all clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, core/event_bus.py coverage):
+started against local commit `7a1cfdd` (the prior session's `capabilities/
+applications.py` coverage cycle); baseline verified clean and unchanged from
+the prior session's documented state before any work started (fresh
+`.venv312` built from `requirements/dev.txt` in a new container, again
+needing `libegl1`/`libopengl0`/`libportaudio2` via `apt-get` -- `libgl1` was
+already present -- before pytest-qt/sounddevice would import; Ruff clean;
+mypy clean for 54 files except the same sandbox-only `ctypes.windll` false
+positive every session shows; Bandit clean; pip-audit clean; pytest 512
+tests -- 474 passed, 28 failed, 10 skipped, 91% coverage -- all 28 failures
+confirmed by message and by the `WindowsLockStateAdapter.is_locked()`
+fail-closed default on a display-less Linux sandbox to be the documented
+pattern, not a regression, exactly matching the prior session's recorded
+result). The prior session's report flagged `core/event_bus.py` (98%
+covered, line 25, the `max_size <= 0` rejection) as one of several remaining
+hardware-free coverage gaps. Confirmed it was real: `EventBus.__init__()`'s
+rejection of a non-positive `max_size` -- the bounded queue's own
+backpressure/capacity guarantee, since `asyncio.Queue(maxsize=...)` treats
+zero or negative as "unbounded" rather than raising, which would silently
+defeat the bounded-queue design this event bus documents as its own
+safety property -- had zero test coverage. Added one parametrized test
+(`max_size=0` and `max_size=-1`) to `tests/unit/test_event_bus.py`. No
+application code changed -- this was a pure test gap, not a bug.
+`core/event_bus.py` reached 100% line coverage (was 98%). Full verification
+after the change: 514 tests (476 passed, 28 failed -- identical failing-test
+names to the pre-change baseline, confirming no regressions -- 10 skipped),
+91% coverage, Ruff/mypy(one known false positive)/Bandit/pip-audit all
+clean.
 
 Standing instructions are discoverable in AGENTS.md. Phone pairing remains
 unverified; the owner-only setup is in [REMOTE_CONTROL.md](REMOTE_CONTROL.md).
@@ -810,7 +843,14 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `capabilities/applications.py`
+- 2026-09-06, Linux sandbox (this session, `core/event_bus.py` coverage
+  cycle): 514 tests -- 476 passed, 28 failed (all the documented
+  `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
+  regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
+  source files except the one documented sandbox-only `ctypes.windll` false
+  positive, Bandit clean, pip-audit clean. `core/event_bus.py` now at 100%
+  line coverage (was 98%).
+- 2026-09-06, Linux sandbox (prior session, `capabilities/applications.py`
   coverage cycle): 512 tests -- 474 passed, 28 failed (all the documented
   `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
   regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
