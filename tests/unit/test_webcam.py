@@ -13,9 +13,12 @@ cleanly and returns a well-formed `GestureCandidate`.
 
 from __future__ import annotations
 
+import types
+
 import numpy as np
 import pytest
 
+from visionai.platform import webcam as webcam_module
 from visionai.platform.camera import GestureCandidate
 from visionai.platform.webcam import (
     HandLandmark,
@@ -179,3 +182,145 @@ def test_classify_hand_frame_runs_against_the_real_mediapipe_model() -> None:
 
     assert isinstance(candidate, GestureCandidate)
     assert candidate.gesture_id is None
+
+
+class _FakeVideoCapture:
+    def __init__(self, device: int, backend: int) -> None:
+        self.device = device
+        self.backend = backend
+        self.released = False
+        self._frames: list[tuple[bool, np.ndarray | None]] = [
+            (True, np.zeros((2, 2, 3), dtype=np.uint8))
+        ]
+
+    def read(self) -> tuple[bool, np.ndarray | None]:
+        return self._frames.pop(0) if self._frames else (False, None)
+
+    def release(self) -> None:
+        self.released = True
+
+
+def test_cv_frame_source_delegates_construction_read_and_release_to_opencv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_CvFrameSource` never touches a real camera here: `cv2` itself is a
+    fake injected via the module's own `import_module` symbol, the same
+    pattern `test_stt.py`/`test_microphone.py` use for their default
+    factories -- no real hardware or the optional `vision` extra involved.
+    """
+
+    captured: dict[str, object] = {}
+
+    class _FakeCv2:
+        CAP_DSHOW = 700
+
+        @staticmethod
+        def VideoCapture(device: int, backend: int) -> _FakeVideoCapture:
+            captured["device"] = device
+            captured["backend"] = backend
+            return _FakeVideoCapture(device, backend)
+
+    monkeypatch.setattr(webcam_module, "import_module", lambda name: _FakeCv2())
+
+    source = webcam_module._CvFrameSource(2)
+
+    assert captured == {"device": 2, "backend": _FakeCv2.CAP_DSHOW}
+    assert source.read() is not None
+    assert source.read() is None
+    source.release()
+    assert source._cap.released is True
+
+
+def test_default_hands_builds_the_real_mediapipe_hands_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeHands:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    fake_mediapipe = types.SimpleNamespace(
+        solutions=types.SimpleNamespace(hands=types.SimpleNamespace(Hands=_FakeHands))
+    )
+    monkeypatch.setattr(webcam_module, "import_module", lambda name: fake_mediapipe)
+
+    hands = webcam_module._default_hands()
+
+    assert isinstance(hands, _FakeHands)
+    assert captured == {
+        "max_num_hands": 1,
+        "min_detection_confidence": 0.6,
+        "min_tracking_confidence": 0.5,
+    }
+
+
+class _FakeCv2Color:
+    COLOR_BGR2RGB = 4
+
+    @staticmethod
+    def cvtColor(frame: np.ndarray, code: int) -> np.ndarray:
+        assert code == _FakeCv2Color.COLOR_BGR2RGB
+        return frame
+
+
+def test_classify_hand_frame_reports_no_gesture_when_nothing_detected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(webcam_module, "import_module", lambda name: _FakeCv2Color())
+    fake_result = types.SimpleNamespace(multi_hand_landmarks=[], multi_handedness=[])
+    fake_hands = types.SimpleNamespace(process=lambda rgb: fake_result)
+
+    candidate = classify_hand_frame(np.zeros((2, 2, 3), dtype=np.uint8), fake_hands)
+
+    assert candidate == GestureCandidate(gesture_id=None)
+
+
+def test_classify_hand_frame_classifies_a_mediapipe_style_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercises the real conversion from mediapipe's own landmark/
+    handedness objects (attribute access, not the `HandLandmark` dataclass
+    the rest of this module uses) into a `GestureCandidate` -- the one path
+    `_landmarks()`'s fixtures above never reach, since they build
+    `HandLandmark` instances directly.
+    """
+
+    monkeypatch.setattr(webcam_module, "import_module", lambda name: _FakeCv2Color())
+    landmark_points = [types.SimpleNamespace(x=0.5, y=0.5) for _ in range(21)]
+    for tip, pip in zip((8, 12, 16, 20), (6, 10, 14, 18), strict=True):
+        landmark_points[tip] = types.SimpleNamespace(x=0.5, y=0.4)
+        landmark_points[pip] = types.SimpleNamespace(x=0.5, y=0.5)
+    landmark_points[4] = types.SimpleNamespace(x=0.4, y=0.5)
+    landmark_points[3] = types.SimpleNamespace(x=0.5, y=0.5)
+    fake_result = types.SimpleNamespace(
+        multi_hand_landmarks=[types.SimpleNamespace(landmark=landmark_points)],
+        multi_handedness=[
+            types.SimpleNamespace(classification=[types.SimpleNamespace(label="Right", score=0.87)])
+        ],
+    )
+    fake_hands = types.SimpleNamespace(process=lambda rgb: fake_result)
+
+    candidate = classify_hand_frame(np.zeros((2, 2, 3), dtype=np.uint8), fake_hands)
+
+    assert candidate == GestureCandidate(gesture_id="open_palm", hand="right", confidence=0.87)
+
+
+def test_adapter_builds_the_real_default_hands_and_closes_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    closed = False
+
+    class _FakeHands:
+        def close(self) -> None:
+            nonlocal closed
+            closed = True
+
+    monkeypatch.setattr(webcam_module, "_default_hands", lambda: _FakeHands())
+    source = _FakeFrameSource([])
+
+    adapter = WebcamLandmarkAdapter(frame_source=source)
+    adapter.close()
+
+    assert closed is True
+    assert source.released is True

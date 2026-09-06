@@ -10,9 +10,9 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-06, `platform/stt.py` coverage
-cycle): 555 tests, 517 passed, 28 failed (documented `WindowsLockStateAdapter`
-fail-closed pattern, not a regression), 10 skipped, 94% coverage, Ruff, mypy
+Latest Linux sandbox verification (2026-09-06, `platform/webcam.py` coverage
+cycle): 561 tests, 528 passed, 28 failed (documented `WindowsLockStateAdapter`
+fail-closed pattern, not a regression), 10 skipped, 95% coverage, Ruff, mypy
 (one known sandbox-only false positive), Bandit, and pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, `capabilities/system_info.py`
@@ -53,6 +53,62 @@ verification after the change: 526 tests (488 passed, 28 failed -- identical
 failing-test names to the pre-change baseline, confirming no regressions --
 10 skipped), 92% coverage, Ruff/mypy(one known false positive)/Bandit/
 pip-audit all clean.
+
+2026-09-06 autonomous cycle (Linux sandbox, `platform/webcam.py` coverage):
+started against local commit `e760d88` (the prior session's `platform/
+microphone.py` coverage cycle); baseline verified clean and unchanged from
+the prior session's documented state before any work started (fresh
+`.venv312` built from `requirements/dev.txt` against the system's real
+Python 3.12.3 in a new container, again needing `libegl1`/`libopengl0`/
+`libportaudio2` via `apt-get`; Ruff clean; mypy clean for 54 files except the
+same sandbox-only `ctypes.windll` false positive every session shows; Bandit
+clean; pip-audit clean; pytest collected 561 tests -- 523 passed, 28 failed,
+10 skipped, 94% coverage -- all 28 failures confirmed by message to be the
+documented `WindowsLockStateAdapter` fail-closed pattern, not a regression,
+exactly matching the prior session's recorded result). Scanned the coverage
+report for a real, narrow, hardware-free gap and found one in
+`visionai.platform.webcam` (72% covered, lines 98-99, 102-103, 106, 110-111,
+119-131, 159-161, 172): `_CvFrameSource.__init__()`/`.read()`/`.release()`
+(the real OpenCV-backed frame source), `_default_hands()` (the real
+mediapipe `Hands` model construction), the entirety of `classify_hand_frame()`
+(converting a real mediapipe detection result -- or lack of one -- into a
+`GestureCandidate`), `WebcamLandmarkAdapter.__init__()`'s own-hands branch,
+and `close()`'s `self._hands.close()` call had zero direct coverage. Every
+existing test in `tests/unit/test_webcam.py` either exercised the pure
+`classify_finger_count()` heuristic directly with fixture `HandLandmark`
+values, or injected a fake `frame_source`/`classifier` straight into
+`WebcamLandmarkAdapter`, bypassing all of the above; the one test that did
+touch `classify_hand_frame()` for real is an existing `pytest.importorskip
+("mediapipe")` smoke test that self-skips in this standard sandbox
+environment, since `requirements/vision.txt` is deliberately excluded from
+`requirements/dev.txt` (see `docs/DECISIONS/0003-accepted-protobuf-cve.md`)
+-- confirmed still skipping here too. This is the same shape of gap already
+closed for `capabilities/browser.py`/`applications.py`/`media.py`'s default
+adapters and `platform/stt.py`'s/`platform/microphone.py`'s own default
+factories in earlier sessions, closed here the same way: no real camera or
+the `vision` extra touched, only the module's own `import_module` symbol
+(and, for the adapter's own-hands branch, `_default_hands` itself)
+monkeypatched to hand back fake `cv2`/`mediapipe`-shaped objects, matching
+the "unit tests with existing fakes are fine" scope for a display/camera-less
+Linux sandbox. Added five tests to `tests/unit/test_webcam.py`: one proving
+`_CvFrameSource` passes `device`/`cv2.CAP_DSHOW` to `cv2.VideoCapture()` and
+that `.read()`/`.release()` delegate to it; one proving `_default_hands()`
+threads its three fixed confidence/count arguments into a fake `mediapipe.
+solutions.hands.Hands`; one proving `classify_hand_frame()` returns a
+`gesture_id=None` candidate when mediapipe's own result reports no detected
+hand; one proving it converts a full mediapipe-shaped result (fake landmark/
+handedness objects using mediapipe's own attribute names, not this module's
+`HandLandmark` dataclass) into the correct classified `GestureCandidate`,
+including the real `hand`/`confidence` fields the injected-classifier tests
+never touch; and one proving `WebcamLandmarkAdapter(frame_source=...)` with
+no injected classifier builds its own hands model via `_default_hands()` and
+that `close()` calls that model's `close()`. No application code changed --
+this was a pure test gap, not a bug. `platform/webcam.py` reached 100% line
+coverage (was 72%). Full verification after the change: 566 tests (528
+passed, 28 failed -- identical failing-test names to the pre-change
+baseline, confirming no regressions -- 10 skipped), 95% overall coverage
+(up from 94%, reflecting this module's own coverage gain), Ruff/mypy(one
+known false positive)/Bandit/pip-audit all clean.
 
 2026-09-06 autonomous cycle (Linux sandbox, `platform/microphone.py`
 coverage): started against local commit `c2088fc` (the prior session's
@@ -1130,7 +1186,14 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `platform/microphone.py`
+- 2026-09-06, Linux sandbox (this session, `platform/webcam.py` coverage
+  cycle): 566 tests -- 528 passed, 28 failed (all the documented
+  `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
+  regression), 10 skipped -- 95% overall coverage, Ruff clean, mypy clean
+  for 54 source files except the one documented sandbox-only
+  `ctypes.windll` false positive, Bandit clean, pip-audit clean.
+  `platform/webcam.py` now at 100% line coverage (was 72%).
+- 2026-09-06, Linux sandbox (prior session, `platform/microphone.py`
   coverage cycle): 561 tests -- 523 passed, 28 failed (all the documented
   `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
   regression), 10 skipped -- 94% overall coverage, Ruff clean, mypy clean
