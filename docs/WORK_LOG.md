@@ -1,5 +1,49 @@
 # Work Log
 
+## 2026-09-06 capabilities/applications.py Test Coverage (Linux Sandbox Cycle)
+
+- Started against local commit `c9cc621` (the prior session's
+  `config/user_settings.py` coverage cycle); baseline verified clean and
+  unchanged from the prior session's documented state before any work
+  started (fresh `.venv312` built from `requirements/dev.txt` in a new
+  container, again needing `libegl1`/`libopengl0`/`libportaudio2` via
+  `apt-get` -- `libgl1` was already present -- before pytest-qt/sounddevice
+  would import; Ruff clean; mypy clean for 54 files except the same
+  sandbox-only `ctypes.windll` false positive every session shows; Bandit
+  clean; pip-audit clean; pytest 511 tests -- 473 passed, 28 failed, 10
+  skipped, 91% coverage -- all 28 failures confirmed by message to be the
+  documented `WindowsLockStateAdapter` fail-closed pattern, not a
+  regression, exactly matching the prior session's recorded result).
+- Scanned the coverage report for a real, narrow, hardware-free gap and
+  found one in `visionai.capabilities.applications.default_launcher()`
+  (the `app.open` capability's real production launcher, `subprocess.
+  Popen([executable], shell=False)`, 96% covered) -- the same shape of gap
+  a prior session already closed in `capabilities/browser.py`'s
+  `default_browser_opener()`. Confirmed it was real: every existing test
+  either injected a fake launcher or only reached the real
+  `default_launcher` through a request that gets rejected before the
+  launcher is ever called (`test_runtime_denies_unallowlisted_app_with_
+  the_real_default_launcher`), so the one line that actually invokes
+  `subprocess.Popen` had zero coverage. This is security-relevant, not
+  merely a coverage number: `app.open` is the one capability in this
+  codebase that spawns a real OS process, and its exact invocation shape
+  (`shell=False`, a single-element argument list, no string
+  concatenation) is the whole reason it cannot be used as a shell-injection
+  vector -- that invocation itself had never been directly asserted.
+  Added one test to `tests/unit/test_applications.py`,
+  `test_default_launcher_delegates_to_subprocess_popen_with_no_shell`,
+  monkeypatching `visionai.capabilities.applications.subprocess.Popen`
+  (mirroring the existing `browser_module.webbrowser.open` monkeypatch
+  pattern for `default_browser_opener`) to assert `default_launcher(...)`
+  calls it with exactly `(["notepad.exe"], shell=False)` -- no real
+  process is spawned. No application code changed -- this was a pure test
+  gap, not a bug. `capabilities/applications.py` reached 100% line
+  coverage (was 96%). Full verification after the change: 512 tests (474
+  passed, 28 failed -- identical failing-test names to the pre-change
+  baseline, confirming no regressions -- 10 skipped), 91% coverage,
+  Ruff/mypy (one known sandbox-only false positive)/Bandit/pip-audit all
+  clean.
+
 ## 2026-09-06 RoutineStore Test Coverage (Linux Sandbox Cycle)
 
 - Started against local commit `be5816a` (Phase 7 first slice, routines

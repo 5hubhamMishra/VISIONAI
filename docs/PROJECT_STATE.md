@@ -139,6 +139,38 @@ failing-test names to the pre-change baseline, confirming no regressions --
 10 skipped), 91% coverage, Ruff/mypy(one known false positive)/Bandit/
 pip-audit all clean.
 
+2026-09-06 autonomous cycle (Linux sandbox, capabilities/applications.py
+coverage): started against local commit `c9cc621` (the prior session's
+`config/user_settings.py` coverage cycle); baseline verified clean and
+unchanged from the prior session's documented state before any work started
+(fresh `.venv312` built from `requirements/dev.txt` in a new container, again
+needing `libegl1`/`libopengl0`/`libportaudio2` via `apt-get` -- `libgl1` was
+already present -- before pytest-qt/sounddevice would import; Ruff clean;
+mypy clean for 54 files except the same sandbox-only `ctypes.windll` false
+positive every session shows; Bandit clean; pip-audit clean; pytest 511
+tests -- 473 passed, 28 failed, 10 skipped, 91% coverage -- all 28 failures
+confirmed by message to be the documented `WindowsLockStateAdapter`
+fail-closed pattern, not a regression, exactly matching the prior session's
+recorded result). Found and closed the same shape of gap a prior session
+already closed in `capabilities/browser.py`: `capabilities/applications.py`'s
+`default_launcher()` (the real `app.open` production launcher,
+`subprocess.Popen([executable], shell=False)`, 96% covered) had zero direct
+coverage -- every existing test either injected a fake launcher or only
+reached the real `default_launcher` through a request already rejected
+before the launcher is called. This is security-relevant: `app.open` is the
+one capability that spawns a real OS process, and its exact invocation shape
+(`shell=False`, a single-element argument list) is what makes it immune to
+shell injection -- that invocation itself had never been directly asserted.
+Added one test to `tests/unit/test_applications.py`, monkeypatching
+`subprocess.Popen` (mirroring the existing `default_browser_opener` test's
+`webbrowser.open` monkeypatch) to assert the exact call shape, with no real
+process spawned. No application code changed -- this was a pure test gap,
+not a bug. `capabilities/applications.py` reached 100% line coverage (was
+96%). Full verification after the change: 512 tests (474 passed, 28 failed
+-- identical failing-test names to the pre-change baseline, confirming no
+regressions -- 10 skipped), 91% coverage, Ruff/mypy(one known false
+positive)/Bandit/pip-audit all clean.
+
 Standing instructions are discoverable in AGENTS.md. Phone pairing remains
 unverified; the owner-only setup is in [REMOTE_CONTROL.md](REMOTE_CONTROL.md).
 The next bounded reliability task is complete: background CLI listening errors
@@ -778,7 +810,14 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-06, Linux sandbox (this session, `config/user_settings.py`
+- 2026-09-06, Linux sandbox (this session, `capabilities/applications.py`
+  coverage cycle): 512 tests -- 474 passed, 28 failed (all the documented
+  `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
+  regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
+  source files except the one documented sandbox-only `ctypes.windll` false
+  positive, Bandit clean, pip-audit clean. `capabilities/applications.py`
+  now at 100% line coverage (was 96%).
+- 2026-09-06, Linux sandbox (prior session, `config/user_settings.py`
   coverage cycle): 511 tests -- 473 passed, 28 failed (all the documented
   `WindowsLockStateAdapter` fail-closed pattern, confirmed by message, not a
   regression), 10 skipped -- 91% coverage, Ruff clean, mypy clean for 54
@@ -823,4 +862,4 @@ cd visionai
 
 ## Last Updated
 
-2026-09-06 (Linux sandbox coverage cycle: `config/user_settings.py`)
+2026-09-06 (Linux sandbox coverage cycle: `capabilities/applications.py`)

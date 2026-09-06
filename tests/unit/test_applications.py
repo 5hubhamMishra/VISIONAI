@@ -1,9 +1,11 @@
 import pytest
 
+import visionai.capabilities.applications as applications_module
 from visionai.capabilities import CapabilityRegistry, SerializedDispatcher
 from visionai.capabilities.applications import (
     ALLOWED_APPLICATIONS,
     app_open_manifest,
+    default_launcher,
     make_app_open_handler,
 )
 from visionai.core.cancellation import CancellationToken
@@ -31,6 +33,19 @@ def test_app_open_manifest_is_reversible_and_requires_no_permission_or_confirmat
     assert manifest.risk_level == RiskLevel.REVERSIBLE
     assert manifest.permission_required is False
     assert manifest.confirmation_required is False
+
+
+def test_default_launcher_delegates_to_subprocess_popen_with_no_shell(monkeypatch) -> None:
+    calls: list[tuple[list[str], bool]] = []
+    monkeypatch.setattr(
+        applications_module.subprocess,
+        "Popen",
+        lambda args, shell: calls.append((args, shell)),
+    )
+
+    default_launcher("notepad.exe")
+
+    assert calls == [(["notepad.exe"], False)]
 
 
 def test_handler_launches_the_allowlisted_executable_for_a_known_app() -> None:
