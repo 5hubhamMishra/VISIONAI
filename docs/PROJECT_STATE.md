@@ -1614,6 +1614,25 @@ cd visionai
 
 ## Last Verification Result
 
+- 2026-09-07, Linux sandbox (this session, ninth consecutive confirmation
+  cycle -- no application or test code changed): `git pull origin main`
+  found the tree already at `807b67f` (the prior session's eighth
+  consecutive confirmation commit), nothing new to fetch. Ran the full
+  baseline anyway per this run's master prompt: fresh `.venv312` from
+  `requirements/dev.txt` against real Python 3.12.3 (again needing
+  `libportaudio2`/`libegl1`/`libopengl0` via `apt-get`); Ruff clean; mypy
+  clean except the same documented sandbox-only `ctypes.windll` false
+  positive; Bandit clean; pip-audit clean (no known vulnerabilities).
+  `pytest --cov`: byte-for-byte identical to the eighth cycle -- 616
+  tests, 578 passed, 28 failed (same documented `WindowsLockStateAdapter`
+  fail-closed names, confirmed by message, not a regression), 10 skipped,
+  99% coverage, same per-module numbers (`event_orchestrator.py` 97%,
+  lines 234-238/386; `platform/lock_state.py` 77%, lines 72-81; `app.py`/
+  `ui/main_window.py` 99% each, line 663/1346). `AGENTS.md` is still
+  present (still awaiting the human removal decision), no new Approved
+  Next Tasks item has landed. No user notification sent this cycle -- the
+  fifth cycle already flagged this blocked state and nothing has changed
+  since.
 - 2026-09-07, Linux sandbox (this session, eighth consecutive confirmation
   cycle -- no application or test code changed): `git pull origin main`
   found the tree already at `eb4b214` (the prior session's seventh
