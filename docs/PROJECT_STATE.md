@@ -1614,6 +1614,33 @@ cd visionai
 
 ## Last Verification Result
 
+- 2026-09-07, Linux sandbox (this session, twelfth consecutive confirmation
+  cycle -- no application or test code changed): `git pull origin main`
+  found the tree already at `9cb63cc` (the prior session's eleventh
+  consecutive confirmation commit), nothing new to fetch. Ran the full
+  baseline anyway per this run's master prompt: fresh `.venv312` from
+  `requirements/dev.txt` against real Python 3.12.3 (again needing
+  `libportaudio2`/`libegl1`/`libopengl0` via `apt-get`); Ruff clean; mypy
+  clean except the same documented sandbox-only `ctypes.windll` false
+  positive; Bandit clean; pip-audit clean (no known vulnerabilities).
+  `pytest --cov`: byte-for-byte identical to the eleventh cycle -- 616
+  tests, 578 passed, 28 failed (same documented `WindowsLockStateAdapter`
+  fail-closed names, confirmed by message, not a regression), 10 skipped,
+  99% coverage, same per-module numbers (`event_orchestrator.py` 97%,
+  lines 234-238/386; `platform/lock_state.py` 77%, lines 72-81; `app.py`/
+  `ui/main_window.py` 99% each, line 663/1346). `AGENTS.md` is still
+  present (still awaiting the human removal decision), no new Approved
+  Next Tasks item has landed. This is now twelve consecutive identical
+  cycles with nothing new to build on. The eleventh cycle explicitly
+  recommended a human either resolve one of the two blocking decisions or
+  reduce/pause this routine's scheduling frequency; since the schedule
+  fired again unchanged, that recommendation does not appear to have
+  reached anyone yet, so this cycle sent one user notification restating
+  it concisely rather than silently repeating the same "still blocked"
+  entry a twelfth time with no one aware. Absent a state change or a
+  response to that notification, a future cycle landing on this same
+  blocked state should go back to recording it here without a repeat
+  notification, per the fifth cycle's original noise-avoidance reasoning.
 - 2026-09-07, Linux sandbox (this session, eleventh consecutive confirmation
   cycle -- no application or test code changed): `git pull origin main`
   found the tree already at `a150657` (the prior session's tenth
@@ -2012,6 +2039,22 @@ cd visionai
 - pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv; no dependency changes this session)
 
 ## Last Updated
+
+2026-09-07 (Linux sandbox, twelfth consecutive confirmation cycle: `git
+pull origin main` showed the working tree already at `9cb63cc`, the prior
+session's own eleventh-consecutive-confirmation commit -- no other agent
+had pushed since. Full baseline rerun byte-for-byte identical to the
+documented state (see Last Verification Result above); `AGENTS.md` is
+still present and no new Approved Next Tasks item has landed, so both
+items blocking further autonomous progress are unchanged. No code or test
+changed. This cycle sent one user notification -- the eleventh cycle's own
+recommendation to resolve one of the two blocking decisions or reduce/
+pause this routine's schedule had gone unactioned (the schedule fired
+again unchanged), so restating it once, concisely, seemed more useful than
+silently adding a twelfth identical log entry nobody had been told about.
+A future cycle finding this same state still unchanged should go back to
+recording it here without notifying again, consistent with the fifth
+cycle's original reasoning that repeat "still blocked" pings are noise.)
 
 2026-09-07 (Linux sandbox, eleventh consecutive confirmation cycle: `git
 pull origin main` showed the working tree already at `a150657`, the prior
