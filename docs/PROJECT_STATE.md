@@ -1614,6 +1614,42 @@ cd visionai
 
 ## Last Verification Result
 
+- 2026-09-07, Linux sandbox (this session, fifteenth consecutive
+  confirmation cycle -- no application or test code changed): this
+  container's local `main` was again found detached after `git pull`
+  (pointing at `origin/main`'s tip already, `ea57a06`, the prior session's
+  own fourteenth-consecutive-confirmation commit -- no other agent had
+  pushed since). `git checkout main` again reported local `main` and
+  `origin/main` diverged (50 vs 50 commits, disjoint tips); confirmed this
+  matches the already-documented remote history rewrite rather than new
+  lost work, and reset local `main` to `origin/main` directly (`git reset
+  --hard origin/main`, no push involved). Ran the full baseline per this
+  run's master prompt rather than trusting the doc's own skip-ahead note:
+  fresh `.venv312` from `requirements/dev.txt` against real Python 3.12.3
+  (again needing `libportaudio2`/`libegl1`/`libopengl0` via `apt-get`,
+  which again needed `apt-get update` first since the cached index 404'd
+  on a `deadsnakes`/`ondrej` PPA entry unrelated to these packages); Ruff
+  clean; mypy clean except the same documented sandbox-only
+  `ctypes.windll` false positive; Bandit clean; pip-audit clean (no known
+  vulnerabilities). `pytest --cov`: byte-for-byte identical to the
+  fourteenth cycle -- 616 tests, 578 passed, 28 failed, 10 skipped, 99%
+  coverage, same per-module numbers (`event_orchestrator.py` 97%, lines
+  234-238/386; `platform/lock_state.py` 77%, lines 72-81;
+  `app.py`/`ui/main_window.py` 99% each). Independently re-verified the 28
+  failures are all still the same `WindowsLockStateAdapter` fail-closed
+  pattern by grepping each failing test's assertion/traceback rather than
+  trusting the count alone -- every one traces to a launcher/action call
+  short-circuited by `mutating actions are blocked while the screen is
+  locked` or its downstream effect (an empty launched-app list, an
+  unsent message), not a new regression. `AGENTS.md` is still present
+  (still awaiting the human removal decision), no new Approved Next Tasks
+  item has landed, and no further hardware-free coverage gap exists per
+  the exhausted audit above. This is now fifteen consecutive identical
+  cycles with nothing new to build on. No user notification sent this
+  cycle -- the twelfth cycle already restated the standing recommendation
+  once, nothing has changed since (no human decision, no schedule
+  change), and cycles thirteen and fourteen already established that a
+  repeat ping this soon would be noise, not signal.
 - 2026-09-07, Linux sandbox (this session, fourteenth consecutive
   confirmation cycle -- no application or test code changed): this
   container started with local `main` detached at `25a3e5d` (the prior
