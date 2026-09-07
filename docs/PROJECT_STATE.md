@@ -1614,6 +1614,32 @@ cd visionai
 
 ## Last Verification Result
 
+- 2026-09-07, Linux sandbox (this session, seventh consecutive confirmation
+  cycle -- no application or test code changed): `git pull origin main`
+  found the tree already at `2685ac7` (the prior session's sixth
+  consecutive confirmation commit), nothing new to fetch. Ran the full
+  baseline anyway per this run's master prompt: fresh `.venv312` from
+  `requirements/dev.txt` against real Python 3.12.3 (again needing
+  `libportaudio2`/`libegl1`/`libopengl0` via `apt-get`); Ruff clean; mypy
+  clean except the same documented sandbox-only `ctypes.windll` false
+  positive; Bandit clean; pip-audit clean. `pytest --cov`: byte-for-byte
+  identical to the sixth cycle -- 616 tests, 578 passed, 28 failed (same
+  documented `WindowsLockStateAdapter` fail-closed names), 10 skipped, 99%
+  coverage, same per-module numbers (`event_orchestrator.py` 97%, lines
+  234-238/386; `platform/lock_state.py` 77%, lines 72-81; `app.py`/
+  `ui/main_window.py` 99% each). Incidental finding, not a regression:
+  this cycle also installed the optional `requirements/vision.txt` extra
+  (mediapipe/opencv) while building the venv; with it installed,
+  `test_webcam.py`'s `pytest.importorskip("mediapipe")` test runs for real
+  instead of self-skipping (579 passed/9 skipped, 616 total unchanged) --
+  expected per that test's own docstring, since `vision.txt` is
+  deliberately excluded from the standard `dev.txt`/CI surface
+  (`docs/DECISIONS/0003-accepted-protobuf-cve.md`). Uninstalled it and
+  reconfirmed the standard 578/28/10 split above holds exactly. `AGENTS.md`
+  is still present (still awaiting the human removal decision), no new
+  Approved Next Tasks item has landed. No user notification sent this
+  cycle -- the fifth cycle already flagged this blocked state and nothing
+  has changed since.
 - 2026-09-07, Linux sandbox (this session, sixth consecutive confirmation
   cycle -- no application or test code changed): `git pull origin main`
   found the tree already at `3920ab2` (the prior session's fifth
@@ -1901,6 +1927,16 @@ cd visionai
 - pip-audit: no known vulnerabilities found (scope: `requirements/base.txt` + `requirements/dev.txt`, run directly in this session's own Python 3.12 virtualenv; no dependency changes this session)
 
 ## Last Updated
+
+2026-09-07 (Linux sandbox, seventh consecutive confirmation cycle: `git
+pull origin main` showed the working tree already at `2685ac7`, the prior
+session's own sixth-consecutive-confirmation commit -- no other agent had
+pushed since. Full baseline rerun byte-for-byte identical to the
+documented state (see Last Verification Result above); `AGENTS.md` is
+still present and no new Approved Next Tasks item has landed, so both
+items blocking further autonomous progress are unchanged. No code or test
+changed. No user notification sent -- nothing has changed since the fifth
+cycle already reported this same blocked state.)
 
 2026-09-07 (Linux sandbox, sixth consecutive confirmation cycle: `git pull
 origin main` showed the working tree already at `3920ab2`, the prior
