@@ -1614,43 +1614,48 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-08, Linux sandbox (this session, twenty-ninth consecutive
+- 2026-09-08, Linux sandbox (this session, thirtieth consecutive
   confirmation cycle -- no application or test code changed): `git pull
-  origin main` reported already up to date, and local `main` was not
-  detached/diverged (matched `origin/main` directly). Fresh `.venv312`
-  via `python3.12 -m venv` + `requirements/dev.txt` (clean install;
-  `libportaudio2`/`libegl1`/`libopengl0` installed via `apt-get` as
-  usual). Ruff clean; mypy clean except the one documented
-  sandbox-only `ctypes.windll` false positive; Bandit clean; pip-audit
-  clean. `pytest --cov`: byte-for-byte identical to the twenty-eighth
-  cycle -- 616 tests, 578 passed, 28 failed (all confirmed the
-  documented `WindowsLockStateAdapter` fail-closed pattern, not a
+  origin main` reported already up to date. Local `main` was found
+  detached at `origin/main`'s commit with the `main` branch ref itself
+  stale one commit behind (pointing at the twenty-eighth cycle's
+  commit); recovered with `git checkout -B main origin/main` (a local
+  ref repair, not a rewrite of any pushed history -- same recovery
+  shape as the thirteenth cycle). Fresh `.venv312` via `python3.12 -m
+  venv` + `requirements/dev.txt` (clean install; `libportaudio2`/
+  `libegl1`/`libopengl0` installed via `apt-get` as usual, this
+  container's mirror needing one `apt-get update` retry first after an
+  initial 404 on `libegl-mesa0`). Ruff clean; mypy clean except the one
+  documented sandbox-only `ctypes.windll` false positive; Bandit clean;
+  pip-audit clean. `pytest --cov`: byte-for-byte identical to the
+  twenty-ninth cycle -- 616 tests, 578 passed, 28 failed (all confirmed
+  the documented `WindowsLockStateAdapter` fail-closed pattern, not a
   regression), 10 skipped, 99% coverage, same per-module numbers
   (`event_orchestrator.py` 97% lines 234-238/386, `platform/
   lock_state.py` 77% lines 72-81, `app.py`/`ui/main_window.py` 99%
   each). Checked GitHub: zero open issues, zero pull requests.
   `AGENTS.md` still present awaiting the human removal decision; no
-  new Approved Next Tasks item has landed. Twenty-nine consecutive
+  new Approved Next Tasks item has landed. Thirty consecutive
   identical cycles now, spanning 2026-09-06 through 2026-09-08.
 
-  Per the twenty-sixth cycle's own instruction (the human was already
-  notified once about this exact standing blocker, and no new human
-  decision has landed since), this cycle again recorded the result
-  quietly rather than repeating the notification.
+  No new user notification sent this cycle -- the twenty-sixth cycle
+  already notified the human about this exact standing blocker, and no
+  new human decision or repository change has landed since to justify
+  another one; repeating it now would be noise, not new information.
 
 ## Last Updated
 
-2026-09-08 (Linux sandbox, twenty-ninth consecutive confirmation
-cycle: local `main` matched `origin/main` directly, no
-detached/diverged ref to recover. Full baseline rerun byte-for-byte
-identical to the documented state (see Last Verification Result
-above). Checked GitHub for open issues or pull requests: none found.
-`AGENTS.md` is still present and no new Approved Next Tasks item has
-landed, so both items blocking further autonomous progress are
+2026-09-08 (Linux sandbox, thirtieth consecutive confirmation cycle:
+local `main` branch ref was stale/detached and was repaired to match
+`origin/main` via `git checkout -B main origin/main` -- a local-only
+ref fix, no history rewrite, no force-push. Full baseline rerun
+byte-for-byte identical to the documented state (see Last Verification
+Result above). Checked GitHub for open issues or pull requests: none
+found. `AGENTS.md` is still present and no new Approved Next Tasks item
+has landed, so both items blocking further autonomous progress are
 unchanged. No application or test code changed. No new user
-notification sent this cycle -- the twenty-sixth cycle already
-notified the human about this exact blocker, and this routine's own
-standing guidance says a future cycle finding the blocked state
-unchanged should return to quiet confirmation-only recording, not
-repeat the same notification. A future cycle finding the blocked
-state still unchanged should keep doing the same.)
+notification sent this cycle, per the same reasoning as the twenty-
+seventh through twenty-ninth cycles: a repeat of the twenty-sixth
+cycle's notification would be noise with nothing new to report. A
+future cycle finding the blocked state still unchanged should keep
+doing the same.)
