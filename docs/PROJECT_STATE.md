@@ -1614,7 +1614,49 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-08, Linux sandbox (this session, twentieth consecutive
+- 2026-09-08, Linux sandbox (this session, twenty-first consecutive
+  confirmation cycle -- no application or test code changed): `git pull
+  origin main` reported "Already up to date" (`origin/main`'s tip still at
+  `bc87f8c`, the prior session's own twentieth-consecutive-confirmation
+  commit -- no other agent had pushed since). Local `main` was again found
+  detached, and once checked out was found diverged from `origin/main` onto
+  an older, disjoint tip (`f8c52b6`, 50 vs 50 commits, no shared merge-base
+  -- the same already-documented content-equivalent remote-history-rewrite
+  pattern, confirmed again via `git diff --stat main origin/main` showing
+  only additions, not lost work). Recovered with `git checkout main && git
+  reset --hard origin/main` (no push involved). Ran the full baseline per
+  this run's master prompt: fresh `.venv312` built with `python3.12 -m venv`
+  (bare `python3` again resolved to 3.11.15; `python3.12` remained present
+  and was used directly) from `requirements/dev.txt` against real Python
+  3.12.3 (installed cleanly with no missing native library errors);
+  `libportaudio2`/`libegl1`/`libopengl0` were still needed for
+  pytest-qt/sounddevice and were installed via `apt-get` (unrelated
+  `deadsnakes`/`ondrej` PPA entries in the cached index 403'd as usual, not
+  blocking the needed packages). Ruff clean; mypy clean except the same
+  documented sandbox-only `ctypes.windll` false positive; Bandit clean;
+  pip-audit clean (no known vulnerabilities). `pytest --cov`: byte-for-byte
+  identical to the twentieth cycle -- 616 tests, 578 passed, 28 failed, 10
+  skipped, 99% coverage, same per-module numbers (`event_orchestrator.py`
+  97%, lines 234-238/386; `platform/lock_state.py` 77%, lines 72-81;
+  `app.py`/`ui/main_window.py` 99% each). Independently re-confirmed (ran
+  each failing module individually and inspected captured output/assertion,
+  not just trusted the count) that all 28 failures trace to the same
+  `WindowsLockStateAdapter` fail-closed pattern (`mutating actions are
+  blocked while the screen is locked` or its downstream effect), not a
+  regression. Checked GitHub for any human decision since the last cycle
+  (`list_issues`, `list_pull_requests`, both states): zero open issues, zero
+  pull requests of any state. `AGENTS.md` is still present (still awaiting
+  the human removal decision), no new Approved Next Tasks item has landed,
+  and no further hardware-free coverage gap exists per the exhausted audit
+  above. This is now twenty-one consecutive identical cycles with nothing
+  new to build on, spanning 2026-09-06 through 2026-09-08. Did not send a
+  user notification this cycle -- the nineteenth cycle already restated the
+  blocked state and its recommendation on this same calendar day, and
+  nothing has changed since (no human decision, no schedule change, no open
+  issue/PR); another ping this soon would be noise, not signal, per the same
+  reasoning cycles six through eleven, thirteen through eighteen, and twenty
+  already applied between pings.
+- 2026-09-08, Linux sandbox (prior session, twentieth consecutive
   confirmation cycle -- no application or test code changed): `git pull
   origin main` reported "Already up to date" (`origin/main`'s tip still at
   `309ee13`, the prior session's own nineteenth-consecutive-confirmation
