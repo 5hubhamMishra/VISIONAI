@@ -10,7 +10,7 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-08, twenty-third consecutive
+Latest Linux sandbox verification (2026-09-08, twenty-fifth consecutive
 confirmation cycle -- no application or test code changed): 616 tests, 578
 passed, 28 failed (documented `WindowsLockStateAdapter` fail-closed pattern,
 not a regression), 10 skipped, 99% coverage, Ruff, mypy (one known
@@ -1614,71 +1614,49 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-08, Linux sandbox (this session, twenty-fourth consecutive
-  confirmation cycle -- no application or test code changed): local `main`
-  was found detached; recovered with `git checkout -B main origin/main`
-  (no push involved, no lost work -- `origin/main` already carried the
-  prior session's twenty-third-cycle commit as its tip). Fresh `.venv312`
-  via `python3.12 -m venv` + `requirements/dev.txt` (clean install;
-  `libportaudio2`/`libegl1`/`libopengl0` installed via `apt-get` as usual,
-  needing `apt-get update` first for a stale `libegl-mesa0` index entry).
-  Ruff clean; mypy clean except the one documented sandbox-only
+- 2026-09-08, Linux sandbox (this session, twenty-fifth consecutive
+  confirmation cycle -- no application or test code changed): local
+  `main` was found in a detached/diverged state after `git pull origin
+  main` reported a forced update; recovered with `git reset --hard
+  origin/main` (working tree was already clean, no push involved, no
+  lost work -- `origin/main` already carried the prior session's
+  twenty-fourth-cycle commit as its tip). Fresh `.venv312` via
+  `python3.12 -m venv` + `requirements/dev.txt` (clean install;
+  `libportaudio2`/`libegl1`/`libopengl0` installed via `apt-get` as
+  usual). Ruff clean; mypy clean except the one documented sandbox-only
   `ctypes.windll` false positive; Bandit clean; pip-audit clean.
-  `pytest --cov`: byte-for-byte identical to the twenty-third cycle -- 616
-  tests, 578 passed, 28 failed (all confirmed the documented
+  `pytest --cov`: byte-for-byte identical to the twenty-fourth cycle --
+  616 tests, 578 passed, 28 failed (all confirmed the documented
   `WindowsLockStateAdapter` fail-closed pattern, not a regression), 10
-  skipped, 99% coverage, same per-module numbers. Checked GitHub: zero open
-  issues, zero pull requests. `AGENTS.md` still present awaiting the human
-  removal decision; no new Approved Next Tasks item has landed.
-  Twenty-four consecutive identical cycles now, spanning 2026-09-06 through
-  2026-09-08.
-
-  Housekeeping done this cycle: this section, and the "Last Updated"
-  section below, previously accumulated one paragraph per cycle all the
-  way back to the first confirmation cycle -- the direct, self-confirmed
-  cause of this file exceeding 2600 lines/~266KB and becoming too large
-  for a standard single-shot file-read tool call (this session hit exactly
-  that limit reading this file at the start of this run, reproducing what
-  the twenty-third cycle had only flagged as a risk). Trimmed both
-  sections down to only the current (twenty-fourth) cycle's result. Full
-  cycle-by-cycle history back to the first confirmation cycle remains
-  intact and unabridged in `docs/WORK_LOG.md`, which already recorded the
-  same information in more detail and is this project's designated
-  append-only log -- nothing was deleted, only de-duplicated out of a
-  section whose own name ("Last Verification Result" / "Last Updated",
-  singular) implies it should hold the latest result, not the full
-  history. No application code, test code, or product documentation
-  changed by this trim, and no policy/permission/confirmation/risk-tier
-  behavior is affected. Did not notify the user for this trim -- it is
-  routine housekeeping, not a state change requiring their attention.
+  skipped, 99% coverage, same per-module numbers. Checked GitHub: zero
+  open issues, zero pull requests. `AGENTS.md` still present awaiting
+  the human removal decision; no new Approved Next Tasks item has
+  landed. Twenty-five consecutive identical cycles now, spanning
+  2026-09-06 through 2026-09-08.
 
   No user notification sent this cycle for the standing
-  `AGENTS.md`/Approved-Next-Tasks blocker either -- the nineteenth cycle
-  already restated it, and only five cycles have passed since with no new
+  `AGENTS.md`/Approved-Next-Tasks blocker -- the nineteenth cycle
+  already restated it, and only six cycles have passed since with no new
   information; consistent with this routine's own established cadence
   (roughly every seven quiet cycles before restating), another
-  restatement is not yet due.
+  restatement is not yet due (expected around the twenty-sixth cycle).
 
 ## Last Updated
 
-2026-09-08 (Linux sandbox, twenty-fourth consecutive confirmation cycle:
-local `main` found detached and recovered with `git checkout -B main
-origin/main`, no push involved, no lost work. Full baseline rerun
-byte-for-byte identical to the documented state (see Last Verification
-Result above). Checked GitHub for open issues or pull requests: none
-found. `AGENTS.md` is still present and no new Approved Next Tasks item
-has landed, so both items blocking further autonomous progress are
-unchanged. No application or test code changed. This cycle also trimmed
-this section and "Last Verification Result" above down to only their
-current entry, dropping twenty-three cycles' worth of accumulated
-duplicate history that had pushed this file past 2600 lines/~266KB and
-past what a standard file-read tool call can load in one shot -- that
-full history remains intact in `docs/WORK_LOG.md`. Did not send a user
-notification this cycle -- the nineteenth cycle already restated the
-`AGENTS.md`/Approved-Next-Tasks blocked state and the twelfth cycle sent
-the original ping; only five quiet cycles have passed since the last
-restatement, short of this routine's own ~seven-cycle re-notify cadence,
-and the documentation trim is routine housekeeping, not a state change.
-A future cycle finding the blocked state still unchanged should keep
-recording a single current entry here without notifying, unless the
-state changes or another long quiet stretch accumulates.)
+2026-09-08 (Linux sandbox, twenty-fifth consecutive confirmation cycle:
+local `main` found detached/diverged after a forced-update pull and
+recovered with `git reset --hard origin/main`, no push involved, no lost
+work. Full baseline rerun byte-for-byte identical to the documented
+state (see Last Verification Result above). Checked GitHub for open
+issues or pull requests: none found. `AGENTS.md` is still present and no
+new Approved Next Tasks item has landed, so both items blocking further
+autonomous progress are unchanged. No application or test code changed.
+Did not send a user notification this cycle -- the nineteenth cycle
+already restated the `AGENTS.md`/Approved-Next-Tasks blocked state and
+the twelfth cycle sent the original ping; only six quiet cycles have
+passed since the last restatement, short of this routine's own
+~seven-cycle re-notify cadence. A future cycle finding the blocked state
+still unchanged should keep recording a single current entry here
+without notifying, unless the state changes or another long quiet
+stretch accumulates -- the next restatement is expected around the
+twenty-sixth cycle.)
