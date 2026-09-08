@@ -1614,49 +1614,44 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-08, Linux sandbox (this session, twenty-fifth consecutive
+- 2026-09-08, Linux sandbox (this session, twenty-sixth consecutive
   confirmation cycle -- no application or test code changed): local
-  `main` was found in a detached/diverged state after `git pull origin
-  main` reported a forced update; recovered with `git reset --hard
-  origin/main` (working tree was already clean, no push involved, no
-  lost work -- `origin/main` already carried the prior session's
-  twenty-fourth-cycle commit as its tip). Fresh `.venv312` via
-  `python3.12 -m venv` + `requirements/dev.txt` (clean install;
-  `libportaudio2`/`libegl1`/`libopengl0` installed via `apt-get` as
-  usual). Ruff clean; mypy clean except the one documented sandbox-only
-  `ctypes.windll` false positive; Bandit clean; pip-audit clean.
-  `pytest --cov`: byte-for-byte identical to the twenty-fourth cycle --
-  616 tests, 578 passed, 28 failed (all confirmed the documented
+  `main` was found detached/diverged (stale ref predating a remote
+  history rewrite); recovered with `git reset --hard origin/main` (no
+  push involved, no lost work). Fresh `.venv312` via `python3.12 -m
+  venv` + `requirements/dev.txt` (clean install; `libportaudio2`/
+  `libegl1`/`libopengl0` installed via `apt-get` as usual). Ruff clean;
+  mypy clean except the one documented sandbox-only `ctypes.windll`
+  false positive; Bandit clean; pip-audit clean. `pytest --cov`:
+  byte-for-byte identical to the twenty-fifth cycle -- 616 tests, 578
+  passed, 28 failed (all confirmed the documented
   `WindowsLockStateAdapter` fail-closed pattern, not a regression), 10
   skipped, 99% coverage, same per-module numbers. Checked GitHub: zero
   open issues, zero pull requests. `AGENTS.md` still present awaiting
   the human removal decision; no new Approved Next Tasks item has
-  landed. Twenty-five consecutive identical cycles now, spanning
+  landed. Twenty-six consecutive identical cycles now, spanning
   2026-09-06 through 2026-09-08.
 
-  No user notification sent this cycle for the standing
-  `AGENTS.md`/Approved-Next-Tasks blocker -- the nineteenth cycle
-  already restated it, and only six cycles have passed since with no new
-  information; consistent with this routine's own established cadence
-  (roughly every seven quiet cycles before restating), another
-  restatement is not yet due (expected around the twenty-sixth cycle).
+  User notified this cycle (proactive push notification): the
+  `AGENTS.md`/Approved-Next-Tasks blocker has now produced twenty-six
+  consecutive identical no-op cycles with zero forward progress, and
+  this cycle recommended the human either make the pending decisions or
+  reduce/pause this schedule's frequency until they can, per the
+  twenty-fourth cycle's own flagged recommendation.
 
 ## Last Updated
 
-2026-09-08 (Linux sandbox, twenty-fifth consecutive confirmation cycle:
-local `main` found detached/diverged after a forced-update pull and
-recovered with `git reset --hard origin/main`, no push involved, no lost
-work. Full baseline rerun byte-for-byte identical to the documented
-state (see Last Verification Result above). Checked GitHub for open
-issues or pull requests: none found. `AGENTS.md` is still present and no
-new Approved Next Tasks item has landed, so both items blocking further
-autonomous progress are unchanged. No application or test code changed.
-Did not send a user notification this cycle -- the nineteenth cycle
-already restated the `AGENTS.md`/Approved-Next-Tasks blocked state and
-the twelfth cycle sent the original ping; only six quiet cycles have
-passed since the last restatement, short of this routine's own
-~seven-cycle re-notify cadence. A future cycle finding the blocked state
-still unchanged should keep recording a single current entry here
-without notifying, unless the state changes or another long quiet
-stretch accumulates -- the next restatement is expected around the
-twenty-sixth cycle.)
+2026-09-08 (Linux sandbox, twenty-sixth consecutive confirmation cycle:
+local `main` found detached/diverged and recovered with `git reset
+--hard origin/main`, no push involved, no lost work. Full baseline
+rerun byte-for-byte identical to the documented state (see Last
+Verification Result above). Checked GitHub for open issues or pull
+requests: none found. `AGENTS.md` is still present and no new Approved
+Next Tasks item has landed, so both items blocking further autonomous
+progress are unchanged. No application or test code changed. Sent a
+proactive user notification this cycle recommending either a decision
+on the standing blockers or a reduced/paused schedule, since twenty-six
+consecutive identical cycles is a strong diminishing-returns signal per
+the twenty-fourth cycle's own flagged recommendation. A future cycle
+finding the blocked state still unchanged should go back to quiet
+confirmation-only recording unless the state changes.)
