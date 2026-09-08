@@ -1,5 +1,48 @@
 # Work Log
 
+## 2026-09-08 Thirty-Eighth Consecutive Confirmation Cycle (Linux Sandbox)
+
+- Started against local commit `e08815b` (the thirty-seventh cycle's
+  commit); `git pull origin main` reported already up to date. Local
+  checkout started detached at that tip and was recovered with
+  `git checkout main` (fast-forward only, no reset needed).
+- Fresh `.venv312` via `python3.12 -m venv` + `pip install -r
+  requirements/dev.txt` (clean install); `libportaudio2`/`libegl1`/
+  `libopengl0` installed via `apt-get` (clean, same unrelated
+  PPA-mirror 403 warnings this sandbox doesn't need).
+- Full verification: Ruff clean; mypy clean except the one documented
+  sandbox-only `ctypes.windll` false positive on
+  `platform/lock_state.py:71`; Bandit clean; `pip-audit` clean. Pytest:
+  616 tests, 578 passed, 28 failed, 10 skipped, 99% coverage --
+  byte-for-byte identical to the thirty-seventh cycle's documented
+  result; sampled a failing traceback and confirmed it is still the
+  documented `WindowsLockStateAdapter` fail-closed message
+  (`mutating actions are blocked while the screen is locked`), not a
+  regression. Same per-module coverage gaps as every prior cycle
+  (`event_orchestrator.py` 97% lines 234-238/386, `platform/
+  lock_state.py` 77% lines 72-81, `app.py` 99% line 663,
+  `ui/main_window.py` 99% line 1346).
+- Checked GitHub directly: zero open issues, zero open pull requests.
+- Both standing blockers are unchanged: `AGENTS.md` is still present
+  awaiting the human removal decision under Required Decisions, and no
+  new Approved Next Tasks item has landed for this sandbox to work on.
+  Every remaining Approved Next Tasks item still needs real Windows
+  hardware, a live network/model, or a human running a command
+  themselves -- none of it fits this Linux, no-display/camera/mic
+  sandbox. No application or test code changed this cycle.
+- No new notification sent: the thirty-second cycle already sent a
+  real proactive notification restating these exact standing blockers
+  and recommending a human decision or a schedule pause. Nothing
+  material has changed since (same failure set, same coverage, zero
+  issues/PRs, same two open decisions), so repeating it would be pure
+  noise.
+- Next task: unchanged from every recent cycle. A future sandbox
+  session should expect this same result again and, per the master
+  prompt, say so rather than re-running a thirty-ninth identical audit
+  -- until either a human resolves the `AGENTS.md` decision, a human
+  adds a new Approved Next Tasks item, or GitHub shows a new issue/PR
+  to act on.
+
 ## 2026-09-06 ui/main_window.py Dialog/GUI-Slot-Handler Test Coverage (Linux Sandbox Cycle)
 
 - Started against local commit `3c727b0` (the prior session's
