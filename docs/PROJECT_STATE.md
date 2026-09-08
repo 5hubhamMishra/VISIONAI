@@ -1614,57 +1614,48 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-08, Linux sandbox (this session, thirty-second consecutive
+- 2026-09-08, Linux sandbox (this session, thirty-third consecutive
   confirmation cycle -- no application or test code changed): `git
   pull origin main` reported already up to date; local `main` was
-  detached but already at `origin/main`'s tip, no reset needed. Fresh
-  `.venv312` via `python3.12 -m venv` + `pip install -r
-  requirements/dev.txt` (clean install, no dependency errors);
-  `libportaudio2`/`libegl1`/`libopengl0` installed via `apt-get`
-  (clean). Ruff clean; mypy clean except the one documented
-  sandbox-only `ctypes.windll` false positive; Bandit clean.
-  `pytest --cov`: byte-for-byte identical to the thirty-first cycle --
-  616 tests, 578 passed, 28 failed (spot-confirmed the documented
-  `WindowsLockStateAdapter` fail-closed pattern, not a regression), 10
-  skipped, 99% coverage, same per-module numbers
+  detached but already at `origin/main`'s tip (`0808dc8`, the
+  thirty-second cycle's commit), recovered with `git checkout -B main
+  origin/main`, no reset needed. Fresh `.venv312` via `python3.12 -m
+  venv` + `pip install -r requirements/dev.txt` (clean install, no
+  dependency errors); `libportaudio2`/`libegl1`/`libopengl0` installed
+  via `apt-get` (clean, only unrelated PPA-mirror 403 warnings this
+  sandbox doesn't need). Ruff clean; mypy clean except the one
+  documented sandbox-only `ctypes.windll` false positive; Bandit
+  clean; `pip-audit` clean this cycle (no vulnerabilities -- the
+  thirty-second cycle's bootstrap-`pip`-itself CVE finding did not
+  recur, consistent with that finding being about this session's own
+  disposable venv rather than a project dependency). `pytest --cov`:
+  byte-for-byte identical to the thirty-second cycle -- 616 tests, 578
+  passed, 28 failed (spot-checked the failure output directly; all
+  show the documented `WindowsLockStateAdapter` fail-closed message,
+  not a regression), 10 skipped, 99% coverage, same per-module numbers
   (`event_orchestrator.py` 97% lines 234-238/386, `platform/
-  lock_state.py` 77% lines 72-81, `ui/main_window.py` 99% line 1346).
-  Checked GitHub: zero open issues, zero pull requests. `AGENTS.md`
-  still present awaiting the human removal decision; no new Approved
-  Next Tasks item has landed. Thirty-two consecutive identical
-  application/test cycles now, spanning 2026-09-06 through 2026-09-08.
+  lock_state.py` 77% lines 72-81, `app.py` 99% line 663,
+  `ui/main_window.py` 99% line 1346). Checked GitHub: zero open
+  issues, zero pull requests. `AGENTS.md` still present awaiting the
+  human removal decision; no new Approved Next Tasks item has landed.
+  Thirty-three consecutive identical application/test cycles now,
+  spanning 2026-09-06 through 2026-09-08.
 
-  New, non-blocking finding this cycle: `pip-audit` reported 6 known
-  vulnerabilities against this session's freshly bootstrapped `pip
-  24.0` inside `.venv312` itself (`PYSEC-2026-196/1795/1796/2875/2876/
-  3721`, fixed in `pip>=25.3`) -- not against any package this
-  project's `requirements/*.txt` pins, and not fixable by a repo
-  commit since the venv's own pip is not tracked in this repository.
-  Every prior cycle's "pip-audit clean" report was accurate for its
-  own point in time; this reads as newly published CVE data catching
-  up to an old bootstrap pip version, not a project regression.
-
-  Given thirty-two fully-blocked scheduled cycles in one calendar day
-  with zero forward progress possible from this sandbox, and no way to
-  confirm any earlier cycle's self-reported notification actually used
-  a real notification mechanism (a commit message claiming one was
-  sent is not proof, as the thirtieth/thirty-first cycles' own
-  contradiction already showed), this cycle sent a fresh proactive
-  notification to the human via this session's actual notification
-  tool.
+  No new notification sent this cycle: the thirty-second cycle already
+  sent a real proactive notification (not just a log entry) restating
+  the standing blockers and recommending a human decision or a
+  schedule pause, and nothing materially new happened this cycle to
+  justify another one -- per that cycle's own closing guidance, this
+  is exactly the "still unchanged, no new fact" case that should go
+  back to quiet confirmation-only recording.
 
 ## Last Updated
 
-2026-09-08 (Linux sandbox, thirty-second consecutive confirmation
-cycle: full baseline rerun byte-for-byte identical to the thirty-first
-cycle's documented state, except a new non-project-code `pip-audit`
-finding against the sandbox's own bootstrap `pip` -- see Last
-Verification Result above. `AGENTS.md` is still present and no new
-Approved Next Tasks item has landed, so both items blocking further
-autonomous progress are unchanged. No application or test code
-changed. Sent a proactive notification recommending the human either
-resolve one of the standing decisions or pause/reduce this schedule's
-frequency until they can. A future cycle finding the blocked state
-still unchanged, with no new documentation inconsistency and no
-meaningful new fact, should go back to quiet confirmation-only
-recording rather than notifying again.)
+2026-09-08 (Linux sandbox, thirty-third consecutive confirmation
+cycle: full baseline rerun byte-for-byte identical to the thirty-second
+cycle's documented application/test state -- see Last Verification
+Result above. `AGENTS.md` is still present and no new Approved Next
+Tasks item has landed, so both items blocking further autonomous
+progress are unchanged. No application or test code changed. No new
+notification sent -- the thirty-second cycle's notification already
+covers this exact standing state and nothing new surfaced this cycle.)
