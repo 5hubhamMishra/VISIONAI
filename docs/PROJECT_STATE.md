@@ -10,7 +10,7 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-08, twenty-seventh consecutive
+Latest Linux sandbox verification (2026-09-08, twenty-eighth consecutive
 confirmation cycle -- no application or test code changed): 616 tests, 578
 passed, 28 failed (documented `WindowsLockStateAdapter` fail-closed pattern,
 not a regression), 10 skipped, 99% coverage, Ruff, mypy (one known
@@ -1614,17 +1614,16 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-08, Linux sandbox (this session, twenty-seventh consecutive
-  confirmation cycle -- no application or test code changed): local
-  `main` was again found detached/diverged from a stale ref predating
-  the same already-documented remote history rewrite; recovered with
-  `git checkout main && git reset --hard origin/main` (no push
-  involved, no lost work). Fresh `.venv312` via `python3.12 -m venv` +
+- 2026-09-08, Linux sandbox (this session, twenty-eighth consecutive
+  confirmation cycle -- no application or test code changed): `git pull
+  origin main` reported already up to date, and this time local `main`
+  was not detached/diverged (matched `origin/main` directly, no
+  recovery needed). Fresh `.venv312` via `python3.12 -m venv` +
   `requirements/dev.txt` (clean install; `libportaudio2`/`libegl1`/
   `libopengl0` installed via `apt-get` as usual). Ruff clean; mypy
   clean except the one documented sandbox-only `ctypes.windll` false
   positive; Bandit clean; pip-audit clean. `pytest --cov`:
-  byte-for-byte identical to the twenty-sixth cycle -- 616 tests, 578
+  byte-for-byte identical to the twenty-seventh cycle -- 616 tests, 578
   passed, 28 failed (all confirmed the documented
   `WindowsLockStateAdapter` fail-closed pattern, not a regression), 10
   skipped, 99% coverage, same per-module numbers
@@ -1632,28 +1631,27 @@ cd visionai
   lock_state.py` 77% lines 72-81, `app.py`/`ui/main_window.py` 99%
   each). Checked GitHub: zero open issues, zero pull requests.
   `AGENTS.md` still present awaiting the human removal decision; no
-  new Approved Next Tasks item has landed. Twenty-seven consecutive
+  new Approved Next Tasks item has landed. Twenty-eight consecutive
   identical cycles now, spanning 2026-09-06 through 2026-09-08.
 
   Per the twenty-sixth cycle's own instruction (the human was already
-  notified once about this exact standing blocker, and no new
-  human decision has landed since), this cycle recorded the result
-  quietly rather than sending a repeat notification.
+  notified once about this exact standing blocker, and no new human
+  decision has landed since), this cycle again recorded the result
+  quietly rather than repeating the notification.
 
 ## Last Updated
 
-2026-09-08 (Linux sandbox, twenty-seventh consecutive confirmation
-cycle: local `main` again found detached/diverged and recovered with
-`git checkout main && git reset --hard origin/main`, no push involved,
-no lost work. Full baseline rerun byte-for-byte identical to the
-documented state (see Last Verification Result above). Checked GitHub
-for open issues or pull requests: none found. `AGENTS.md` is still
-present and no new Approved Next Tasks item has landed, so both items
-blocking further autonomous progress are unchanged. No application or
-test code changed. No new user notification sent this cycle -- the
-twenty-sixth cycle already notified the human about this exact
-blocker, and this routine's own standing guidance says a future cycle
-finding the blocked state unchanged should return to quiet
-confirmation-only recording, not repeat the same notification. A
-future cycle finding the blocked state still unchanged should keep
-doing the same.)
+2026-09-08 (Linux sandbox, twenty-eighth consecutive confirmation
+cycle: local `main` matched `origin/main` directly this time, no
+detached/diverged ref to recover. Full baseline rerun byte-for-byte
+identical to the documented state (see Last Verification Result
+above). Checked GitHub for open issues or pull requests: none found.
+`AGENTS.md` is still present and no new Approved Next Tasks item has
+landed, so both items blocking further autonomous progress are
+unchanged. No application or test code changed. No new user
+notification sent this cycle -- the twenty-sixth cycle already
+notified the human about this exact blocker, and this routine's own
+standing guidance says a future cycle finding the blocked state
+unchanged should return to quiet confirmation-only recording, not
+repeat the same notification. A future cycle finding the blocked
+state still unchanged should keep doing the same.)
