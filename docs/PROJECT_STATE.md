@@ -10,7 +10,7 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-08, twenty-ninth consecutive
+Latest Linux sandbox verification (2026-09-08, thirty-first consecutive
 confirmation cycle -- no application or test code changed): 616 tests, 578
 passed, 28 failed (documented `WindowsLockStateAdapter` fail-closed pattern,
 not a regression), 10 skipped, 99% coverage, Ruff, mypy (one known
@@ -1614,48 +1614,63 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-08, Linux sandbox (this session, thirtieth consecutive
+- 2026-09-08, Linux sandbox (this session, thirty-first consecutive
   confirmation cycle -- no application or test code changed): `git pull
-  origin main` reported already up to date. Local `main` was found
-  detached at `origin/main`'s commit with the `main` branch ref itself
-  stale one commit behind (pointing at the twenty-eighth cycle's
-  commit); recovered with `git checkout -B main origin/main` (a local
-  ref repair, not a rewrite of any pushed history -- same recovery
-  shape as the thirteenth cycle). Fresh `.venv312` via `python3.12 -m
-  venv` + `requirements/dev.txt` (clean install; `libportaudio2`/
-  `libegl1`/`libopengl0` installed via `apt-get` as usual, this
-  container's mirror needing one `apt-get update` retry first after an
-  initial 404 on `libegl-mesa0`). Ruff clean; mypy clean except the one
-  documented sandbox-only `ctypes.windll` false positive; Bandit clean;
-  pip-audit clean. `pytest --cov`: byte-for-byte identical to the
-  twenty-ninth cycle -- 616 tests, 578 passed, 28 failed (all confirmed
-  the documented `WindowsLockStateAdapter` fail-closed pattern, not a
-  regression), 10 skipped, 99% coverage, same per-module numbers
+  origin main` reported already up to date; local `main` matched
+  `origin/main` directly (no detached/stale ref to recover this
+  cycle). Fresh `.venv312` via `python3.12 -m venv` + `pip install -r
+  requirements/dev.txt` (clean install, no dependency errors);
+  `libportaudio2`/`libegl1`/`libopengl0` installed via `apt-get`
+  (clean, no mirror retries needed this time). Ruff clean; mypy clean
+  except the one documented sandbox-only `ctypes.windll` false
+  positive; Bandit clean; pip-audit clean. `pytest --cov`:
+  byte-for-byte identical to the thirtieth cycle -- 616 tests, 578
+  passed, 28 failed (all confirmed the documented
+  `WindowsLockStateAdapter` fail-closed pattern, not a regression), 10
+  skipped, 99% coverage, same per-module numbers
   (`event_orchestrator.py` 97% lines 234-238/386, `platform/
   lock_state.py` 77% lines 72-81, `app.py`/`ui/main_window.py` 99%
   each). Checked GitHub: zero open issues, zero pull requests.
   `AGENTS.md` still present awaiting the human removal decision; no
-  new Approved Next Tasks item has landed. Thirty consecutive
+  new Approved Next Tasks item has landed. Thirty-one consecutive
   identical cycles now, spanning 2026-09-06 through 2026-09-08.
 
-  No new user notification sent this cycle -- the twenty-sixth cycle
-  already notified the human about this exact standing blocker, and no
-  new human decision or repository change has landed since to justify
-  another one; repeating it now would be noise, not new information.
+  Found (and flagging here rather than silently picking one version)
+  a direct contradiction between this file and `docs/WORK_LOG.md`
+  over the thirtieth cycle's own commit (`13d2a09`): this file's prior
+  revision stated "No new user notification sent this cycle," while
+  `docs/WORK_LOG.md`'s thirtieth-cycle entry stated the opposite --
+  "Sent one proactive user notification this cycle (the first since
+  the twenty-sixth cycle)," recommending the human pause or reduce the
+  schedule. Both were written in the same commit. This cycle cannot
+  determine from git history alone which statement was accurate (the
+  session transcript that produced that commit is not part of the
+  repository). Given that genuine ambiguity, plus thirty-one
+  consecutive fully-blocked cycles now recorded in one calendar day
+  with zero forward progress possible from this sandbox, this cycle
+  sent a fresh proactive notification rather than assume the human was
+  already reached. A future cycle should not need to repeat this
+  reasoning again unless the blocked state changes or another
+  documentation contradiction appears -- treat this note, not the
+  superseded line it replaces, as authoritative for cycle thirty.
 
 ## Last Updated
 
-2026-09-08 (Linux sandbox, thirtieth consecutive confirmation cycle:
-local `main` branch ref was stale/detached and was repaired to match
-`origin/main` via `git checkout -B main origin/main` -- a local-only
-ref fix, no history rewrite, no force-push. Full baseline rerun
-byte-for-byte identical to the documented state (see Last Verification
-Result above). Checked GitHub for open issues or pull requests: none
-found. `AGENTS.md` is still present and no new Approved Next Tasks item
-has landed, so both items blocking further autonomous progress are
-unchanged. No application or test code changed. No new user
-notification sent this cycle, per the same reasoning as the twenty-
-seventh through twenty-ninth cycles: a repeat of the twenty-sixth
-cycle's notification would be noise with nothing new to report. A
-future cycle finding the blocked state still unchanged should keep
-doing the same.)
+2026-09-08 (Linux sandbox, thirty-first consecutive confirmation
+cycle: `git pull origin main` was already up to date and local `main`
+matched `origin/main` directly, no ref recovery needed this cycle.
+Full baseline rerun byte-for-byte identical to the documented state
+(see Last Verification Result above). Checked GitHub for open issues
+or pull requests: none found. `AGENTS.md` is still present and no new
+Approved Next Tasks item has landed, so both items blocking further
+autonomous progress are unchanged. No application or test code
+changed. Resolved a documentation contradiction found between this
+file and `docs/WORK_LOG.md` over whether the thirtieth cycle's
+notification was actually sent (see Last Verification Result above)
+and, given that ambiguity plus the length of this now thirty-one-cycle
+streak, sent a fresh proactive notification recommending the human
+pause or reduce this schedule's frequency until one of the standing
+decisions lands. A future cycle finding the blocked state still
+unchanged, with no new documentation inconsistency and no notification
+ambiguity, should go back to quiet confirmation-only recording rather
+than notifying again.)
