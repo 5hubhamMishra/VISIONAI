@@ -1614,7 +1614,49 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-08, Linux sandbox (this session, seventeenth consecutive
+- 2026-09-08, Linux sandbox (this session, eighteenth consecutive
+  confirmation cycle -- no application or test code changed): `git pull
+  origin main` reported "Already up to date" against a prior `git fetch`
+  that itself reported a forced update (`origin/main`'s tip already at
+  `b1a772e`, the prior session's own seventeenth-consecutive-confirmation
+  commit, by the time this session started). Only later, while preparing to
+  commit, did `git pull --rebase origin main` reveal local `main` had
+  actually stayed pinned at a much older, disjoint tip (`f8c52b6`, sharing
+  no merge-base with `origin/main` -- the same remote-history-rewrite
+  pattern documented by many prior cycles); confirmed content-equivalence
+  first (`git diff --stat f8c52b6 origin/main` showed only additions beyond
+  `f8c52b6`, matching the many already-documented, already-merged coverage/
+  feature commits between the two, not lost work) before recovering with
+  `git checkout main && git reset --hard origin/main` (no push involved).
+  This container's system
+  `python3` resolved to Python 3.11.15 rather than 3.12.3 this time (a new
+  environment detail, not documented before); `python3.12` was still present
+  and used directly to build `.venv312`, matching every prior session's
+  documented baseline interpreter, after an initial `python3 -m venv`
+  attempt failed installing `requirements/dev.txt` (numpy 2.5.2 requires
+  Python >=3.12). Ran the full baseline per this run's master prompt: fresh
+  `.venv312` from `requirements/dev.txt` against real Python 3.12.3 (again
+  needing `libportaudio2`/`libegl1`/`libopengl0` via `apt-get`, which again
+  needed `apt-get update` first); Ruff clean; mypy clean except the same
+  documented sandbox-only `ctypes.windll` false positive; Bandit clean;
+  pip-audit clean (no known vulnerabilities). `pytest --cov`: byte-for-byte
+  identical to the seventeenth cycle -- 616 tests, 578 passed, 28 failed, 10
+  skipped, 99% coverage, same per-module numbers (`event_orchestrator.py`
+  97%, lines 234-238/386; `platform/lock_state.py` 77%, lines 72-81;
+  `app.py`/`ui/main_window.py` 99% each). Confirmed the 28 failures are all
+  still the same `WindowsLockStateAdapter` fail-closed pattern from the full
+  pytest output rather than trusting the count alone. Checked GitHub for any
+  human decision since the last cycle (open issues, open pull requests):
+  none found. `AGENTS.md` is still present (still awaiting the human removal
+  decision), no new Approved Next Tasks item has landed, and no further
+  hardware-free coverage gap exists per the exhausted audit above. This is
+  now eighteen consecutive identical cycles with nothing new to build on. No
+  user notification sent this cycle -- the twelfth cycle already restated
+  the standing recommendation once, nothing has changed since (no human
+  decision, no schedule change, no open issue/PR), and cycles thirteen
+  through seventeen already established that a repeat ping this soon would
+  be noise, not signal.
+- 2026-09-08, Linux sandbox (prior session, seventeenth consecutive
   confirmation cycle -- no application or test code changed): `git pull
   origin main` reported a forced update again (`origin/main`'s tip moved
   from `370d6cf` to `3fa0fe1`, the prior session's own
@@ -2208,22 +2250,29 @@ cd visionai
 
 ## Last Updated
 
-2026-09-08 (Linux sandbox, seventeenth consecutive confirmation cycle:
-`origin/main` had been force-pushed again since the sixteenth cycle's
-commit -- content-equivalent history rewrite, same pattern already
-documented from earlier sessions, not new lost work; recovered the tree
-at `3fa0fe1`, the prior session's own sixteenth-consecutive-confirmation
-commit, via `git reset --hard origin/main` (no push involved). Full
-baseline rerun byte-for-byte identical to the documented state (see Last
-Verification Result above); `AGENTS.md` is still present and no new
-Approved Next Tasks item has landed, so both items blocking further
-autonomous progress are unchanged. No code or test changed. No user
-notification sent this cycle -- the twelfth cycle already restated the
-blocked-state recommendation once, and nothing has changed since, so a
-repeat ping would be noise per that cycle's own stated rule. A future
-cycle finding this same state still unchanged should keep recording it
-here without notifying again, unless the blocked state itself changes or
-a human response arrives.)
+2026-09-08 (Linux sandbox, eighteenth consecutive confirmation cycle:
+`git pull origin main` showed the working tree already at `b1a772e`, the
+prior session's own seventeenth-consecutive-confirmation commit -- no
+other agent had pushed since. Local `main`, however, was found still
+pinned at a much older, disjoint commit (`f8c52b6`) with no shared
+merge-base against `origin/main`, the same remote-history-rewrite pattern
+documented by many prior cycles; confirmed content-equivalence (only
+additions between the two) before recovering with `git checkout main &&
+git reset --hard origin/main`, no push involved. Full baseline rerun
+byte-for-byte identical to the documented state
+(see Last Verification Result above), after rebuilding `.venv312` with
+`python3.12` directly since this container's bare `python3` now resolves
+to 3.11.15 rather than 3.12.3 (a new environment detail worth recording;
+`python3.12` itself is still present and unaffected). Checked GitHub for
+open issues or pull requests that might carry a human decision: none
+found. `AGENTS.md` is still present and no new Approved Next Tasks item
+has landed, so both items blocking further autonomous progress are
+unchanged. No code or test changed. No user notification sent this cycle
+-- the twelfth cycle already restated the blocked-state recommendation
+once, and nothing has changed since, so a repeat ping would be noise per
+that cycle's own stated rule. A future cycle finding this same state still
+unchanged should keep recording it here without notifying again, unless
+the blocked state itself changes or a human response arrives.)
 
 2026-09-07 (Linux sandbox, fourteenth consecutive confirmation cycle: local
 `main` was again found detached, this time already matching `origin/main`'s
