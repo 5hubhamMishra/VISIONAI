@@ -1614,63 +1614,57 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-08, Linux sandbox (this session, thirty-first consecutive
-  confirmation cycle -- no application or test code changed): `git pull
-  origin main` reported already up to date; local `main` matched
-  `origin/main` directly (no detached/stale ref to recover this
-  cycle). Fresh `.venv312` via `python3.12 -m venv` + `pip install -r
+- 2026-09-08, Linux sandbox (this session, thirty-second consecutive
+  confirmation cycle -- no application or test code changed): `git
+  pull origin main` reported already up to date; local `main` was
+  detached but already at `origin/main`'s tip, no reset needed. Fresh
+  `.venv312` via `python3.12 -m venv` + `pip install -r
   requirements/dev.txt` (clean install, no dependency errors);
   `libportaudio2`/`libegl1`/`libopengl0` installed via `apt-get`
-  (clean, no mirror retries needed this time). Ruff clean; mypy clean
-  except the one documented sandbox-only `ctypes.windll` false
-  positive; Bandit clean; pip-audit clean. `pytest --cov`:
-  byte-for-byte identical to the thirtieth cycle -- 616 tests, 578
-  passed, 28 failed (all confirmed the documented
+  (clean). Ruff clean; mypy clean except the one documented
+  sandbox-only `ctypes.windll` false positive; Bandit clean.
+  `pytest --cov`: byte-for-byte identical to the thirty-first cycle --
+  616 tests, 578 passed, 28 failed (spot-confirmed the documented
   `WindowsLockStateAdapter` fail-closed pattern, not a regression), 10
   skipped, 99% coverage, same per-module numbers
   (`event_orchestrator.py` 97% lines 234-238/386, `platform/
-  lock_state.py` 77% lines 72-81, `app.py`/`ui/main_window.py` 99%
-  each). Checked GitHub: zero open issues, zero pull requests.
-  `AGENTS.md` still present awaiting the human removal decision; no
-  new Approved Next Tasks item has landed. Thirty-one consecutive
-  identical cycles now, spanning 2026-09-06 through 2026-09-08.
+  lock_state.py` 77% lines 72-81, `ui/main_window.py` 99% line 1346).
+  Checked GitHub: zero open issues, zero pull requests. `AGENTS.md`
+  still present awaiting the human removal decision; no new Approved
+  Next Tasks item has landed. Thirty-two consecutive identical
+  application/test cycles now, spanning 2026-09-06 through 2026-09-08.
 
-  Found (and flagging here rather than silently picking one version)
-  a direct contradiction between this file and `docs/WORK_LOG.md`
-  over the thirtieth cycle's own commit (`13d2a09`): this file's prior
-  revision stated "No new user notification sent this cycle," while
-  `docs/WORK_LOG.md`'s thirtieth-cycle entry stated the opposite --
-  "Sent one proactive user notification this cycle (the first since
-  the twenty-sixth cycle)," recommending the human pause or reduce the
-  schedule. Both were written in the same commit. This cycle cannot
-  determine from git history alone which statement was accurate (the
-  session transcript that produced that commit is not part of the
-  repository). Given that genuine ambiguity, plus thirty-one
-  consecutive fully-blocked cycles now recorded in one calendar day
-  with zero forward progress possible from this sandbox, this cycle
-  sent a fresh proactive notification rather than assume the human was
-  already reached. A future cycle should not need to repeat this
-  reasoning again unless the blocked state changes or another
-  documentation contradiction appears -- treat this note, not the
-  superseded line it replaces, as authoritative for cycle thirty.
+  New, non-blocking finding this cycle: `pip-audit` reported 6 known
+  vulnerabilities against this session's freshly bootstrapped `pip
+  24.0` inside `.venv312` itself (`PYSEC-2026-196/1795/1796/2875/2876/
+  3721`, fixed in `pip>=25.3`) -- not against any package this
+  project's `requirements/*.txt` pins, and not fixable by a repo
+  commit since the venv's own pip is not tracked in this repository.
+  Every prior cycle's "pip-audit clean" report was accurate for its
+  own point in time; this reads as newly published CVE data catching
+  up to an old bootstrap pip version, not a project regression.
+
+  Given thirty-two fully-blocked scheduled cycles in one calendar day
+  with zero forward progress possible from this sandbox, and no way to
+  confirm any earlier cycle's self-reported notification actually used
+  a real notification mechanism (a commit message claiming one was
+  sent is not proof, as the thirtieth/thirty-first cycles' own
+  contradiction already showed), this cycle sent a fresh proactive
+  notification to the human via this session's actual notification
+  tool.
 
 ## Last Updated
 
-2026-09-08 (Linux sandbox, thirty-first consecutive confirmation
-cycle: `git pull origin main` was already up to date and local `main`
-matched `origin/main` directly, no ref recovery needed this cycle.
-Full baseline rerun byte-for-byte identical to the documented state
-(see Last Verification Result above). Checked GitHub for open issues
-or pull requests: none found. `AGENTS.md` is still present and no new
+2026-09-08 (Linux sandbox, thirty-second consecutive confirmation
+cycle: full baseline rerun byte-for-byte identical to the thirty-first
+cycle's documented state, except a new non-project-code `pip-audit`
+finding against the sandbox's own bootstrap `pip` -- see Last
+Verification Result above. `AGENTS.md` is still present and no new
 Approved Next Tasks item has landed, so both items blocking further
 autonomous progress are unchanged. No application or test code
-changed. Resolved a documentation contradiction found between this
-file and `docs/WORK_LOG.md` over whether the thirtieth cycle's
-notification was actually sent (see Last Verification Result above)
-and, given that ambiguity plus the length of this now thirty-one-cycle
-streak, sent a fresh proactive notification recommending the human
-pause or reduce this schedule's frequency until one of the standing
-decisions lands. A future cycle finding the blocked state still
-unchanged, with no new documentation inconsistency and no notification
-ambiguity, should go back to quiet confirmation-only recording rather
-than notifying again.)
+changed. Sent a proactive notification recommending the human either
+resolve one of the standing decisions or pause/reduce this schedule's
+frequency until they can. A future cycle finding the blocked state
+still unchanged, with no new documentation inconsistency and no
+meaningful new fact, should go back to quiet confirmation-only
+recording rather than notifying again.)
