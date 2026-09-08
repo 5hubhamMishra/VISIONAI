@@ -1614,7 +1614,41 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-08, Linux sandbox (this session, sixteenth consecutive
+- 2026-09-08, Linux sandbox (this session, seventeenth consecutive
+  confirmation cycle -- no application or test code changed): `git pull
+  origin main` reported a forced update again (`origin/main`'s tip moved
+  from `370d6cf` to `3fa0fe1`, the prior session's own
+  sixteenth-consecutive-confirmation commit -- another content-equivalent
+  remote history rewrite, consistent with every prior cycle's documented
+  note, not new lost work); local `main` ended up diverged from
+  `origin/main` with disjoint tips once checked out. Recovered with `git
+  reset --hard origin/main` (no push involved). Ran the full baseline per
+  this run's master prompt rather than trusting the doc's own skip-ahead
+  note: fresh `.venv312` built with `python3.12 -m venv` from
+  `requirements/dev.txt` against real Python 3.12.3 (again needing
+  `libportaudio2`/`libegl1`/`libopengl0` via `apt-get`, which again needed
+  `apt-get update` first since the cached index 404'd on an unrelated
+  `libegl-mesa0` entry); Ruff clean; mypy clean except the same documented
+  sandbox-only `ctypes.windll` false positive; Bandit clean; pip-audit
+  clean (no known vulnerabilities). `pytest --cov`: byte-for-byte identical
+  to the sixteenth cycle -- 616 tests, 578 passed, 28 failed, 10 skipped,
+  99% coverage, same per-module numbers (`event_orchestrator.py` 97%,
+  lines 234-238/386; `platform/lock_state.py` 77%, lines 72-81;
+  `app.py`/`ui/main_window.py` 99% each). Confirmed the 28 failures are all
+  still the same `WindowsLockStateAdapter` fail-closed pattern from the
+  full pytest output rather than trusting the count alone -- every failure
+  message is exactly `mutating actions are blocked while the screen is
+  locked` or its downstream effect, not a new regression. `AGENTS.md` is
+  still present (still awaiting the human removal decision), no new
+  Approved Next Tasks item has landed, and no further hardware-free
+  coverage gap exists per the exhausted audit above. This is now seventeen
+  consecutive identical cycles with nothing new to build on. No user
+  notification sent this cycle -- the twelfth cycle already restated the
+  standing recommendation once, nothing has changed since (no human
+  decision, no schedule change), and cycles thirteen through sixteen
+  already established that a repeat ping this soon would be noise, not
+  signal.
+- 2026-09-08, Linux sandbox (prior session, sixteenth consecutive
   confirmation cycle -- no application or test code changed): `git pull
   origin main` reported a forced update (`origin/main`'s tip moved from
   `f8c52b6` to `370d6cf`, the prior session's own
@@ -2174,11 +2208,11 @@ cd visionai
 
 ## Last Updated
 
-2026-09-08 (Linux sandbox, sixteenth consecutive confirmation cycle:
-`origin/main` had been force-pushed again since the fifteenth cycle's
+2026-09-08 (Linux sandbox, seventeenth consecutive confirmation cycle:
+`origin/main` had been force-pushed again since the sixteenth cycle's
 commit -- content-equivalent history rewrite, same pattern already
 documented from earlier sessions, not new lost work; recovered the tree
-at `370d6cf`, the prior session's own fifteenth-consecutive-confirmation
+at `3fa0fe1`, the prior session's own sixteenth-consecutive-confirmation
 commit, via `git reset --hard origin/main` (no push involved). Full
 baseline rerun byte-for-byte identical to the documented state (see Last
 Verification Result above); `AGENTS.md` is still present and no new
