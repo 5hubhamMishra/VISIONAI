@@ -1633,6 +1633,47 @@ concrete case that surfaced this.
 
 ## Last Verification Result
 
+- 2026-09-09, Linux sandbox (forty-seventh consecutive confirmation
+  cycle -- no application or test code changed): local checkout was
+  found detached at `1a9d072` (the forty-sixth cycle's commit,
+  already `origin/main`'s tip); `git pull origin main` reported
+  already up to date. Recovered with `git checkout main` (a local ref
+  repair only, no reset, no lost work, working tree was already
+  clean). Fresh `.venv312` via `python3.12 -m venv` + `pip install
+  --upgrade pip` + `pip install -r requirements/dev.txt` (clean
+  install, no dependency errors); `libportaudio2`/`libegl1`/
+  `libopengl0` installed via `apt-get` (clean, same unrelated
+  PPA-mirror 403 warnings this sandbox doesn't need). Ruff clean ("All
+  checks passed!"); mypy clean except the one documented sandbox-only
+  `ctypes.windll` false positive on `platform/lock_state.py:71`;
+  Bandit clean, no findings; the project's scoped `pip-audit -r
+  requirements/base.txt -r requirements/dev.txt` clean. `pytest
+  --cov`: byte-for-byte identical to the forty-sixth cycle -- 616
+  tests, 578 passed, 28 failed (same failing-test names), 10 skipped,
+  99% coverage, same per-module numbers (`event_orchestrator.py` 97%
+  lines 234-238/386, `platform/lock_state.py` 77% lines 72-81,
+  `app.py` 99%, `ui/main_window.py` 99% line 1346). Directly re-ran
+  `test_app_runs_browser_search` in isolation and confirmed its
+  captured output is exactly the documented `WindowsLockStateAdapter`
+  fail-closed message (`mutating actions are blocked while the screen
+  is locked`), not a regression.
+
+  Checked GitHub directly (`list_issues`, `list_pull_requests`): zero
+  open issues, zero open pull requests. `AGENTS.md` is still present
+  at the repository root awaiting the human removal decision under
+  Required Decisions, and no new Approved Next Tasks item has
+  landed -- both standing blockers are unchanged, now forty-seven
+  consecutive identical application/test cycles.
+
+  No new notification sent this cycle: the forty-fifth cycle already
+  sent a real proactive notification restating both standing blockers
+  and recommending a schedule pause, and the forty-sixth cycle
+  restated the same facts in this log. Nothing factually new has
+  happened since -- same failure set, same coverage, zero issues/PRs,
+  both required decisions still unresolved -- so this cycle again
+  records the result quietly rather than paging the human a third
+  time for the same unresolved fact.
+
 - 2026-09-09, Linux sandbox (forty-sixth consecutive confirmation
   cycle -- no application or test code changed): `git pull origin main`
   reported already up to date at `7dad938` (the forty-fifth cycle's
@@ -1805,14 +1846,18 @@ concrete case that surfaced this.
 
 ## Last Updated
 
-2026-09-09 (Linux sandbox, forty-sixth consecutive confirmation cycle:
-full baseline rerun byte-for-byte identical to the forty-fifth cycle's
-documented application/test state -- see Last Verification Result
-above. `AGENTS.md` is still present and no new Approved Next Tasks
-item has landed, so both items blocking further autonomous progress
-are unchanged. No application or test code changed. Zero open GitHub
-issues or pull requests. No new notification sent this cycle: the
-forty-fifth cycle, run earlier the same day, already sent a fresh
-proactive notification restating both standing blockers and the
-recommendation to pause the schedule; nothing factually new has
-happened since then to justify paging the human again so soon.)
+2026-09-09 (Linux sandbox, forty-seventh consecutive confirmation
+cycle: full baseline rerun byte-for-byte identical to the forty-sixth
+cycle's documented application/test state -- 616 tests, 578
+passed/28 failed/10 skipped, 99% coverage, same per-module numbers,
+ruff/mypy/bandit/pip-audit all clean (mypy's one documented
+sandbox-only `ctypes.windll` note aside) -- see Last Verification
+Result above and the matching `docs/WORK_LOG.md` entry. `AGENTS.md`
+is still present and no new Approved Next Tasks item has landed, so
+both items blocking further autonomous progress are unchanged. No
+application or test code changed. Zero open GitHub issues or pull
+requests. No new notification sent this cycle: the forty-fifth and
+forty-sixth cycles already restated both standing blockers to the
+human (the forty-fifth via a real proactive notification); nothing
+factually new has happened since then to justify paging the human
+again so soon.)
