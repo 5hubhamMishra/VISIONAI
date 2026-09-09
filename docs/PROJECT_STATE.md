@@ -10,7 +10,7 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-09, forty-fifth consecutive
+Latest Linux sandbox verification (2026-09-09, forty-eighth consecutive
 confirmation cycle -- no application or test code changed): 616 tests, 578
 passed, 28 failed (documented `WindowsLockStateAdapter` fail-closed pattern,
 not a regression), 10 skipped, 99% coverage, Ruff, mypy (one known
@@ -1633,231 +1633,57 @@ concrete case that surfaced this.
 
 ## Last Verification Result
 
-- 2026-09-09, Linux sandbox (forty-seventh consecutive confirmation
-  cycle -- no application or test code changed): local checkout was
-  found detached at `1a9d072` (the forty-sixth cycle's commit,
-  already `origin/main`'s tip); `git pull origin main` reported
-  already up to date. Recovered with `git checkout main` (a local ref
-  repair only, no reset, no lost work, working tree was already
-  clean). Fresh `.venv312` via `python3.12 -m venv` + `pip install
-  --upgrade pip` + `pip install -r requirements/dev.txt` (clean
-  install, no dependency errors); `libportaudio2`/`libegl1`/
-  `libopengl0` installed via `apt-get` (clean, same unrelated
-  PPA-mirror 403 warnings this sandbox doesn't need). Ruff clean ("All
-  checks passed!"); mypy clean except the one documented sandbox-only
-  `ctypes.windll` false positive on `platform/lock_state.py:71`;
-  Bandit clean, no findings; the project's scoped `pip-audit -r
-  requirements/base.txt -r requirements/dev.txt` clean. `pytest
-  --cov`: byte-for-byte identical to the forty-sixth cycle -- 616
-  tests, 578 passed, 28 failed (same failing-test names), 10 skipped,
-  99% coverage, same per-module numbers (`event_orchestrator.py` 97%
-  lines 234-238/386, `platform/lock_state.py` 77% lines 72-81,
-  `app.py` 99%, `ui/main_window.py` 99% line 1346). Directly re-ran
-  `test_app_runs_browser_search` in isolation and confirmed its
-  captured output is exactly the documented `WindowsLockStateAdapter`
-  fail-closed message (`mutating actions are blocked while the screen
-  is locked`), not a regression.
+- 2026-09-09, Linux sandbox (forty-eighth consecutive confirmation
+  cycle -- no application or test code changed): independently
+  rebuilt `.venv312` from scratch (`python3.12 -m venv` + `pip install
+  --upgrade pip` + `pip install -r requirements/dev.txt`, clean
+  install; `libportaudio2`/`libegl1`/`libopengl0` via `apt-get`, clean
+  after retrying the same unrelated PPA-mirror 403 this sandbox
+  doesn't need). Ruff clean ("All checks passed!"); mypy clean except
+  the one documented sandbox-only `ctypes.windll` false positive on
+  `platform/lock_state.py:71`; Bandit clean, no findings; both the
+  project's scoped `pip-audit -r requirements/base.txt -r
+  requirements/dev.txt` and a bare `pip-audit` clean. `pytest --cov`:
+  616 tests, 578 passed, 28 failed, 10 skipped, 99% coverage, same
+  per-module numbers as every recent cycle (`event_orchestrator.py`
+  97% lines 234-238/386, `platform/lock_state.py` 77% lines 72-81,
+  `app.py` 99% line 663, `ui/main_window.py` 99% line 1346) --
+  byte-for-byte identical to the forty-seventh cycle's documented
+  state; spot-checked a failure and confirmed it is still the
+  documented `WindowsLockStateAdapter` fail-closed message, not a
+  regression.
 
   Checked GitHub directly (`list_issues`, `list_pull_requests`): zero
   open issues, zero open pull requests. `AGENTS.md` is still present
   at the repository root awaiting the human removal decision under
   Required Decisions, and no new Approved Next Tasks item has
-  landed -- both standing blockers are unchanged, now forty-seven
-  consecutive identical application/test cycles.
+  landed -- both standing blockers unchanged, now forty-eight
+  consecutive identical cycles. No new notification sent this cycle:
+  the forty-fifth cycle already sent a real proactive notification
+  restating both blockers and recommending a schedule pause/decision;
+  nothing factually new has happened since.
 
-  No new notification sent this cycle: the forty-fifth cycle already
-  sent a real proactive notification restating both standing blockers
-  and recommending a schedule pause, and the forty-sixth cycle
-  restated the same facts in this log. Nothing factually new has
-  happened since -- same failure set, same coverage, zero issues/PRs,
-  both required decisions still unresolved -- so this cycle again
-  records the result quietly rather than paging the human a third
-  time for the same unresolved fact.
-
-- 2026-09-09, Linux sandbox (forty-sixth consecutive confirmation
-  cycle -- no application or test code changed): `git pull origin main`
-  reported already up to date at `7dad938` (the forty-fifth cycle's
-  commit); local checkout was found detached at that same commit and
-  recovered with `git checkout main` + `git merge --ff-only origin/main`
-  (a local ref repair only, no reset, no lost work, working tree was
-  already clean). Fresh `.venv312` via `python3.12 -m venv` + `pip
-  install --upgrade pip` + `pip install -r requirements/dev.txt` (clean
-  install, `pip check` reported no broken requirements);
-  `libportaudio2`/`libegl1`/`libopengl0` installed via `apt-get` (clean,
-  same unrelated PPA-mirror 403 warnings this sandbox doesn't need).
-  Ruff clean ("All checks passed!"); mypy clean except the one
-  documented sandbox-only `ctypes.windll` false positive on
-  `platform/lock_state.py:71`; Bandit clean, no findings; both the
-  project's scoped `pip-audit` and a bare `pip-audit` clean. `pytest
-  --cov`: byte-for-byte identical to the forty-fifth cycle -- 616
-  tests, 578 passed, 28 failed (same failing-test names), 10 skipped,
-  99% coverage, same per-module numbers (`event_orchestrator.py` 97%
-  lines 234-238/386, `platform/lock_state.py` 77% lines 72-81, `app.py`
-  99% line 663, `ui/main_window.py` 99% line 1346).
-
-  Checked GitHub directly (`list_issues`, `list_pull_requests`): zero
-  open issues, zero open pull requests. `AGENTS.md` is still present at
-  the repository root awaiting the human removal decision under
-  Required Decisions, and no new Approved Next Tasks item has landed --
-  both standing blockers are unchanged, now forty-six consecutive
-  identical application/test cycles.
-
-  No new notification sent this cycle: the forty-fifth cycle, run
-  earlier the same day, already sent a fresh proactive notification
-  restating both standing blockers and the recommendation to pause the
-  schedule. Nothing factually new has happened since then, so a second
-  notification this cycle would be pure noise; this entry keeps the
-  written record current without paging the human again for the same
-  unresolved fact.
-
-- 2026-09-09, Linux sandbox (forty-fifth consecutive confirmation
-  cycle -- no application or test code changed): `git pull origin main`
-  fast-forwarded local `main` to `7167bb5` (the forty-fourth cycle's
-  commit). Fresh `.venv312` via `python3.12 -m venv` + `pip install
-  --upgrade pip` + `pip install -r requirements/dev.txt` (clean
-  install, `pip check` reported no broken requirements);
-  `libportaudio2`/`libegl1`/`libopengl0` installed via `apt-get`
-  (clean, same unrelated PPA-mirror 403 warnings this sandbox doesn't
-  need). Ruff clean ("All checks passed!"); mypy clean except the one
-  documented sandbox-only `ctypes.windll` false positive on
-  `platform/lock_state.py:71`; Bandit clean, no findings; both the
-  project's scoped `pip-audit` and a bare `pip-audit` clean (pip
-  upgraded first this time, per the forty-fourth cycle's documented
-  fix -- no repeat of that bootstrap-gap finding). `pytest --cov`:
-  byte-for-byte identical to the forty-fourth cycle -- 616 tests, 578
-  passed, 28 failed (same failing-test names; sampled a traceback and
-  confirmed it is still the documented `WindowsLockStateAdapter`
-  fail-closed message, not a regression), 10 skipped, 99% coverage,
-  same per-module numbers (`event_orchestrator.py` 97% lines 234-238/
-  386, `platform/lock_state.py` 77% lines 72-81, `app.py` 99% line 663,
-  `ui/main_window.py` 99% line 1346).
-
-  Checked GitHub directly (`list_issues`, `list_pull_requests`): zero
-  open issues, zero open pull requests. `AGENTS.md` is still present at
-  the repository root awaiting the human removal decision under
-  Required Decisions, and no new Approved Next Tasks item has landed --
-  both standing blockers are unchanged, now forty-five consecutive
-  identical application/test cycles.
-
-  No new notification sent as a matter of routine (nothing factually
-  new this cycle), but given the cycle count itself has now grown very
-  large with no human response since the thirty-second cycle's original
-  notification, this session is sending one anyway to make sure the
-  standing AGENTS.md decision and the option of pausing this schedule
-  are back in front of a human, rather than silently repeating a
-  forty-sixth, forty-seventh, etc. identical cycle.
-
-- 2026-09-09, Linux sandbox (forty-fourth consecutive confirmation
-  cycle -- no application or test code changed): `git pull origin main`
-  reported already up to date at `01d5887` (the forty-third cycle's
-  commit). Fresh `.venv312` via `python3.12 -m venv` + `pip install -r
-  requirements/dev.txt` (clean install, no dependency errors, `pip
-  check` reported no broken requirements); `libportaudio2`/`libegl1`/
-  `libopengl0` installed via `apt-get` (clean, only the same unrelated
-  PPA-mirror 403 warnings this sandbox doesn't need). Ruff clean; mypy
-  clean except the one documented sandbox-only `ctypes.windll` false
-  positive on `platform/lock_state.py:71`; Bandit clean, no findings.
-  `pytest --cov`: byte-for-byte identical to the forty-third cycle --
-  616 tests, 578 passed, 28 failed (same failing-test names, sampled a
-  traceback and confirmed it is still the documented
-  `WindowsLockStateAdapter` fail-closed message, not a regression), 10
-  skipped, 99% coverage, same per-module numbers.
-
-  One genuinely new finding this cycle, since every prior cycle's own
-  literal master-prompt `pip-audit` (no `-r` flags) had reported clean:
-  a bare `pip-audit` against the freshly created venv reported 6 known
-  vulnerabilities (`PYSEC-2026-196`, `-1795`, `-1796`, `-2875`, `-2876`,
-  `-3721`) in `pip` itself, version 24.0 -- the version `python3.12 -m
-  venv` bootstraps by default on this sandbox's Ubuntu 24.04 image, not
-  a package this project declares anywhere in `requirements/`. Confirmed
-  this was never a real project-dependency vulnerability: rerunning
-  `scripts/verify.ps1`'s and CI's own actual, scoped invocation
-  (`pip_audit -r requirements/base.txt -r requirements/dev.txt`) with
-  `pip` still at the vulnerable 24.0 reported clean. Fixed the only real
-  gap -- the sandbox bootstrap sequence recorded in every prior cycle's
-  notes never included `pip install --upgrade pip`, unlike
-  `docs/ENVIRONMENT_SETUP.md`'s already-documented Windows steps and
-  `.github/workflows/ci.yml`'s existing upgrade step -- by upgrading pip
-  to 26.2.1 before the rest of this cycle's verification; a bare
-  `pip-audit` then also reported clean. No application or test code
-  changed; see the Verification Commands note above for the documentation
-  fix so a future session doesn't mistake this for a regressed baseline.
-
-  Checked GitHub directly (`list_issues`, `list_pull_requests`): zero
-  open issues, zero open pull requests. `AGENTS.md` is still present at
-  the repository root awaiting the human removal decision under
-  Required Decisions, and no new Approved Next Tasks item has landed --
-  both standing blockers from every recent cycle are unchanged. Every
-  remaining Approved Next Tasks item still needs real Windows hardware,
-  a live network/model, or a human running a command themselves, per
-  the exhaustive audit two cycles' worth of sessions already completed
-  (see the 2026-09-06 coverage-gap audit and re-verification cycle
-  entries above) -- none of it fits this Linux, no-display/camera/mic
-  sandbox. Forty-four consecutive identical application/test cycles now
-  (the pip-audit bootstrap gap above is new and now fixed/documented,
-  but is not an application-code or test regression).
-
-  No new notification sent this cycle: the pip-audit finding was fully
-  resolved and diagnosed as non-impactful within this same cycle (the
-  project's real, scoped dependency audit was clean throughout), and the
-  two standing blockers (`AGENTS.md`, no new Approved Next Tasks item)
-  are unchanged from the thirty-second cycle's notification and every
-  quiet cycle since. Nothing here needs a human's immediate attention
-  beyond what was already surfaced.
-
-- 2026-09-09, Linux sandbox (this session, forty-third consecutive
-  confirmation cycle -- no application or test code changed): `git
-  pull origin main` fast-forwarded local `main` from `3542fab` to
-  `cea2c28` (the forty-second cycle's commit); local checkout started
-  detached at the pre-pull tip and was recovered with `git checkout
-  main` + `git merge --ff-only origin/main` (a local ref repair only,
-  no reset, no lost work, working tree was clean throughout). Fresh
-  `.venv312` via `python3.12 -m venv` + `pip install -r
-  requirements/dev.txt` (clean install, no dependency errors, `pip
-  check` reported no broken requirements); `libportaudio2`/`libegl1`/
-  `libopengl0` installed via `apt-get update && apt-get install`
-  (clean; only the same unrelated PPA-mirror 403 warnings this sandbox
-  doesn't need). Ruff clean ("All checks passed!"); mypy clean except
-  the one documented sandbox-only `ctypes.windll` false positive on
-  `platform/lock_state.py:71`; Bandit clean, no findings; `pip-audit`
-  clean, "No known vulnerabilities found". `pytest --cov`:
-  byte-for-byte identical to the forty-second cycle -- 616 tests, 578
-  passed, 28 failed, 10 skipped, 99% coverage, same per-module numbers
-  (`event_orchestrator.py` 97% lines 234-238/386, `platform/lock_state.py`
-  77% lines 72-81, `app.py` 99%, `ui/main_window.py` 99% line 1346).
-  Read the full failure summary directly: the sampled traceback shows
-  the documented `WindowsLockStateAdapter` fail-closed message
-  (`mutating actions are blocked while the screen is locked`), not a
-  regression. Checked GitHub directly (`list_issues`,
-  `list_pull_requests`): zero open issues, zero pull requests.
-  `AGENTS.md` still present awaiting the human removal decision; no
-  new Approved Next Tasks item has landed. Forty-three consecutive
-  identical application/test cycles now, spanning 2026-09-06 through
-  2026-09-09.
-
-  No new notification sent this cycle: the thirty-second cycle already
-  sent a real proactive notification (not just a log entry) restating
-  the standing blockers and recommending a human decision or a
-  schedule pause, and nothing materially new happened across cycles
-  thirty-three through forty-three either -- same failure set, same
-  coverage, zero issues/PRs, same two missing docs decisions. Repeating
-  that notification again with no new fact would be pure noise, so
-  this cycle again goes back to quiet confirmation-only recording.
+  Housekeeping this cycle: this section had re-accumulated five
+  stacked per-cycle paragraphs (forty-third through forty-seventh)
+  since the twenty-fourth cycle's original trim (which shrank
+  `docs/PROJECT_STATE.md` from 2665 to 1684 lines by keeping this
+  section and Last Updated singular). Trimmed back to hold only the
+  current cycle's entry per that same precedent; the complete,
+  unabridged cycle-by-cycle history remains in `docs/WORK_LOG.md`. No
+  application code, test code, or security-relevant content changed.
 
 ## Last Updated
 
-2026-09-09 (Linux sandbox, forty-seventh consecutive confirmation
-cycle: full baseline rerun byte-for-byte identical to the forty-sixth
-cycle's documented application/test state -- 616 tests, 578
-passed/28 failed/10 skipped, 99% coverage, same per-module numbers,
-ruff/mypy/bandit/pip-audit all clean (mypy's one documented
-sandbox-only `ctypes.windll` note aside) -- see Last Verification
-Result above and the matching `docs/WORK_LOG.md` entry. `AGENTS.md`
-is still present and no new Approved Next Tasks item has landed, so
-both items blocking further autonomous progress are unchanged. No
-application or test code changed. Zero open GitHub issues or pull
-requests. No new notification sent this cycle: the forty-fifth and
-forty-sixth cycles already restated both standing blockers to the
-human (the forty-fifth via a real proactive notification); nothing
-factually new has happened since then to justify paging the human
-again so soon.)
+2026-09-09 (Linux sandbox, forty-eighth consecutive confirmation
+cycle: full baseline independently rebuilt and rerun, byte-for-byte
+identical to the forty-seventh cycle's documented application/test
+state -- see Last Verification Result above and the matching
+`docs/WORK_LOG.md` entry. `AGENTS.md` is still present and no new
+Approved Next Tasks item has landed, so both items blocking further
+autonomous progress are unchanged. No application or test code
+changed. Zero open GitHub issues or pull requests. No new
+notification sent this cycle: the forty-fifth cycle's proactive
+notification two cycles ago already covers this unchanged fact.
+Also re-trimmed this section and Last Verification Result back to a
+single current entry each, per the twenty-fourth cycle's precedent,
+since both had re-grown to five stacked paragraphs again.)
