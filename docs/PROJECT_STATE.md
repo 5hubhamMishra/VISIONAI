@@ -10,11 +10,15 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-09, forty-first consecutive
+Latest Linux sandbox verification (2026-09-09, forty-fourth consecutive
 confirmation cycle -- no application or test code changed): 616 tests, 578
 passed, 28 failed (documented `WindowsLockStateAdapter` fail-closed pattern,
 not a regression), 10 skipped, 99% coverage, Ruff, mypy (one known
-sandbox-only false positive), Bandit, and pip-audit all clean.
+sandbox-only false positive), and Bandit all clean; the project's own scoped
+pip-audit (`requirements/base.txt`/`requirements/dev.txt`) is clean, and a
+bare pip-audit is clean too once the venv's own bootstrap `pip` is upgraded
+first -- see the Verification Commands note and Last Verification Result
+below for the one new, non-application finding this cycle.
 
 2026-09-06 autonomous cycle (Linux sandbox, coverage-gap audit -- no code
 change): started against local commit `b18784e` (the prior session's
@@ -1612,7 +1616,80 @@ cd visionai
 .\scripts\verify.ps1
 ```
 
+Note (found 2026-09-09, forty-fourth cycle): `scripts/verify.ps1` and
+`.github/workflows/ci.yml` both scope `pip-audit` to this project's own
+declared dependencies (`pip_audit -r requirements/base.txt -r
+requirements/dev.txt`) and both upgrade `pip` itself before installing
+anything (`python -m pip install --upgrade pip`). A bare, unscoped
+`pip-audit` invocation (no `-r` flags) instead audits every package
+actually installed in the active virtualenv, including `pip` itself --
+which is not a project dependency, just whatever version `python -m venv`
+happens to bootstrap. Any future session that creates a fresh sandbox venv
+and runs a bare `pip-audit` (rather than this project's own scoped command)
+should run `pip install --upgrade pip` first, or it may see findings
+against the ambient bootstrap `pip` that say nothing about this project's
+real dependency tree -- see the forty-fourth cycle entry below for the
+concrete case that surfaced this.
+
 ## Last Verification Result
+
+- 2026-09-09, Linux sandbox (forty-fourth consecutive confirmation
+  cycle -- no application or test code changed): `git pull origin main`
+  reported already up to date at `01d5887` (the forty-third cycle's
+  commit). Fresh `.venv312` via `python3.12 -m venv` + `pip install -r
+  requirements/dev.txt` (clean install, no dependency errors, `pip
+  check` reported no broken requirements); `libportaudio2`/`libegl1`/
+  `libopengl0` installed via `apt-get` (clean, only the same unrelated
+  PPA-mirror 403 warnings this sandbox doesn't need). Ruff clean; mypy
+  clean except the one documented sandbox-only `ctypes.windll` false
+  positive on `platform/lock_state.py:71`; Bandit clean, no findings.
+  `pytest --cov`: byte-for-byte identical to the forty-third cycle --
+  616 tests, 578 passed, 28 failed (same failing-test names, sampled a
+  traceback and confirmed it is still the documented
+  `WindowsLockStateAdapter` fail-closed message, not a regression), 10
+  skipped, 99% coverage, same per-module numbers.
+
+  One genuinely new finding this cycle, since every prior cycle's own
+  literal master-prompt `pip-audit` (no `-r` flags) had reported clean:
+  a bare `pip-audit` against the freshly created venv reported 6 known
+  vulnerabilities (`PYSEC-2026-196`, `-1795`, `-1796`, `-2875`, `-2876`,
+  `-3721`) in `pip` itself, version 24.0 -- the version `python3.12 -m
+  venv` bootstraps by default on this sandbox's Ubuntu 24.04 image, not
+  a package this project declares anywhere in `requirements/`. Confirmed
+  this was never a real project-dependency vulnerability: rerunning
+  `scripts/verify.ps1`'s and CI's own actual, scoped invocation
+  (`pip_audit -r requirements/base.txt -r requirements/dev.txt`) with
+  `pip` still at the vulnerable 24.0 reported clean. Fixed the only real
+  gap -- the sandbox bootstrap sequence recorded in every prior cycle's
+  notes never included `pip install --upgrade pip`, unlike
+  `docs/ENVIRONMENT_SETUP.md`'s already-documented Windows steps and
+  `.github/workflows/ci.yml`'s existing upgrade step -- by upgrading pip
+  to 26.2.1 before the rest of this cycle's verification; a bare
+  `pip-audit` then also reported clean. No application or test code
+  changed; see the Verification Commands note above for the documentation
+  fix so a future session doesn't mistake this for a regressed baseline.
+
+  Checked GitHub directly (`list_issues`, `list_pull_requests`): zero
+  open issues, zero open pull requests. `AGENTS.md` is still present at
+  the repository root awaiting the human removal decision under
+  Required Decisions, and no new Approved Next Tasks item has landed --
+  both standing blockers from every recent cycle are unchanged. Every
+  remaining Approved Next Tasks item still needs real Windows hardware,
+  a live network/model, or a human running a command themselves, per
+  the exhaustive audit two cycles' worth of sessions already completed
+  (see the 2026-09-06 coverage-gap audit and re-verification cycle
+  entries above) -- none of it fits this Linux, no-display/camera/mic
+  sandbox. Forty-four consecutive identical application/test cycles now
+  (the pip-audit bootstrap gap above is new and now fixed/documented,
+  but is not an application-code or test regression).
+
+  No new notification sent this cycle: the pip-audit finding was fully
+  resolved and diagnosed as non-impactful within this same cycle (the
+  project's real, scoped dependency audit was clean throughout), and the
+  two standing blockers (`AGENTS.md`, no new Approved Next Tasks item)
+  are unchanged from the thirty-second cycle's notification and every
+  quiet cycle since. Nothing here needs a human's immediate attention
+  beyond what was already surfaced.
 
 - 2026-09-09, Linux sandbox (this session, forty-third consecutive
   confirmation cycle -- no application or test code changed): `git
@@ -1655,11 +1732,18 @@ cd visionai
 
 ## Last Updated
 
-2026-09-09 (Linux sandbox, forty-third consecutive confirmation
-cycle: full baseline rerun byte-for-byte identical to the forty-second
+2026-09-09 (Linux sandbox, forty-fourth consecutive confirmation
+cycle: full baseline rerun byte-for-byte identical to the forty-third
 cycle's documented application/test state -- see Last Verification
 Result above. `AGENTS.md` is still present and no new Approved Next
 Tasks item has landed, so both items blocking further autonomous
-progress are unchanged. No application or test code changed. No new
-notification sent -- the thirty-second cycle's notification already
-covers this exact standing state and nothing new surfaced this cycle.)
+progress are unchanged. No application or test code changed. This
+cycle did find and fix one new, non-application, documentation-only
+gap: a bare `pip-audit` on a freshly bootstrapped venv flagged CVEs in
+the ambient `pip` package itself (not a project dependency); confirmed
+the project's real, scoped dependency audit was clean throughout, fixed
+by upgrading pip, and documented under Verification Commands so a
+future session doesn't mistake this for a regressed baseline. No new
+notification sent -- the pip-audit finding was resolved within this
+same cycle and the standing blockers are unchanged from the
+thirty-second cycle's notification.)

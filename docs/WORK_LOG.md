@@ -1,5 +1,69 @@
 # Work Log
 
+## 2026-09-09 Forty-Fourth Consecutive Confirmation Cycle (Linux Sandbox)
+
+- Started against local commit `01d5887` (the forty-third cycle's
+  commit); `git pull origin main` reported already up to date.
+- Fresh `.venv312` via `python3.12 -m venv` + `pip install -r
+  requirements/dev.txt` (clean install, no dependency errors, `pip
+  check` reported no broken requirements); `libportaudio2`/`libegl1`/
+  `libopengl0` installed via `apt-get` (clean, same unrelated
+  PPA-mirror 403 warnings this sandbox doesn't need).
+- Full verification: Ruff clean; mypy clean except the one documented
+  sandbox-only `ctypes.windll` false positive on
+  `platform/lock_state.py:71`; Bandit clean. Pytest: 616 tests, 578
+  passed, 28 failed, 10 skipped, 99% coverage -- byte-for-byte
+  identical to the forty-third cycle's documented result (same 28
+  failing test names, same per-module coverage); sampled a failing
+  traceback and confirmed it is still the documented
+  `WindowsLockStateAdapter` fail-closed message, not a regression.
+- One new, non-application finding: a bare `pip-audit` (the master
+  prompt's literal verification command, with no `-r` flags) reported
+  6 known vulnerabilities (`PYSEC-2026-196`/`-1795`/`-1796`/`-2875`/
+  `-2876`/`-3721`) in `pip` 24.0 -- the version `python3.12 -m venv`
+  bootstraps on this sandbox's Ubuntu 24.04 image, not a package this
+  project declares in `requirements/`. Every one of the prior 43
+  cycles' identically-worded bootstrap steps never upgraded pip first,
+  unlike `docs/ENVIRONMENT_SETUP.md`'s already-documented Windows setup
+  and `.github/workflows/ci.yml`'s existing `pip install --upgrade pip`
+  step, so this had apparently gone unnoticed until pip-audit's
+  vulnerability database picked up these particular CVEs. Confirmed
+  this was never a real project-dependency vulnerability by rerunning
+  this project's own actual, scoped verification command
+  (`scripts/verify.ps1`'s `pip_audit -r requirements/base.txt -r
+  requirements/dev.txt`, matching CI) with pip still at the vulnerable
+  24.0: clean. Fixed by running `pip install --upgrade pip` (now
+  26.2.1) before the rest of this cycle's verification; a bare
+  `pip-audit` then also reported clean. Documented under
+  `docs/PROJECT_STATE.md`'s Verification Commands section so a future
+  session bootstrapping a fresh sandbox venv doesn't mistake this for a
+  regressed baseline. No application or test code changed.
+- Checked GitHub directly (`list_issues`, `list_pull_requests`): zero
+  open issues, zero open pull requests.
+- Both standing blockers are unchanged: `AGENTS.md` is still present at
+  the repository root awaiting the human removal decision under
+  Required Decisions, and no new Approved Next Tasks item has landed.
+  Every remaining Approved Next Tasks item still needs real Windows
+  hardware, a live network/model, or a human running a command
+  themselves -- none of it fits this Linux, no-display/camera/mic
+  sandbox, per the exhaustive audit already completed in the
+  2026-09-06 coverage-gap audit and re-verification cycles. No new
+  Phase 7 work started (still requires explicit human approval beyond
+  the already-approved first slice).
+- No new notification sent: the pip-audit finding was fully diagnosed
+  and resolved within this same cycle (the project's real dependency
+  tree was never vulnerable), and the two standing blockers are
+  unchanged from the thirty-second cycle's real proactive notification
+  and every quiet cycle since. Nothing here needs a human's immediate
+  attention beyond what was already surfaced.
+- Next task: unchanged from every recent cycle. A future sandbox
+  session should expect this same application/test result again (and
+  should upgrade pip before running a bare `pip-audit`, per the note
+  above) and, per the master prompt, say so rather than re-running yet
+  another identical audit -- until either a human resolves the
+  `AGENTS.md` decision, a human adds a new Approved Next Tasks item, or
+  GitHub shows a new issue/PR to act on.
+
 ## 2026-09-09 Fortieth Consecutive Confirmation Cycle (Linux Sandbox)
 
 - Started against local commit `8a7a89c` (the thirty-ninth cycle's
