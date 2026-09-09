@@ -1614,51 +1614,49 @@ cd visionai
 
 ## Last Verification Result
 
-- 2026-09-09, Linux sandbox (this session, forty-second consecutive
+- 2026-09-09, Linux sandbox (this session, forty-third consecutive
   confirmation cycle -- no application or test code changed): `git
-  pull origin main` reported already up to date at `c9213ee` (the
-  forty-first cycle's commit); no local ref repair needed this time,
-  working tree was clean throughout. Fresh `.venv312` via
-  `python3.12 -m venv` + `pip install -r requirements/dev.txt` (clean
-  install, no dependency errors, `pip check` reported no broken
-  requirements); `libportaudio2`/`libegl1`/`libopengl0` installed via
-  `apt-get update && apt-get install` (clean; only the same unrelated
-  PPA-mirror 403 warnings this sandbox doesn't need, one `apt-get
-  update` retry after an initial 404 on `libegl-mesa0`, matching prior
-  cycles exactly). Ruff clean ("All checks passed!"); mypy clean
-  except the one documented sandbox-only `ctypes.windll` false
-  positive on `platform/lock_state.py:71`; Bandit clean, no findings;
-  `pip-audit` clean, "No known vulnerabilities found". `pytest --cov`:
-  byte-for-byte identical to the forty-first cycle -- 616 tests, 578
+  pull origin main` fast-forwarded local `main` from `3542fab` to
+  `cea2c28` (the forty-second cycle's commit); local checkout started
+  detached at the pre-pull tip and was recovered with `git checkout
+  main` + `git merge --ff-only origin/main` (a local ref repair only,
+  no reset, no lost work, working tree was clean throughout). Fresh
+  `.venv312` via `python3.12 -m venv` + `pip install -r
+  requirements/dev.txt` (clean install, no dependency errors, `pip
+  check` reported no broken requirements); `libportaudio2`/`libegl1`/
+  `libopengl0` installed via `apt-get update && apt-get install`
+  (clean; only the same unrelated PPA-mirror 403 warnings this sandbox
+  doesn't need). Ruff clean ("All checks passed!"); mypy clean except
+  the one documented sandbox-only `ctypes.windll` false positive on
+  `platform/lock_state.py:71`; Bandit clean, no findings; `pip-audit`
+  clean, "No known vulnerabilities found". `pytest --cov`:
+  byte-for-byte identical to the forty-second cycle -- 616 tests, 578
   passed, 28 failed, 10 skipped, 99% coverage, same per-module numbers
   (`event_orchestrator.py` 97% lines 234-238/386, `platform/lock_state.py`
   77% lines 72-81, `app.py` 99%, `ui/main_window.py` 99% line 1346).
-  Directly re-confirmed the failure root cause rather than assuming it
-  from prior notes: ran one failing test in isolation and separately
-  called `WindowsLockStateAdapter().is_locked()` directly in this
-  sandbox, which returns `True` (no reachable interactive desktop /
-  no `ctypes.windll` here), so the policy engine correctly fail-closes
-  and blocks mutating actions -- exactly the documented, pre-existing,
-  Windows-only limitation, not a regression. Checked GitHub directly
-  (`list_issues`, `list_pull_requests`): zero open issues, zero pull
-  requests. `AGENTS.md` still present awaiting the human removal
-  decision; no new Approved Next Tasks item has landed. Forty-two
-  consecutive identical application/test cycles now, spanning
-  2026-09-06 through 2026-09-09.
+  Read the full failure summary directly: the sampled traceback shows
+  the documented `WindowsLockStateAdapter` fail-closed message
+  (`mutating actions are blocked while the screen is locked`), not a
+  regression. Checked GitHub directly (`list_issues`,
+  `list_pull_requests`): zero open issues, zero pull requests.
+  `AGENTS.md` still present awaiting the human removal decision; no
+  new Approved Next Tasks item has landed. Forty-three consecutive
+  identical application/test cycles now, spanning 2026-09-06 through
+  2026-09-09.
 
   No new notification sent this cycle: the thirty-second cycle already
   sent a real proactive notification (not just a log entry) restating
   the standing blockers and recommending a human decision or a
   schedule pause, and nothing materially new happened across cycles
-  thirty-three through forty-two either -- same failure set, same
+  thirty-three through forty-three either -- same failure set, same
   coverage, zero issues/PRs, same two missing docs decisions. Repeating
   that notification again with no new fact would be pure noise, so
   this cycle again goes back to quiet confirmation-only recording.
 
 ## Last Updated
 
-2026-09-09 (Linux sandbox, forty-second consecutive confirmation
-cycle: full baseline rerun byte-for-byte identical to the forty-first
+2026-09-09 (Linux sandbox, forty-third consecutive confirmation
+cycle: full baseline rerun byte-for-byte identical to the forty-second
 cycle's documented application/test state -- see Last Verification
 Result above. `AGENTS.md` is still present and no new Approved Next
 Tasks item has landed, so both items blocking further autonomous
