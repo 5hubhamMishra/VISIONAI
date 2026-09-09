@@ -10,7 +10,7 @@ no new multi-step confirmation design is needed yet -- see
 verification (2026-09-06, commit e697214 plus this slice): 481 passed, 10
 skipped (9 are the live prompt-injection suite below, self-skipping without a
 real API key), 91% coverage, Ruff, mypy, Bandit, and pip-audit all clean.
-Latest Linux sandbox verification (2026-09-09, forty-eighth consecutive
+Latest Linux sandbox verification (2026-09-09, forty-ninth consecutive
 confirmation cycle -- no application or test code changed): 616 tests, 578
 passed, 28 failed (documented `WindowsLockStateAdapter` fail-closed pattern,
 not a regression), 10 skipped, 99% coverage, Ruff, mypy (one known
@@ -1633,14 +1633,14 @@ concrete case that surfaced this.
 
 ## Last Verification Result
 
-- 2026-09-09, Linux sandbox (forty-eighth consecutive confirmation
+- 2026-09-09, Linux sandbox (forty-ninth consecutive confirmation
   cycle -- no application or test code changed): independently
   rebuilt `.venv312` from scratch (`python3.12 -m venv` + `pip install
   --upgrade pip` + `pip install -r requirements/dev.txt`, clean
   install; `libportaudio2`/`libegl1`/`libopengl0` via `apt-get`, clean
-  after retrying the same unrelated PPA-mirror 403 this sandbox
-  doesn't need). Ruff clean ("All checks passed!"); mypy clean except
-  the one documented sandbox-only `ctypes.windll` false positive on
+  after the same unrelated PPA-mirror 403 this sandbox doesn't need).
+  Ruff clean ("All checks passed!"); mypy clean except the one
+  documented sandbox-only `ctypes.windll` false positive on
   `platform/lock_state.py:71`; Bandit clean, no findings; both the
   project's scoped `pip-audit -r requirements/base.txt -r
   requirements/dev.txt` and a bare `pip-audit` clean. `pytest --cov`:
@@ -1648,7 +1648,7 @@ concrete case that surfaced this.
   per-module numbers as every recent cycle (`event_orchestrator.py`
   97% lines 234-238/386, `platform/lock_state.py` 77% lines 72-81,
   `app.py` 99% line 663, `ui/main_window.py` 99% line 1346) --
-  byte-for-byte identical to the forty-seventh cycle's documented
+  byte-for-byte identical to the forty-eighth cycle's documented
   state; spot-checked a failure and confirmed it is still the
   documented `WindowsLockStateAdapter` fail-closed message, not a
   regression.
@@ -1657,33 +1657,22 @@ concrete case that surfaced this.
   open issues, zero open pull requests. `AGENTS.md` is still present
   at the repository root awaiting the human removal decision under
   Required Decisions, and no new Approved Next Tasks item has
-  landed -- both standing blockers unchanged, now forty-eight
+  landed -- both standing blockers unchanged, now forty-nine
   consecutive identical cycles. No new notification sent this cycle:
   the forty-fifth cycle already sent a real proactive notification
   restating both blockers and recommending a schedule pause/decision;
-  nothing factually new has happened since.
-
-  Housekeeping this cycle: this section had re-accumulated five
-  stacked per-cycle paragraphs (forty-third through forty-seventh)
-  since the twenty-fourth cycle's original trim (which shrank
-  `docs/PROJECT_STATE.md` from 2665 to 1684 lines by keeping this
-  section and Last Updated singular). Trimmed back to hold only the
-  current cycle's entry per that same precedent; the complete,
-  unabridged cycle-by-cycle history remains in `docs/WORK_LOG.md`. No
-  application code, test code, or security-relevant content changed.
+  nothing factually new has happened since, so a repeat would be pure
+  noise.
 
 ## Last Updated
 
-2026-09-09 (Linux sandbox, forty-eighth consecutive confirmation
+2026-09-09 (Linux sandbox, forty-ninth consecutive confirmation
 cycle: full baseline independently rebuilt and rerun, byte-for-byte
-identical to the forty-seventh cycle's documented application/test
+identical to the forty-eighth cycle's documented application/test
 state -- see Last Verification Result above and the matching
 `docs/WORK_LOG.md` entry. `AGENTS.md` is still present and no new
 Approved Next Tasks item has landed, so both items blocking further
 autonomous progress are unchanged. No application or test code
 changed. Zero open GitHub issues or pull requests. No new
 notification sent this cycle: the forty-fifth cycle's proactive
-notification two cycles ago already covers this unchanged fact.
-Also re-trimmed this section and Last Verification Result back to a
-single current entry each, per the twenty-fourth cycle's precedent,
-since both had re-grown to five stacked paragraphs again.)
+notification already covers this unchanged fact.)
